@@ -1593,8 +1593,8 @@ function renderAlta(container,editData=null){
           <!-- FOTO CARNET -->
           <div style="text-align:center;">
             <label class="field-label required" style="display:block;margin-bottom:10px;">🪪 Foto del Carnet de Identidad</label>
-            ${doc.fotoCarnet
-              ?`<img src="${doc.fotoCarnet}" style="width:200px;height:130px;object-fit:cover;border-radius:8px;border:2px solid var(--border);display:block;margin:0 auto 10px;" id="preview-carnet">`
+            ${(getFotoUrl(d,doc,'carnet')||null)
+              ?`<img src="${getFotoUrl(d,doc,'carnet')}" style="width:200px;height:130px;object-fit:cover;border-radius:8px;border:2px solid var(--border);display:block;margin:0 auto 10px;" id="preview-carnet">`
               :`<div id="preview-carnet-ph" onclick="document.getElementById('input-foto-carnet').click()" style="width:200px;height:130px;background:var(--cream-dark);border-radius:8px;border:2px dashed var(--burgundy);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;margin:0 auto 10px;gap:6px;"><span style="font-size:36px;">🪪</span><span style="font-size:12px;color:var(--burgundy);font-weight:600;">Fotografiar carnet</span></div>
                <img id="preview-carnet" style="display:none;width:200px;height:130px;object-fit:cover;border-radius:8px;border:2px solid var(--success);margin:0 auto 10px;">`}
             <input type="file" id="input-foto-carnet" accept="image/*" capture="environment" style="display:none" onchange="previewFotoCarnet(this)">
@@ -1946,6 +1946,7 @@ async function guardarEdicionEmpleado(id){
 
   function val(id){const el=document.getElementById(id);return el?el.value.trim():'';}
 
+  const canEditCuenta=currentRole==='admin'||currentRole==='contabilidad';
   Object.assign(emp,{
     fechaAlta:val('a-fechaAlta')||emp.fechaAlta,
     nombres:val('a-nombres')||emp.nombres,
@@ -1954,6 +1955,8 @@ async function guardarEdicionEmpleado(id){
     telefono:val('a-telefono')||emp.telefono,
     fechaNacimiento:val('a-fechaNacimiento')||emp.fechaNacimiento,
     direccion:val('a-direccion')||emp.direccion,
+    profesion:val('a-profesion')||emp.profesion,
+    cuenta:canEditCuenta?(val('a-cuenta')||emp.cuenta):emp.cuenta,
     tipoContrato:val('a-contrato')||emp.tipoContrato,
     clasificacion:val('a-clasificacion')||emp.clasificacion,
     jornada:val('a-jornada')||emp.jornada,
