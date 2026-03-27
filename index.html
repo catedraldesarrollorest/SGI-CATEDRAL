@@ -285,8 +285,11 @@
   #hamburger-btn{display:none;background:none;border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;cursor:pointer;font-size:20px;color:var(--burgundy);align-items:center;justify-content:center;min-width:40px;min-height:40px;flex-shrink:0}
   #sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:99}
   #sidebar-overlay.open{display:block}
+  .grid-2-auto{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;font-size:14px}
+  .grid-4-auto{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;font-size:14px}
 
   @media(max-width:768px){
+    .col-hide-mobile{display:none!important}
     :root{--sidebar-w:0px}
     #sidebar{transform:translateX(-260px);transition:transform 0.25s ease;width:260px!important;display:flex;z-index:200}
     #sidebar.open{transform:translateX(0);box-shadow:6px 0 32px rgba(0,0,0,0.4)}
@@ -352,10 +355,10 @@
     <div class="pin-group">
       <label class="field-label" style="text-align:center;display:block;margin-bottom:12px">PIN de acceso (4 dígitos)</label>
       <div class="pin-dots">
-        <input type="password" class="pin-dot" maxlength="1" id="p0" oninput="pinNav(0)" onkeydown="pinBack(event,0)">
-        <input type="password" class="pin-dot" maxlength="1" id="p1" oninput="pinNav(1)" onkeydown="pinBack(event,1)">
-        <input type="password" class="pin-dot" maxlength="1" id="p2" oninput="pinNav(2)" onkeydown="pinBack(event,2)">
-        <input type="password" class="pin-dot" maxlength="1" id="p3" oninput="pinNav(3)" onkeydown="pinBack(event,3)">
+        <input type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" class="pin-dot" maxlength="1" id="p0" oninput="pinNav(0)" onkeydown="pinBack(event,0)">
+        <input type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" class="pin-dot" maxlength="1" id="p1" oninput="pinNav(1)" onkeydown="pinBack(event,1)">
+        <input type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" class="pin-dot" maxlength="1" id="p2" oninput="pinNav(2)" onkeydown="pinBack(event,2)">
+        <input type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" class="pin-dot" maxlength="1" id="p3" oninput="pinNav(3)" onkeydown="pinBack(event,3)">
       </div>
     </div>
     <div class="login-error" id="login-error">PIN incorrecto. Intente de nuevo.</div>
@@ -1266,9 +1269,9 @@ function renderEmpleados(container){
     </div>
     <div class="table-wrap"><table id="emp-table">
       <thead><tr>
-        <th>Foto</th><th>Nombre</th><th>Carnet</th><th>Departamento</th><th>Plaza</th>
-        ${showSalary?'<th>Salario Base</th><th>Bonif.%</th><th>Total</th>':''}
-        <th>Clasificación</th><th>Jornada</th><th>Antigüedad</th><th>Cert.Médico</th><th>Estado</th><th>Acciones</th>
+        <th>Foto</th><th>Nombre</th><th class="col-hide-mobile">Carnet</th><th class="col-hide-mobile">Departamento</th><th class="col-hide-mobile">Plaza</th>
+        ${showSalary?'<th class="col-hide-mobile">Salario Base</th><th class="col-hide-mobile">Bonif.%</th><th class="col-hide-mobile">Total</th>':''}
+        <th class="col-hide-mobile">Clasificación</th><th class="col-hide-mobile">Jornada</th><th class="col-hide-mobile">Antigüedad</th><th class="col-hide-mobile">Cert.Médico</th><th>Estado</th><th>Acciones</th>
       </tr></thead>
       <tbody id="emp-tbody"></tbody>
     </table></div></div>`;
@@ -1309,14 +1312,14 @@ function applyFilters(){
     return `<tr>
       <td>${foto}</td>
       <td><strong>${e.nombres} ${e.apellidos}</strong></td>
-      <td><code>${e.carnet}</code></td>
-      <td><span class="chip">${e.departamento||'—'}</span></td>
-      <td>${e.plaza||'—'}</td>
-      ${showSalary?`<td>${fmtMoney(e.salarioBase)}</td><td>${bPct?bPct+'%':'—'}</td><td><strong>${fmtMoney(total)}</strong></td>`:''}
-      <td><span class="tag tag-${(e.clasificacion||'').toLowerCase()}">${e.clasificacion||'—'}</span></td>
-      <td>${getLabelJornada(e.jornada)}</td>
-      <td>${a} año${a===1?'':'s'}</td>
-      <td><span class="${cs.color}" style="font-size:12px">${cs.status==='vencido'?'🔴':cs.status==='proximo'?'🟡':cs.status==='ok'?'🟢':'⚪'} ${cs.label}</span></td>
+      <td class="col-hide-mobile"><code>${e.carnet}</code></td>
+      <td class="col-hide-mobile"><span class="chip">${e.departamento||'—'}</span></td>
+      <td class="col-hide-mobile">${e.plaza||'—'}</td>
+      ${showSalary?`<td class="col-hide-mobile">${fmtMoney(e.salarioBase)}</td><td class="col-hide-mobile">${bPct?bPct+'%':'—'}</td><td class="col-hide-mobile"><strong>${fmtMoney(total)}</strong></td>`:''}
+      <td class="col-hide-mobile"><span class="tag tag-${(e.clasificacion||'').toLowerCase()}">${e.clasificacion||'—'}</span></td>
+      <td class="col-hide-mobile">${getLabelJornada(e.jornada)}</td>
+      <td class="col-hide-mobile">${a} año${a===1?'':'s'}</td>
+      <td class="col-hide-mobile"><span class="${cs.color}" style="font-size:12px">${cs.status==='vencido'?'🔴':cs.status==='proximo'?'🟡':cs.status==='ok'?'🟢':'⚪'} ${cs.label}</span></td>
       <td><span class="badge ${e.activo?'badge-active':'badge-inactive'}">${e.activo?'Activo':'Baja'}</span></td>
       <td style="white-space:nowrap">
         <button class="btn btn-secondary btn-xs" onclick="verFicha('${e.id}')">👁️ Ficha</button>
@@ -1362,7 +1365,7 @@ function verFicha(id){
     +'</div>';
   body+=`<div style="flex:1">
     <div style="flex:1">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:14px">
+      <div class="grid-2-auto">
         <div><b>Nombre:</b> ${e.nombres} ${e.apellidos}</div>
         <div><b>Carnet:</b> <code>${e.carnet}</code></div>
         <div><b>Teléfono:</b> ${e.telefono||'—'}</div>
@@ -1387,7 +1390,7 @@ function verFicha(id){
   if(currentRole==='admin'||currentRole==='contabilidad'){
     body+=`<div style="background:var(--gold-pale);border-radius:8px;padding:14px;margin-bottom:16px">
       <b>💰 Datos Económicos</b><br><br>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;font-size:14px">
+      <div class="grid-4-auto">
         <div><span class="text-muted">Salario Base</span><br><b>${fmtMoney(e.salarioBase)}</b></div>
         <div><span class="text-muted">Bonif.(${bPct}%)</span><br><b>${fmtMoney(bon)}</b></div>
         <div><span class="text-muted">Total</span><br><b style="color:var(--burgundy)">${fmtMoney(total)}</b></div>
@@ -1397,7 +1400,7 @@ function verFicha(id){
 
   body+=`<div style="background:var(--info-light);border-radius:8px;padding:14px;margin-bottom:16px">
     <b>🌴 Vacaciones ${anoActual}</b><br><br>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;font-size:14px">
+    <div class="grid-4-auto">
       <div><span class="text-muted">Derecho anual</span><br><b>${STATE.config.diasVacaciones} días</b></div>
       <div><span class="text-muted">Tomados</span><br><b>${vacTomadas} días</b></div>
       <div><span class="text-muted">Pendientes</span><br><b style="color:var(--burgundy)">${vacPend} días</b></div>
