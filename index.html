@@ -2078,10 +2078,11 @@ function verExpediente(id){
   events.sort((a,b)=>new Date(a.fecha)-new Date(b.fecha));
 
   const licencias=doc.licencias||[];
+  const fotoExpSrc = getFotoUrl(e, doc, 'carnet') || getFotoUrl(e, doc, 'empleado');
 
   let body=`<div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap">
     <div>
-      ${doc.fotoCarnet?`<img src="${doc.fotoCarnet}" class="foto-carnet-preview">`:`<div class="foto-carnet-placeholder"><span style="font-size:28px">👤</span></div>`}
+      ${fotoExpSrc?`<img src="${fotoExpSrc}" class="foto-carnet-preview">`:`<div class="foto-carnet-placeholder"><span style="font-size:28px">👤</span></div>`}
     </div>
     <div style="flex:1">
       <div style="background:var(--cream-dark);border-radius:8px;padding:12px 16px;margin-bottom:10px">
@@ -2118,9 +2119,9 @@ function verExpediente(id){
   +'<div class="divider"></div>'
   +'<b>📎 Documentos del Expediente</b><br><br>'
   +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
-  +(doc.contratoFecha?'<span class="badge badge-approved" style="padding:6px 12px;font-size:12px;">✅ Contrato firmado '+fmtDate(doc.contratoFecha)+' — 📄 Archivado en papel</span>':'<span class="badge badge-draft" style="padding:6px 12px;font-size:12px;">⏳ Contrato pendiente de firma</span>')
+  +(doc.contratoFecha?'<span class="badge badge-approved" style="padding:6px 12px;font-size:12px;">✅ Contrato firmado '+fmtDate(doc.contratoFecha)+(e.contratoId?' — <a href="'+driveViewUrl(e.contratoId)+'" target="_blank" style="color:white;text-decoration:underline;">📄 Ver en Drive</a>':' — 📄 Archivado en papel')+'</span>':'<span class="badge badge-draft" style="padding:6px 12px;font-size:12px;">⏳ Contrato pendiente de firma</span>')
   +(doc.certMedicoFecha?' <span class="badge badge-info" style="padding:6px 12px;font-size:12px;">🏥 Cert. Médico — 📄 Archivado en papel</span>':'')
-  +(doc.obligaciones?' <button class="btn btn-secondary btn-xs" onclick="downloadBase64(STATE.documentos[\''+e.id+'\'].obligaciones,\'Obligaciones.pdf\')">📄 Obligaciones</button>':'')
+  +(e.obligacionesId?' <a href="'+driveViewUrl(e.obligacionesId)+'" target="_blank" class="btn btn-secondary btn-xs">📄 Obligaciones (Drive)</a>':(doc.obligaciones?' <button class="btn btn-secondary btn-xs" onclick="downloadBase64(STATE.documentos[\''+e.id+'\'].obligaciones,\'Obligaciones.pdf\')">📄 Obligaciones</button>':''))
   +'</div>';
   const footer=`<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
     ${currentRole==='admin'||currentRole==='juridico'?`<button class="btn btn-primary btn-sm" onclick="previewContrato('${id}')">📄 Generar Contrato</button>`:''}
@@ -2390,7 +2391,7 @@ function renderContratos(container){
       +'<td>'+e.plaza+'</td>'
       +'<td>'+e.tipoContrato+'</td>'
       +'<td>'+fmtDate(e.fechaAlta)+'</td>'
-      +'<td>'+estadoBadge+'<br><small class="text-muted">📄 Archivado en papel</small></td>'
+      +'<td>'+estadoBadge+'<br>'+(e.contratoId?'<a href="'+driveViewUrl(e.contratoId)+'" target="_blank" class="btn btn-secondary btn-xs" style="font-size:11px;margin-top:4px;">📄 Ver en Drive</a>':'<small class="text-muted">📄 Archivado en papel</small>')+'</td>'
       +'<td>'+estadoCert+'</td>'
       +'<td><button class="btn btn-primary btn-xs" onclick="previewContrato(\''+e.id+'\')">📄 Generar</button>'
       +(canEdit?(' <button class="btn btn-gold btn-xs" onclick="openModalFechaContratoEmp(\''+e.id+'\')">✏️ Fecha firma</button>'):'')
