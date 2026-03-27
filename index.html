@@ -535,6 +535,7 @@ async function sincronizarDesdeSheets() {
     saveState();
     DB_ONLINE = true; updateSyncBadge(true);
     showSyncIndicator('✅ Sincronizado con Sheets', 'ok');
+    if (currentRole && currentSection) navigateTo(currentSection);
   } catch(err) {
     DB_ONLINE = false; updateSyncBadge(false);
     showSyncIndicator('⚠️ Modo offline — usando datos locales', 'offline');
