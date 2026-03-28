@@ -2,8 +2,16 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Catedral — Sistema de Gestión Integral</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>SGI-La Catedral</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#6B1A1A">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SGI Catedral">
+<link rel="apple-touch-icon" href="/icon-192.svg">
+<link rel="icon" type="image/svg+xml" href="/icon-192.svg">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
@@ -549,7 +557,15 @@ async function sincronizarDesdeSheets() {
           const nom = STATE.nominas.find(n => n.id === linea.nominaId);
           if (nom) {
             if (!nom.lineas) nom.lineas = [];
-            if (!nom.lineas.find(l => l.empleadoId === linea.empleadoId)) {
+            const existing = nom.lineas.find(l => l.empleadoId === linea.empleadoId);
+            if (existing) {
+              // Actualizar con datos de Sheets si la versión local no tiene totalDevengado calculado
+              if (!existing.totalDevengado && parseFloat(linea.totalDevengado)) {
+                existing.diasTrabajados = parseFloat(linea.diasTrabajados)||existing.diasTrabajados;
+                existing.horasExtras = parseFloat(linea.horasExtras)||existing.horasExtras;
+                existing.totalDevengado = parseFloat(linea.totalDevengado);
+              }
+            } else {
               nom.lineas.push({ empleadoId: linea.empleadoId, diasTrabajados: parseFloat(linea.diasTrabajados)||0, horasExtras: parseFloat(linea.horasExtras)||0, totalDevengado: parseFloat(linea.totalDevengado)||0 });
             }
           }
@@ -2715,10 +2731,14 @@ function cargarNomina(){
     pushToSheets('nominas','insertar',nominaHeader,null);
     nomina.lineas.forEach(l=>pushToSheets('nominaLineas','insertar',l,null));
   } else {
-    let newLines=false;
-    activos.forEach(e=>{if(!nomina.lineas.find(l=>l.empleadoId===e.id)){nomina.lineas.push({empleadoId:e.id,nominaId:nomina.id,diasTrabajados:getDiasJornada(e.jornada),horasExtras:0});newLines=true;}});
-    if(newLines){saveState();nomina.lineas.filter(l=>l.nominaId===nomina.id).forEach(l=>pushToSheets('nominaLineas','insertar',l,null));}
-    else saveState();
+    // Deduplicar lineas existentes por si hay duplicados en Sheets
+    const seen=new Set();
+    nomina.lineas=nomina.lineas.filter(l=>{if(seen.has(l.empleadoId))return false;seen.add(l.empleadoId);return true;});
+    // Añadir solo empleados activos que no están en la nómina
+    const newlyAdded=[];
+    activos.forEach(e=>{if(!nomina.lineas.find(l=>l.empleadoId===e.id)){const nl={empleadoId:e.id,nominaId:nomina.id,diasTrabajados:getDiasJornada(e.jornada),horasExtras:0};nomina.lineas.push(nl);newlyAdded.push(nl);}});
+    saveState();
+    if(newlyAdded.length) newlyAdded.forEach(l=>pushToSheets('nominaLineas','insertar',l,null));
   }
   let html=`<div class="card">
     <div class="card-header"><h3>Nómina: ${mesNombre} ${ano}</h3><span class="badge badge-${nomina.estado==='aprobada'?'approved':nomina.estado==='pendiente'?'pending':'draft'}">${nomina.estado}</span></div>
@@ -3837,6 +3857,10 @@ document.addEventListener('DOMContentLoaded',()=>{
   tempLicencias=[];tempFotoCarnet=null;
   // Verificar conexión al cargar
   apiCall({accion:'ping'}).then(()=>{DB_ONLINE=true;updateSyncBadge(true);}).catch(()=>{DB_ONLINE=false;updateSyncBadge(false);});
+  // Registrar Service Worker para PWA instalable
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('/sw.js').catch(function(e){console.warn('SW registro fallido:',e);});
+  }
 });
 </script>
 </body>

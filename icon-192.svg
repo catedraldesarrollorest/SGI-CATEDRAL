@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <rect width="192" height="192" rx="32" fill="#6B1A1A"/>
+  <!-- Cathedral silhouette -->
+  <g fill="#C9A84C">
+    <!-- Central tower -->
+    <rect x="84" y="36" width="24" height="8" rx="2"/>
+    <polygon points="96,20 88,36 104,36"/>
+    <rect x="88" y="44" width="16" height="60"/>
+    <!-- Cross on top -->
+    <rect x="93" y="22" width="6" height="16" rx="1"/>
+    <rect x="88" y="28" width="16" height="5" rx="1"/>
+    <!-- Side towers -->
+    <rect x="56" y="60" width="18" height="44"/>
+    <polygon points="65,46 57,60 73,60"/>
+    <rect x="118" y="60" width="18" height="44"/>
+    <polygon points="127,46 119,60 135,60"/>
+    <!-- Main body -->
+    <rect x="50" y="104" width="92" height="48" rx="2"/>
+    <!-- Arch windows -->
+    <rect x="60" y="110" width="14" height="20" rx="7" fill="#6B1A1A"/>
+    <rect x="89" y="110" width="14" height="20" rx="7" fill="#6B1A1A"/>
+    <rect x="118" y="110" width="14" height="20" rx="7" fill="#6B1A1A"/>
+    <!-- Door -->
+    <rect x="85" y="120" width="22" height="32" rx="11" fill="#6B1A1A"/>
+  </g>
+  <!-- App label -->
+  <text x="96" y="170" font-family="serif" font-size="13" font-weight="bold" fill="#C9A84C" text-anchor="middle" letter-spacing="1">SGI</text>
+</svg>
