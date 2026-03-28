@@ -2,8 +2,16 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>La Catedral — Sistema de Gestión Integral</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>SGI-La Catedral</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#6B1A1A">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SGI Catedral">
+<link rel="apple-touch-icon" href="/icon-192.svg">
+<link rel="icon" type="image/svg+xml" href="/icon-192.svg">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
@@ -413,13 +421,20 @@ let DB_ONLINE = false;
 let DB_PENDING_OPS = [];
 
 function loadState() {
-  try { const r = localStorage.getItem(STORAGE_KEY); if(r) return JSON.parse(r); } catch(e){}
+  try {
+    const r = localStorage.getItem(STORAGE_KEY);
+    const pending = localStorage.getItem(STORAGE_KEY+'_pending');
+    if (pending) { try { DB_PENDING_OPS = JSON.parse(pending); } catch(e){} }
+    if(r) return JSON.parse(r);
+  } catch(e){}
   return getDefaultState();
 }
 function saveState() {
   try {
     const data = JSON.stringify(STATE);
     localStorage.setItem(STORAGE_KEY, data);
+    if (DB_PENDING_OPS.length > 0) localStorage.setItem(STORAGE_KEY+'_pending', JSON.stringify(DB_PENDING_OPS));
+    else localStorage.removeItem(STORAGE_KEY+'_pending');
     // Advertir si el storage está cerca del límite (5MB típico)
     const kb = Math.round(data.length / 1024);
     if (kb > 4000) {
@@ -542,7 +557,15 @@ async function sincronizarDesdeSheets() {
           const nom = STATE.nominas.find(n => n.id === linea.nominaId);
           if (nom) {
             if (!nom.lineas) nom.lineas = [];
-            if (!nom.lineas.find(l => l.empleadoId === linea.empleadoId)) {
+            const existing = nom.lineas.find(l => l.empleadoId === linea.empleadoId);
+            if (existing) {
+              // Actualizar con datos de Sheets si la versión local no tiene totalDevengado calculado
+              if (!existing.totalDevengado && parseFloat(linea.totalDevengado)) {
+                existing.diasTrabajados = parseFloat(linea.diasTrabajados)||existing.diasTrabajados;
+                existing.horasExtras = parseFloat(linea.horasExtras)||existing.horasExtras;
+                existing.totalDevengado = parseFloat(linea.totalDevengado);
+              }
+            } else {
               nom.lineas.push({ empleadoId: linea.empleadoId, diasTrabajados: parseFloat(linea.diasTrabajados)||0, horasExtras: parseFloat(linea.horasExtras)||0, totalDevengado: parseFloat(linea.totalDevengado)||0 });
             }
           }
@@ -571,6 +594,13 @@ async function sincronizarDesdeSheets() {
       if (cfg.diasVacaciones) STATE.config.diasVacaciones      = parseInt(cfg.diasVacaciones);
       if (cfg.diasPagados)    STATE.config.diasPagadosPeriodo  = parseInt(cfg.diasPagados);
     } catch(e) {}
+    // Re-aplicar cambios locales pendientes para no perderlos con la sync
+    DB_PENDING_OPS.forEach(op => {
+      if (op.tabla === 'empleados' && op.accion === 'actualizar' && op.id) {
+        const idx = STATE.empleados.findIndex(e => e.id === op.id);
+        if (idx >= 0) Object.assign(STATE.empleados[idx], op.valores);
+      }
+    });
     saveState();
     DB_ONLINE = true; updateSyncBadge(true);
     showSyncIndicator('✅ Sincronizado con Sheets', 'ok');
@@ -641,7 +671,7 @@ function doLogin(){
     renderSidebar();
     navigateTo('dashboard');
     setTimeout(function(){ updateAlertaBadgeJur(); }, 300);
-    setTimeout(() => sincronizarDesdeSheets(), 500);
+    setTimeout(async () => { await sincronizarDesdeSheets(); await flushPendingOps(); }, 500);
   } else {
     document.getElementById('login-error').style.display='block';
     clearPin();
@@ -1307,7 +1337,7 @@ function applyFilters(){
     const fotoSrc=(e.fotoEmpleadoId?driveThumbUrl(e.fotoEmpleadoId,'w300'):null)
                   ||(e.fotoCarnetId?driveThumbUrl(e.fotoCarnetId,'w300'):null)
                   ||doc.fotoEmpleado||doc.fotoCarnet||null;
-    const foto=fotoSrc?'<img src="'+fotoSrc+'" style="width:36px;height:44px;object-fit:cover;border-radius:4px;border:1px solid var(--border);">'
+    const foto=fotoSrc?'<img src="'+fotoSrc+'" style="width:36px;height:44px;object-fit:cover;border-radius:4px;border:1px solid var(--border);" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'"><div style="display:none;width:36px;height:44px;background:var(--cream-dark);border-radius:4px;border:1px dashed var(--border);align-items:center;justify-content:center;font-size:16px;">👤</div>'
       :'<div style="width:36px;height:44px;background:var(--cream-dark);border-radius:4px;border:1px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;">👤</div>';
     return `<tr>
       <td>${foto}</td>
@@ -1355,13 +1385,15 @@ function verFicha(id){
   const cs=getCertMedicoStatus(e);
 
   const licencias=[];
+  const fotoEmpleadoSrc = getFotoUrl(e, doc, 'empleado');
+  const fotoCarnetSrc   = getFotoUrl(e, doc, 'carnet');
 
   let body='<div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">'
     +'<div style="text-align:center;">'
-    +(doc.fotoEmpleado?'<img src="'+doc.fotoEmpleado+'" style="width:100px;height:130px;object-fit:cover;border-radius:8px;border:2px solid var(--border);" title="Foto del empleado"><div style="font-size:11px;color:var(--text-light);margin-top:4px;">👤 Retrato</div>':'<div style="width:100px;height:130px;background:var(--cream-dark);border-radius:8px;border:2px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--text-light);gap:4px;"><span style="font-size:28px;">👤</span><span>Sin foto</span></div>')
+    +(fotoEmpleadoSrc?'<img src="'+fotoEmpleadoSrc+'" style="width:100px;height:130px;object-fit:cover;border-radius:8px;border:2px solid var(--border);" title="Foto del empleado" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'"><div style="display:none;width:100px;height:130px;background:var(--cream-dark);border-radius:8px;border:2px dashed var(--border);flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--text-light);gap:4px;"><span style="font-size:28px;">👤</span><span>Sin foto</span></div><div style="font-size:11px;color:var(--text-light);margin-top:4px;">👤 Retrato</div>':'<div style="width:100px;height:130px;background:var(--cream-dark);border-radius:8px;border:2px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--text-light);gap:4px;"><span style="font-size:28px;">👤</span><span>Sin foto</span></div>')
     +'</div>'
     +'<div style="text-align:center;">'
-    +(doc.fotoCarnet?'<img src="'+doc.fotoCarnet+'" style="width:130px;height:90px;object-fit:cover;border-radius:8px;border:2px solid var(--border);" title="Foto carnet identidad"><div style="font-size:11px;color:var(--text-light);margin-top:4px;">🪪 Carnet</div>':'<div style="width:130px;height:90px;background:var(--cream-dark);border-radius:8px;border:2px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--text-light);gap:4px;"><span style="font-size:24px;">🪪</span><span>Sin foto carnet</span></div>')
+    +(fotoCarnetSrc?'<img src="'+fotoCarnetSrc+'" style="width:130px;height:90px;object-fit:cover;border-radius:8px;border:2px solid var(--border);" title="Foto carnet identidad" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'"><div style="display:none;width:130px;height:90px;background:var(--cream-dark);border-radius:8px;border:2px dashed var(--border);flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--text-light);gap:4px;"><span style="font-size:24px;">🪪</span><span>Sin foto carnet</span></div><div style="font-size:11px;color:var(--text-light);margin-top:4px;">🪪 Carnet</div>':'<div style="width:130px;height:90px;background:var(--cream-dark);border-radius:8px;border:2px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--text-light);gap:4px;"><span style="font-size:24px;">🪪</span><span>Sin foto carnet</span></div>')
     +'</div>';
   body+=`<div style="flex:1">
     <div style="flex:1">
@@ -1371,9 +1403,9 @@ function verFicha(id){
         <div><b>Teléfono:</b> ${e.telefono||'—'}</div>
         <div><b>F.Nacimiento:</b> ${fmtDate(e.fechaNacimiento)}</div>
         <div><b>Dirección:</b> ${e.direccion||'—'}</div>
+        <div><b>Correo:</b> ${e.email?`<a href="mailto:${e.email}" style="color:var(--burgundy)">${e.email}</a>`:'—'}</div>
         <div><b>Banco:</b> ${e.banco||'—'}</div>
         <div><b>Cuenta:</b> ${e.cuenta?e.cuenta.replace(/(.{4})/g,'$1 ').trim():'—'}</div>
-        <div><b>Profesión:</b> ${e.profesion||'—'}</div>
         <div><b>Dpto/Plaza:</b> ${e.departamento} / ${e.plaza}</div>
         <div><b>Contrato:</b> ${e.tipoContrato||'—'}</div>
         <div><b>Clasificación:</b> <span class="tag tag-${(e.clasificacion||'').toLowerCase()}">${e.clasificacion||'—'}</span></div>
@@ -1460,6 +1492,7 @@ function guardarCuenta(id){
   const emp=STATE.empleados.find(e=>e.id===id);
   emp.cuenta=val;
   saveState();
+  pushToSheets('empleados','actualizar',emp,emp.id);
   addAuditLog('EDICION_CUENTA',`Cuenta bancaria actualizada para ${emp.nombres} ${emp.apellidos} por ${getRoleName(currentRole)}`);
   showToast('Cuenta bancaria actualizada','success');
   closeModal();
@@ -1468,7 +1501,7 @@ function guardarCuenta(id){
 function exportFichaExcel(id){
   const e=STATE.empleados.find(x=>x.id===id);
   if(!e)return;
-  exportToExcel([{Nombre:`${e.nombres} ${e.apellidos}`,Carnet:e.carnet,Teléfono:e.telefono,'F.Nacimiento':fmtDate(e.fechaNacimiento),Dirección:e.direccion,Banco:e.banco,Cuenta:e.cuenta,Profesión:e.profesion,'Tipo Contrato':e.tipoContrato,Departamento:e.departamento,Plaza:e.plaza,Clasificación:e.clasificacion,Jornada:getLabelJornada(e.jornada),'Fecha Alta':fmtDate(e.fechaAlta),'Antigüedad':calcAntiguedad(e.fechaAlta)+' años','Salario Base':e.salarioBase,Estado:e.activo?'Activo':'Baja'}],`Ficha_${e.nombres.replace(/ /g,'_')}`);
+  exportToExcel([{Nombre:`${e.nombres} ${e.apellidos}`,Carnet:e.carnet,Teléfono:e.telefono,Correo:e.email||'—','F.Nacimiento':fmtDate(e.fechaNacimiento),Dirección:e.direccion,Banco:e.banco,Cuenta:e.cuenta,'Tipo Contrato':e.tipoContrato,Departamento:e.departamento,Plaza:e.plaza,Clasificación:e.clasificacion,Jornada:getLabelJornada(e.jornada),'Fecha Alta':fmtDate(e.fechaAlta),'Antigüedad':calcAntiguedad(e.fechaAlta)+' años','Salario Base':e.salarioBase,Estado:e.activo?'Activo':'Baja'}],`Ficha_${e.nombres.replace(/ /g,'_')}`);
   showToast('Ficha exportada','success');
 }
 
@@ -1584,24 +1617,6 @@ function renderAlta(container,editData=null){
   container.innerHTML=`<div class="card">
     <div class="card-header"><h3>${isEdit?'✏️ Editar Empleado':'➕ Alta de Empleado'}</h3></div>
     <div class="card-body"><div class="form-grid" id="alta-form">
-      <div class="form-section-title">📸 Foto del Carnet de Identidad</div>
-      <div class="form-group full">
-        <div style="display:flex;justify-content:center;margin-bottom:8px;">
-
-          <!-- FOTO CARNET -->
-          <div style="text-align:center;">
-            <label class="field-label required" style="display:block;margin-bottom:10px;">🪪 Foto del Carnet de Identidad</label>
-            ${doc.fotoCarnet
-              ?`<img src="${doc.fotoCarnet}" style="width:200px;height:130px;object-fit:cover;border-radius:8px;border:2px solid var(--border);display:block;margin:0 auto 10px;" id="preview-carnet">`
-              :`<div id="preview-carnet-ph" onclick="document.getElementById('input-foto-carnet').click()" style="width:200px;height:130px;background:var(--cream-dark);border-radius:8px;border:2px dashed var(--burgundy);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;margin:0 auto 10px;gap:6px;"><span style="font-size:36px;">🪪</span><span style="font-size:12px;color:var(--burgundy);font-weight:600;">Fotografiar carnet</span></div>
-               <img id="preview-carnet" style="display:none;width:200px;height:130px;object-fit:cover;border-radius:8px;border:2px solid var(--success);margin:0 auto 10px;">`}
-            <input type="file" id="input-foto-carnet" accept="image/*" capture="environment" style="display:none" onchange="previewFotoCarnet(this)">
-            <button type="button" class="btn btn-secondary btn-xs" onclick="document.getElementById('input-foto-carnet').click()">📷 Cámara / Galería</button>
-            <div class="input-hint" style="margin-top:6px;">Ambas caras del carnet</div>
-          </div>
-
-        </div>
-      </div>
 
       <div class="form-section-title">📋 Datos Personales</div>
       <div class="form-group"><label class="field-label required">Fecha de Alta</label><input type="date" id="a-fechaAlta" value="${d.fechaAlta||''}" required></div>
@@ -1609,6 +1624,7 @@ function renderAlta(container,editData=null){
       <div class="form-group"><label class="field-label required">Apellidos</label><input type="text" id="a-apellidos" value="${d.apellidos||''}" placeholder="Apellido(s)" required></div>
       <div class="form-group"><label class="field-label required" data-tip="Exactamente 11 cifras numéricas. Este número será el número de expediente laboral.">N° Carnet / N° Expediente (11 dígitos)</label><input type="text" id="a-carnet" maxlength="11" value="${d.carnet||''}" placeholder="12345678901" oninput="this.value=this.value.split('').filter(c=>c>='0'&&c<='9').join('').slice(0,11);autoFillFechaNacimiento(this.value)"></div>
       <div class="form-group"><label class="field-label">Teléfono</label><input type="tel" id="a-telefono" value="${d.telefono||''}" required></div>
+      <div class="form-group"><label class="field-label required">Correo Electrónico</label><input type="email" id="a-email" value="${d.email||''}" placeholder="ejemplo@correo.com" required autocomplete="email"></div>
       <div class="form-group"><label class="field-label">Fecha de Nacimiento</label><input type="date" id="a-fechaNacimiento" value="${d.fechaNacimiento||''}" required></div>
       <div class="form-group full"><label class="field-label">Dirección Particular</label><input type="text" id="a-direccion" value="${d.direccion||''}" placeholder="Calle, número, ciudad..." required></div>
 
@@ -1616,7 +1632,6 @@ function renderAlta(container,editData=null){
       <div class="form-group"><label class="field-label" data-tip="El número de cuenta solo puede editarlo el departamento de Contabilidad o Administración. Exactamente 16 dígitos.">N° de Cuenta (16 dígitos) ${canEditCuenta?'':'🔒'}</label>
         <input type="text" id="a-cuenta" maxlength="16" value="${d.cuenta||''}" placeholder="1234567890123456" ${!canEditCuenta?'readonly':''} oninput="this.value=this.value.split('').filter(c=>c>='0'&&c<='9').join('').slice(0,16)">
         ${!canEditCuenta?`<div class="input-hint">🔒 Solo editable por Contabilidad o Administración</div>`:''}</div>
-      <div class="form-group"><label class="field-label">Profesión/Oficio</label><input type="text" id="a-profesion" value="${d.profesion||''}"></div>
 
       <div class="form-section-title">💼 Datos Laborales</div>
       <div class="form-group"><label class="field-label required">Tipo de Contrato</label>
@@ -1640,6 +1655,19 @@ function renderAlta(container,editData=null){
         <div class="input-hint">⏱️ Vence a los 6 meses. El sistema notificará cuando esté próximo a vencer (30 días antes) o vencido. <b>El documento físico se archiva en papel.</b></div></div>
 
       <div class="form-section-title">📄 Documentos</div>
+      <div class="form-group full"><label class="field-label required">🪪 Escaneo del Carnet de Identidad</label>
+        <div class="file-drop file-drop-sm" onclick="document.getElementById('input-foto-carnet').click()" style="cursor:pointer">
+          <div class="file-icon">🪪</div>
+          <div>
+            <p style="margin:0">Seleccionar imagen escaneada del carnet</p>
+            <span id="carnet-scan-name" class="text-muted" style="font-size:12px">${(d.fotoCarnetId||doc.fotoCarnet)?'✅ Imagen adjunta (puede reemplazarla)':'Sin archivo — JPG, PNG o PDF'}</span>
+          </div>
+          <input type="file" id="input-foto-carnet" accept="image/jpeg,image/png,image/webp,image/tiff,application/pdf" style="display:none" onchange="previewFotoCarnet(this)">
+        </div>
+        <img id="preview-carnet" src="${getFotoUrl(d,doc,'carnet')||''}" style="${getFotoUrl(d,doc,'carnet')?'display:block':'display:none'};max-width:340px;max-height:220px;border-radius:8px;border:2px solid var(--success);margin-top:10px;">
+        <div class="input-hint" style="margin-top:4px;">Suba el escaneo del carnet de identidad (ambas caras). No se usa la cámara.</div>
+      </div>
+
       <div class="form-group"><label class="field-label">PDF Obligaciones y Responsabilidades</label>
         <div class="file-drop file-drop-sm" onclick="document.getElementById('a-pdf-obl').click()">
           <div class="file-icon">📄</div>
@@ -1689,73 +1717,18 @@ function autoFillFechaNacimiento(carnet){
   if(campo&&!campo.dataset.manual){campo.value=isoDate;}
 }
 
-// Procesamiento de foto carnet: detectar bordes y limpiar fondo
-function procesarFotoCarnet(base64Original,callback){
-  const img=new Image();
-  img.onload=function(){
-    const canvas=document.createElement('canvas');
-    const W=img.width,H=img.height;
-    canvas.width=W;canvas.height=H;
-    const ctx=canvas.getContext('2d');
-    ctx.drawImage(img,0,0);
-    const imageData=ctx.getImageData(0,0,W,H);
-    const data=imageData.data;
-    // Detectar color de fondo (esquinas)
-    function getPixel(x,y){const i=(y*W+x)*4;return[data[i],data[i+1],data[i+2],data[i+3]];}
-    const corners=[[0,0],[W-1,0],[0,H-1],[W-1,H-1],[Math.floor(W/2),0],[0,Math.floor(H/2)]];
-    let rSum=0,gSum=0,bSum=0;
-    corners.forEach(([x,y])=>{const p=getPixel(x,y);rSum+=p[0];gSum+=p[1];bSum+=p[2];});
-    const bgR=Math.round(rSum/corners.length),bgG=Math.round(gSum/corners.length),bgB=Math.round(bSum/corners.length);
-    // Umbral de similitud con el fondo
-    const threshold=55;
-    for(let i=0;i<data.length;i+=4){
-      const r=data[i],g=data[i+1],b=data[i+2];
-      const dist=Math.sqrt((r-bgR)**2+(g-bgG)**2+(b-bgB)**2);
-      if(dist<threshold){data[i+3]=0;} // transparente
-    }
-    ctx.putImageData(imageData,0,0);
-    callback(canvas.toDataURL('image/png'));
-  };
-  img.src=base64Original;
-}
-
-function previewFotoEmpleado(input){
-  if(!input.files[0])return;
-  const reader=new FileReader();
-  reader.onload=function(ev){
-    tempFotoEmpleado=ev.target.result;
-    const prev=document.getElementById('preview-empleado');
-    const ph=document.getElementById('preview-empleado-ph');
-    if(prev){prev.src=ev.target.result;prev.style.display='block';}
-    if(ph)ph.style.display='none';
-  };
-  reader.readAsDataURL(input.files[0]);
-}
-
 function previewFotoCarnet(input){
   if(!input.files[0])return;
   const reader=new FileReader();
   reader.onload=function(ev){
-    const original=ev.target.result;
-    // Mostrar original primero, luego procesar fondo
+    tempFotoCarnet=ev.target.result;
     const prev=document.getElementById('preview-carnet');
-    const ph=document.getElementById('preview-carnet-ph');
-    if(prev){prev.src=original;prev.style.display='block';}
-    if(ph)ph.style.display='none';
-    // Procesar eliminación de fondo
-    procesarFotoCarnet(original,function(procesada){
-      tempFotoCarnet=procesada;
-      if(prev){prev.src=procesada;}
-      const legacyPrev=document.getElementById('foto-preview');
-      if(legacyPrev){legacyPrev.src=procesada;legacyPrev.style.display='block';}
-    });
-    // Legacy placeholder
-    const legacyPh=document.getElementById('foto-placeholder');
-    if(legacyPh)legacyPh.style.display='none';
+    const nameEl=document.getElementById('carnet-scan-name');
+    if(prev){prev.src=ev.target.result;prev.style.display='block';}
+    if(nameEl)nameEl.textContent='\u2705 '+input.files[0].name;
   };
   reader.readAsDataURL(input.files[0]);
 }
-
 function clearFoto(){
   tempFotoCarnet='__clear__';
   tempFotoEmpleado='__clear__';
@@ -1821,6 +1794,11 @@ async function guardarAlta(){
   if(!nombres||!apellidos||!carnet||!fechaAlta){showToast('Complete los campos obligatorios','warning');return}
   if(!/^\d{11}$/.test(carnet)){showToast('El carnet debe tener exactamente 11 dígitos','error');return}
   if(STATE.empleados.find(e=>e.carnet===carnet)){showToast('Ya existe un empleado con ese carnet','error');return}
+  function val(id){const el=document.getElementById(id);return el?el.value.trim():'';}
+  const email=val('a-email');
+  if(!email){showToast('El correo electrónico es obligatorio','warning');return}
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)){showToast('El correo electrónico no es válido','error');return}
+  if(STATE.empleados.find(e=>e.email&&e.email.toLowerCase()===email.toLowerCase())){showToast('Ya existe un empleado con ese correo','error');return}
 
   // Validar edad mínima 18 años
   const fechaNacVal=document.getElementById('a-fechaNacimiento').value;
@@ -1832,11 +1810,10 @@ async function guardarAlta(){
     if(edad>70){showToast('Verifique la fecha de nacimiento (más de 70 años)','warning');}
   }
 
-  function val(id){const el=document.getElementById(id);return el?el.value.trim():'';}
-
   const id='E'+uid();
   const emp={
     id,fechaAlta,nombres,apellidos,carnet,
+    email,
     telefono:val('a-telefono'),
     fechaNacimiento:val('a-fechaNacimiento'),
     direccion:val('a-direccion'),
@@ -1881,14 +1858,15 @@ async function guardarAlta(){
     }
     tempFotoEmpleado=null;
 
-    // 4. Subir foto carnet si existe
+    // 4. Subir escaneo carnet si existe
     if(tempFotoCarnet && tempFotoCarnet!=='__clear__'){
       try{
-        const res=await subirBase64ADrive(tempFotoCarnet,'image/jpeg','foto_carnet',id,emp.carpetaExpId||'','foto_carnet');
+        const carnetMime=tempFotoCarnet.match(/^data:([^;]+);/)?.[1]||'image/jpeg';
+        const res=await subirBase64ADrive(tempFotoCarnet,carnetMime,'foto_carnet',id,emp.carpetaExpId||'','foto_carnet');
         emp.fotoCarnetId=res.fileId;
         docData.fotoCarnetThumb=res.thumbnailUrl;
         await registrarDocumentoSheets(id,'foto_carnet',res.fileId,res.viewUrl,res.nombre,res.tamaño);
-      }catch(e){console.warn('Error subiendo foto carnet:',e.message);}
+      }catch(e){console.warn('Error subiendo escaneo carnet:',e.message);}
     }
     tempFotoCarnet=null;
 
@@ -1944,14 +1922,23 @@ async function guardarEdicionEmpleado(id){
 
   function val(id){const el=document.getElementById(id);return el?el.value.trim():'';}
 
+  const emailEdit=val('a-email');
+  if(!emailEdit){showToast('El correo electrónico es obligatorio','warning');return}
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(emailEdit)){showToast('El correo electrónico no es válido','error');return}
+  const dupEmail=STATE.empleados.find(e=>e.email&&e.email.toLowerCase()===emailEdit.toLowerCase()&&e.id!==id);
+  if(dupEmail){showToast('Ya existe otro empleado con ese correo','error');return}
+
+  const canEditCuenta=currentRole==='admin'||currentRole==='contabilidad';
   Object.assign(emp,{
     fechaAlta:val('a-fechaAlta')||emp.fechaAlta,
     nombres:val('a-nombres')||emp.nombres,
     apellidos:val('a-apellidos')||emp.apellidos,
     carnet,
+    email:emailEdit,
     telefono:val('a-telefono')||emp.telefono,
     fechaNacimiento:val('a-fechaNacimiento')||emp.fechaNacimiento,
     direccion:val('a-direccion')||emp.direccion,
+    cuenta:canEditCuenta?(val('a-cuenta')||emp.cuenta):emp.cuenta,
     tipoContrato:val('a-contrato')||emp.tipoContrato,
     clasificacion:val('a-clasificacion')||emp.clasificacion,
     jornada:val('a-jornada')||emp.jornada,
@@ -1991,15 +1978,16 @@ async function guardarEdicionEmpleado(id){
     }
     tempFotoEmpleado=null;
 
-    // Subir foto carnet nueva si existe
+    // Subir escaneo carnet nuevo si existe
     if(tempFotoCarnet && tempFotoCarnet!=='__clear__'){
       try{
         if(emp.fotoCarnetId) await eliminarArchivoDrive(emp.fotoCarnetId);
-        const res=await subirBase64ADrive(tempFotoCarnet,'image/jpeg','foto_carnet',id,emp.carpetaExpId||'','foto_carnet');
+        const carnetMime=tempFotoCarnet.match(/^data:([^;]+);/)?.[1]||'image/jpeg';
+        const res=await subirBase64ADrive(tempFotoCarnet,carnetMime,'foto_carnet',id,emp.carpetaExpId||'','foto_carnet');
         emp.fotoCarnetId=res.fileId;
         docData.fotoCarnetThumb=res.thumbnailUrl;
         await registrarDocumentoSheets(id,'foto_carnet',res.fileId,res.viewUrl,res.nombre,res.tamaño);
-      }catch(e){console.warn('Error foto carnet:',e.message);}
+      }catch(e){console.warn('Error escaneo carnet:',e.message);}
     } else if(tempFotoCarnet==='__clear__'){
       if(emp.fotoCarnetId) await eliminarArchivoDrive(emp.fotoCarnetId);
       emp.fotoCarnetId='';
@@ -2042,8 +2030,13 @@ async function guardarEdicionEmpleado(id){
   } catch(e){
     console.error('Error guardando edición:',e);
     DB_PENDING_OPS.push({tabla:'empleados',accion:'actualizar',valores:emp,id:emp.id});
-    showSyncIndicator('⚠️ Guardado local','offline');
+    saveState();
+    showSyncIndicator('⚠️ Guardado local — se reintentará al sincronizar','offline');
     DB_ONLINE=false; updateSyncBadge(false);
+    addAuditLog('EDICION','Edición empleado (local): '+emp.nombres+' '+emp.apellidos+' por '+getRoleName(currentRole));
+    showToast('Cambios guardados localmente ⚠️ (sin conexión a Sheets)','warning');
+    navigateTo('empleados');
+    return;
   }
 
   addAuditLog('EDICION','Edición empleado: '+emp.nombres+' '+emp.apellidos+' por '+getRoleName(currentRole));
@@ -2282,7 +2275,7 @@ function guardarTraslado(){
 
   saveState();
   pushToSheets('traslados','insertar', traslado);
-  pushToSheets('empleados','actualizar', emp.id, emp);
+  pushToSheets('empleados','actualizar', emp, emp.id);
   addAuditLog('TRASLADO','Traslado '+emp.nombres+' '+emp.apellidos+': '+traslado.deptAnterior+'→'+deptNuevo+'/'+plazaNueva+(cambioJornada?' | Cambio jornada:'+getLabelJornada(jornadaNueva):''));
 
   let msg='Traslado registrado ✅';
@@ -2344,7 +2337,7 @@ function confirmarBaja(){
     const baja={id:'B'+uid(),empleadoId:empId,fecha,motivo,registradoPor:getRoleName(currentRole)};
     STATE.bajas.push(baja);emp.activo=false;emp.fechaBaja=fecha;
     pushToSheets('bajas','insertar', baja);
-    pushToSheets('empleados','actualizar', emp.id, emp);
+    pushToSheets('empleados','actualizar', emp, emp.id);
     const pdfInput=document.getElementById('baja-pdf');
     if(pdfInput&&pdfInput.files[0]){try{const b64=await fileToBase64(pdfInput.files[0]);if(!STATE.documentos[empId])STATE.documentos[empId]={};STATE.documentos[empId].bajaPDF=b64}catch(e){}}
     saveState();addAuditLog('BAJA',`Baja: ${emp.nombres} ${emp.apellidos} — ${motivo}`);
@@ -2361,7 +2354,7 @@ function restaurarEmpleado(empId){
     const bajaId=idx>-1?STATE.bajas[idx].id:null;
     if(idx>-1)STATE.bajas.splice(idx,1);
     saveState();
-    pushToSheets('empleados','actualizar', emp.id, emp);
+    pushToSheets('empleados','actualizar', emp, emp.id);
     if(bajaId) pushToSheets('bajas','eliminar', null, bajaId);
     addAuditLog('RESTAURACION',`Empleado restaurado: ${emp.nombres} ${emp.apellidos}`);
     showToast('Empleado restaurado','success');navigateTo('bajas');
@@ -2410,7 +2403,7 @@ function confirmarSalario(empId,nuevo){
   STATE.historialSalarial.push(regSal);
   emp.salarioBase=nuevo;saveState();
   pushToSheets('historialSalarial','insertar', regSal);
-  pushToSheets('empleados','actualizar', emp.id, emp);
+  pushToSheets('empleados','actualizar', emp, emp.id);
   addAuditLog('SALARIO',`Cambio salario ${emp.nombres} ${emp.apellidos}: ${fmtMoney(anterior)}→${fmtMoney(nuevo)} — ${motivo}`);
   showToast('Salario actualizado','success');closeModal();renderSalarios(document.getElementById('app-content'));
 }
@@ -2497,6 +2490,7 @@ function guardarFechaContratoEmp(empId){
   STATE.documentos[empId].contratoObs=obs;
   saveState();
   const emp=STATE.empleados.find(function(e){return e.id===empId;});
+  if(emp){emp.contratoFechaFirma=fecha;emp.contratoObs=obs;pushToSheets('empleados','actualizar',emp,empId);}
   addAuditLog('CONTRATO','Contrato firmado registrado para '+(emp?emp.nombres+' '+emp.apellidos:'')+'  — Fecha: '+fmtDate(fecha)+' (archivado en papel)');
   showToast('Fecha de contrato registrada ✅','success');
   closeModal();
@@ -2613,7 +2607,7 @@ async function guardarSancion(){
 function eliminarSancion(id){
   confirmAction('¿Eliminar esta sanción? Quedará en auditoría.',function(){
     const idx=STATE.sanciones.findIndex(s=>s.id===id);
-    if(idx>-1){STATE.sanciones.splice(idx,1);saveState();addAuditLog('ELIMINAR_SANCION','Sanción eliminada por Admin');showToast('Sanción eliminada','info');renderSanciones(document.getElementById('app-content'))}
+    if(idx>-1){const sanId=STATE.sanciones[idx].id;STATE.sanciones.splice(idx,1);saveState();pushToSheets('sanciones','eliminar',null,sanId);addAuditLog('ELIMINAR_SANCION','Sanción eliminada por Admin');showToast('Sanción eliminada','info');renderSanciones(document.getElementById('app-content'))}
   });
 }
 
@@ -2683,11 +2677,20 @@ function cargarNomina(){
   const activos=getEmpleadosActivos();
   if(!nomina){
     nomina={id:'N'+uid(),periodo:periodoKey,mes,ano,mesNombre,estado:'borrador',lineas:[],totalDevengado:0};
-    activos.forEach(e=>nomina.lineas.push({empleadoId:e.id,diasTrabajados:getDiasJornada(e.jornada),horasExtras:0}));
+    activos.forEach(e=>nomina.lineas.push({empleadoId:e.id,nominaId:nomina.id,diasTrabajados:getDiasJornada(e.jornada),horasExtras:0}));
     STATE.nominas.push(nomina);saveState();
+    const {lineas:_l,...nominaHeader}=nomina;
+    pushToSheets('nominas','insertar',nominaHeader,null);
+    nomina.lineas.forEach(l=>pushToSheets('nominaLineas','insertar',l,null));
   } else {
-    activos.forEach(e=>{if(!nomina.lineas.find(l=>l.empleadoId===e.id))nomina.lineas.push({empleadoId:e.id,diasTrabajados:getDiasJornada(e.jornada),horasExtras:0})});
+    // Deduplicar lineas existentes por si hay duplicados en Sheets
+    const seen=new Set();
+    nomina.lineas=nomina.lineas.filter(l=>{if(seen.has(l.empleadoId))return false;seen.add(l.empleadoId);return true;});
+    // Añadir solo empleados activos que no están en la nómina
+    const newlyAdded=[];
+    activos.forEach(e=>{if(!nomina.lineas.find(l=>l.empleadoId===e.id)){const nl={empleadoId:e.id,nominaId:nomina.id,diasTrabajados:getDiasJornada(e.jornada),horasExtras:0};nomina.lineas.push(nl);newlyAdded.push(nl);}});
     saveState();
+    if(newlyAdded.length) newlyAdded.forEach(l=>pushToSheets('nominaLineas','insertar',l,null));
   }
   let html=`<div class="card">
     <div class="card-header"><h3>Nómina: ${mesNombre} ${ano}</h3><span class="badge badge-${nomina.estado==='aprobada'?'approved':nomina.estado==='pendiente'?'pending':'draft'}">${nomina.estado}</span></div>
@@ -2759,16 +2762,32 @@ function updateNominaLine(nomId,empId){
   const tgEl=document.getElementById('nom-total-general');if(tgEl)tgEl.innerHTML=`<b>${fmtMoney(tg)}</b>`;saveState();
 }
 
-function calcularNomina(nomId){const nomina=STATE.nominas.find(n=>n.id===nomId);if(!nomina)return;nomina.lineas.forEach(l=>updateNominaLine(nomId,l.empleadoId));showToast('Nómina calculada','success')}
+function calcularNomina(nomId){
+  const nomina=STATE.nominas.find(n=>n.id===nomId);if(!nomina)return;
+  nomina.lineas.forEach(l=>updateNominaLine(nomId,l.empleadoId));
+  saveState();
+  const {lineas:_l,...nominaHeader}=nomina;
+  pushToSheets('nominas','actualizar',nominaHeader,nomina.id);
+  nomina.lineas.forEach(l=>{const lineaData={...l,nominaId:nomina.id};pushToSheets('nominaLineas','actualizar',lineaData,lineaData.id||null);});
+  showToast('Nómina calculada','success');
+}
 
 function solicitarAprobacion(nomId){
   const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
-  confirmAction('¿Enviar nómina a revisión de Administración?',function(){n.estado='pendiente';saveState();addAuditLog('NOMINA_PENDIENTE',`Nómina ${n.mesNombre} ${n.ano} enviada a aprobación`);showToast('Nómina enviada','info');cargarNomina()});
+  confirmAction('¿Enviar nómina a revisión de Administración?',function(){
+    n.estado='pendiente';saveState();
+    const {lineas:_l,...nominaHeader}=n;pushToSheets('nominas','actualizar',nominaHeader,n.id);
+    addAuditLog('NOMINA_PENDIENTE',`Nómina ${n.mesNombre} ${n.ano} enviada a aprobación`);showToast('Nómina enviada','info');cargarNomina();
+  });
 }
 
 function aprobarNomina(nomId){
   const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
-  confirmAction('¿Aprobar y cerrar esta nómina?',function(){n.estado='aprobada';n.fechaAprobacion=new Date().toISOString();saveState();addAuditLog('NOMINA_APROBADA',`Nómina ${n.mesNombre} ${n.ano} aprobada. Total: ${fmtMoney(n.totalDevengado)}`);showToast('Nómina aprobada','success');renderHistoricoNominas()});
+  confirmAction('¿Aprobar y cerrar esta nómina?',function(){
+    n.estado='aprobada';n.fechaAprobacion=new Date().toISOString();saveState();
+    const {lineas:_l,...nominaHeader}=n;pushToSheets('nominas','actualizar',nominaHeader,n.id);
+    addAuditLog('NOMINA_APROBADA',`Nómina ${n.mesNombre} ${n.ano} aprobada. Total: ${fmtMoney(n.totalDevengado)}`);showToast('Nómina aprobada','success');renderHistoricoNominas();
+  });
 }
 
 function reabrirNomina(nomId){
@@ -2781,6 +2800,7 @@ function confirmarReopenNomina(nomId){
   const motivo=document.getElementById('reabrir-motivo').value.trim();
   if(!motivo){showToast('El motivo es obligatorio','warning');return}
   const n=STATE.nominas.find(x=>x.id===nomId);n.estado='borrador';saveState();
+  const {lineas:_l,...nominaHeader}=n;pushToSheets('nominas','actualizar',nominaHeader,n.id);
   addAuditLog('NOMINA_REABIERTA',`Nómina ${n.mesNombre} ${n.ano} reabierta. Motivo: ${motivo}`);
   showToast('Nómina reabierta','warning');closeModal();renderHistoricoNominas();
 }
@@ -2869,12 +2889,20 @@ function guardarIncidencia(){
   const inc={id:'I'+uid(),empleadoId:empId,tipo,periodo,fechaInicio,fechaFin,diasAfectados};
   if(tipo==='Permiso no retribuido'||tipo==='Ausencia injustificada'){
     const nomina=STATE.nominas.find(n=>n.periodo===periodo);
-    if(nomina){const linea=nomina.lineas.find(l=>l.empleadoId===empId);if(linea)linea.diasTrabajados=Math.max(0,linea.diasTrabajados-diasAfectados)}
+    if(nomina){
+      const linea=nomina.lineas.find(l=>l.empleadoId===empId);
+      if(linea){
+        linea.diasTrabajados=Math.max(0,linea.diasTrabajados-diasAfectados);
+        pushToSheets('nominaLineas','actualizar',{...linea,nominaId:nomina.id},linea.id||null);
+        const {lineas:_l,...nominaHeader}=nomina;
+        pushToSheets('nominas','actualizar',nominaHeader,nomina.id);
+      }
+    }
   }
   if(tipo==='Vacaciones'){
     let ctrl=STATE.vacacionesControl.find(v=>v.empleadoId===empId&&v.ano===new Date(fechaInicio).getFullYear());
-    if(!ctrl){ctrl={empleadoId:empId,ano:new Date(fechaInicio).getFullYear(),diasTomados:0};STATE.vacacionesControl.push(ctrl)}
-    ctrl.diasTomados+=diasAfectados;
+    if(!ctrl){ctrl={id:'VC'+uid(),empleadoId:empId,ano:new Date(fechaInicio).getFullYear(),diasTomados:0};STATE.vacacionesControl.push(ctrl);pushToSheets('vacacionesControl','insertar',ctrl,null);}
+    else{ctrl.diasTomados+=diasAfectados;pushToSheets('vacacionesControl','actualizar',ctrl,ctrl.id);}
   }
   STATE.incidencias.push(inc);saveState();
   pushToSheets('incidencias','insertar', inc);
@@ -2886,7 +2914,7 @@ function guardarIncidencia(){
 function eliminarIncidencia(id){
   confirmAction('¿Eliminar esta incidencia?',function(){
     const idx=STATE.incidencias.findIndex(i=>i.id===id);
-    if(idx>-1){STATE.incidencias.splice(idx,1);saveState();addAuditLog('ELIMINAR_INCIDENCIA','Incidencia eliminada por Admin');showToast('Eliminada','info');renderIncidencias(document.getElementById('app-content'))}
+    if(idx>-1){const incId=STATE.incidencias[idx].id;STATE.incidencias.splice(idx,1);saveState();pushToSheets('incidencias','eliminar',null,incId);addAuditLog('ELIMINAR_INCIDENCIA','Incidencia eliminada por Admin');showToast('Eliminada','info');renderIncidencias(document.getElementById('app-content'))}
   });
 }
 
@@ -3781,6 +3809,10 @@ document.addEventListener('DOMContentLoaded',()=>{
   tempLicencias=[];tempFotoCarnet=null;
   // Verificar conexión al cargar
   apiCall({accion:'ping'}).then(()=>{DB_ONLINE=true;updateSyncBadge(true);}).catch(()=>{DB_ONLINE=false;updateSyncBadge(false);});
+  // Registrar Service Worker para PWA instalable
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('/sw.js').catch(function(e){console.warn('SW registro fallido:',e);});
+  }
 });
 </script>
 </body>
