@@ -1154,10 +1154,6 @@ function getCertMedicoStatus(emp){
 // ══════════════════════════════════════════════════
 function renderDashboard(container){
   const activos=getEmpleadosActivos();
-  const certVencidos=activos.filter(e=>getCertMedicoStatus(e).status==='vencido');
-  const certProximos=activos.filter(e=>getCertMedicoStatus(e).status==='proximo');
-  const certOk=activos.filter(e=>getCertMedicoStatus(e).status==='ok');
-
   // ── Definir acciones por rol ──
   const HOME_ACTIONS = {
     admin:[
@@ -1248,13 +1244,6 @@ function renderDashboard(container){
     alertasHTML+='</div></div>';
   }
 
-  if((currentRole==='rrhh'||currentRole==='admin')&&(certVencidos.length||certProximos.length)){
-    alertasHTML=`<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px;">`;
-    if(certVencidos.length) alertasHTML+=`<div style="background:var(--danger-light);border:1px solid var(--danger);border-radius:8px;padding:12px 18px;color:var(--danger);font-size:13px;font-weight:600;">🔴 ${certVencidos.length} cert. médico${certVencidos.length>1?'s':''} vencido${certVencidos.length>1?'s':''}</div>`;
-    if(certProximos.length) alertasHTML+=`<div style="background:var(--warning-light);border:1px solid var(--warning);border-radius:8px;padding:12px 18px;color:var(--warning);font-size:13px;font-weight:600;">🟡 ${certProximos.length} próximo${certProximos.length>1?'s':''} a vencer</div>`;
-    alertasHTML+=`</div>`;
-  }
-
   container.innerHTML=`
     ${alertasHTML}
     <div style="margin-bottom:28px;">
@@ -1276,14 +1265,13 @@ function renderDashboard(container){
       <div class="stat-card"><span class="stat-icon">📤</span><div class="stat-value">${STATE.bajas.length}</div><div class="stat-label">Bajas Registradas</div></div>
       <div class="stat-card success"><span class="stat-icon">📋</span><div class="stat-value">${STATE.nominas.filter(n=>n.estado==='aprobada').length}</div><div class="stat-label">Nóminas Aprobadas</div></div>
       <div class="stat-card warning"><span class="stat-icon">⚠️</span><div class="stat-value">${STATE.sanciones.length}</div><div class="stat-label">Sanciones Totales</div></div>
-      ${(currentRole==='rrhh'||currentRole==='admin')?`<div class="stat-card ${certVencidos.length?'burgundy':''}"><span class="stat-icon">🏥</span><div class="stat-value" style="${certVencidos.length?'color:var(--danger)':''}">${certVencidos.length}</div><div class="stat-label">Cert. Médicos Vencidos</div></div>`:''}
     </div>`;
 }
 // ══════════════════════════════════════════════════
 // EMPLEADOS LIST
 // ══════════════════════════════════════════════════
 function renderEmpleados(container){
-  const canEdit=currentRole==='admin';
+  const canEdit=currentRole==='admin'||currentRole==='rrhh';
   const showSalary=currentRole==='admin'||currentRole==='contabilidad';
   document.getElementById('topbar-actions').innerHTML=`
     <button class="btn btn-secondary btn-sm" onclick="exportEmpleados()">⬇️ Exportar Excel</button>
@@ -1299,9 +1287,9 @@ function renderEmpleados(container){
     </div>
     <div class="table-wrap"><table id="emp-table">
       <thead><tr>
-        <th>Foto</th><th>Nombre</th><th class="col-hide-mobile">Carnet</th><th class="col-hide-mobile">Departamento</th><th class="col-hide-mobile">Plaza</th>
+        <th>Nombre</th><th class="col-hide-mobile">Carnet</th><th class="col-hide-mobile">Departamento</th><th class="col-hide-mobile">Plaza</th>
         ${showSalary?'<th class="col-hide-mobile">Salario Base</th><th class="col-hide-mobile">Bonif.%</th><th class="col-hide-mobile">Total</th>':''}
-        <th class="col-hide-mobile">Clasificación</th><th class="col-hide-mobile">Jornada</th><th class="col-hide-mobile">Antigüedad</th><th class="col-hide-mobile">Cert.Médico</th><th>Estado</th><th>Acciones</th>
+        <th class="col-hide-mobile">Clasificación</th><th class="col-hide-mobile">Jornada</th><th class="col-hide-mobile">Antigüedad</th><th>Estado</th><th>Acciones</th>
       </tr></thead>
       <tbody id="emp-tbody"></tbody>
     </table></div></div>`;
@@ -1333,14 +1321,7 @@ function applyFilters(){
     const bon=calcBonificacion(e.salarioBase||0,e.fechaAlta);
     const total=(e.salarioBase||0)+bon;
     const doc=STATE.documentos[e.id]||{};
-    const cs=getCertMedicoStatus(e);
-    const fotoSrc=(e.fotoEmpleadoId?driveThumbUrl(e.fotoEmpleadoId,'w300'):null)
-                  ||(e.fotoCarnetId?driveThumbUrl(e.fotoCarnetId,'w300'):null)
-                  ||doc.fotoEmpleado||doc.fotoCarnet||null;
-    const foto=fotoSrc?'<img src="'+fotoSrc+'" style="width:36px;height:44px;object-fit:cover;border-radius:4px;border:1px solid var(--border);" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'"><div style="display:none;width:36px;height:44px;background:var(--cream-dark);border-radius:4px;border:1px dashed var(--border);align-items:center;justify-content:center;font-size:16px;">👤</div>'
-      :'<div style="width:36px;height:44px;background:var(--cream-dark);border-radius:4px;border:1px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;">👤</div>';
     return `<tr>
-      <td>${foto}</td>
       <td><strong>${e.nombres} ${e.apellidos}</strong></td>
       <td class="col-hide-mobile"><code>${e.carnet}</code></td>
       <td class="col-hide-mobile"><span class="chip">${e.departamento||'—'}</span></td>
@@ -1349,7 +1330,6 @@ function applyFilters(){
       <td class="col-hide-mobile"><span class="tag tag-${(e.clasificacion||'').toLowerCase()}">${e.clasificacion||'—'}</span></td>
       <td class="col-hide-mobile">${getLabelJornada(e.jornada)}</td>
       <td class="col-hide-mobile">${a} año${a===1?'':'s'}</td>
-      <td class="col-hide-mobile"><span class="${cs.color}" style="font-size:12px">${cs.status==='vencido'?'🔴':cs.status==='proximo'?'🟡':cs.status==='ok'?'🟢':'⚪'} ${cs.label}</span></td>
       <td><span class="badge ${e.activo?'badge-active':'badge-inactive'}">${e.activo?'Activo':'Baja'}</span></td>
       <td style="white-space:nowrap">
         <button class="btn btn-secondary btn-xs" onclick="verFicha('${e.id}')">👁️ Ficha</button>
@@ -1382,19 +1362,9 @@ function verFicha(id){
   const anoActual=new Date().getFullYear();
   const vacTomadas=STATE.incidencias.filter(i=>i.empleadoId===id&&i.tipo==='Vacaciones'&&new Date(i.fechaInicio).getFullYear()===anoActual).reduce((s,i)=>s+parseInt(i.diasAfectados||0),0);
   const vacPend=Math.max(0,STATE.config.diasVacaciones-vacTomadas);
-  const cs=getCertMedicoStatus(e);
-
   const licencias=[];
-  const fotoEmpleadoSrc = getFotoUrl(e, doc, 'empleado');
-  const fotoCarnetSrc   = getFotoUrl(e, doc, 'carnet');
 
-  let body='<div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">'
-    +'<div style="text-align:center;">'
-    +(fotoEmpleadoSrc?'<img src="'+fotoEmpleadoSrc+'" style="width:100px;height:130px;object-fit:cover;border-radius:8px;border:2px solid var(--border);" title="Foto del empleado" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'"><div style="display:none;width:100px;height:130px;background:var(--cream-dark);border-radius:8px;border:2px dashed var(--border);flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--text-light);gap:4px;"><span style="font-size:28px;">👤</span><span>Sin foto</span></div><div style="font-size:11px;color:var(--text-light);margin-top:4px;">👤 Retrato</div>':'<div style="width:100px;height:130px;background:var(--cream-dark);border-radius:8px;border:2px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--text-light);gap:4px;"><span style="font-size:28px;">👤</span><span>Sin foto</span></div>')
-    +'</div>'
-    +'<div style="text-align:center;">'
-    +(fotoCarnetSrc?'<img src="'+fotoCarnetSrc+'" style="width:130px;height:90px;object-fit:cover;border-radius:8px;border:2px solid var(--border);" title="Foto carnet identidad" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'"><div style="display:none;width:130px;height:90px;background:var(--cream-dark);border-radius:8px;border:2px dashed var(--border);flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--text-light);gap:4px;"><span style="font-size:24px;">🪪</span><span>Sin foto carnet</span></div><div style="font-size:11px;color:var(--text-light);margin-top:4px;">🪪 Carnet</div>':'<div style="width:130px;height:90px;background:var(--cream-dark);border-radius:8px;border:2px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--text-light);gap:4px;"><span style="font-size:24px;">🪪</span><span>Sin foto carnet</span></div>')
-    +'</div>';
+  let body='<div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">';
   body+=`<div style="flex:1">
     <div style="flex:1">
       <div class="grid-2-auto">
@@ -1415,9 +1385,6 @@ function verFicha(id){
       </div>
     </div>
   </div>`;
-
-  // Cert médico
-  body+='<div style="background:'+(cs.status==='vencido'?'var(--danger-light)':cs.status==='proximo'?'var(--warning-light)':'var(--success-light)')+';border-radius:8px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px">'    +'<span style="font-size:22px">'+(cs.status==='vencido'?'🔴':cs.status==='proximo'?'🟡':cs.status==='ok'?'🟢':'⚪')+'</span>'    +'<div><b>Certificado Médico Pre-Empleo:</b> '+cs.label    +'<br><span class="badge badge-info" style="margin-top:4px;font-size:11px;">📄 Archivado en papel</span></div>'    +'</div>';
 
   if(currentRole==='admin'||currentRole==='contabilidad'){
     body+=`<div style="background:var(--gold-pale);border-radius:8px;padding:14px;margin-bottom:16px">
@@ -1454,9 +1421,9 @@ function verFicha(id){
   if(doc.contrato)body+=`<button class="btn btn-secondary btn-xs" onclick="downloadBase64('${doc.contrato}','Contrato_${e.nombres.replace(/ /g,'_')}.pdf')">📑 Contrato PDF</button>`;
   body+=`</div>`;
 
-    const canEditData=(currentRole==='admin');
-  const canEditCuenta=(currentRole==='admin'||currentRole==='contabilidad');
-  const canContract=(currentRole==='admin'||currentRole==='juridico');
+    const canEditData=(currentRole==='admin'||currentRole==='rrhh');
+  const canEditCuenta=(currentRole==='admin'||currentRole==='contabilidad'||currentRole==='rrhh');
+  const canContract=(currentRole==='admin'||currentRole==='juridico'||currentRole==='rrhh');
 
   const footer=`
     <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
@@ -1611,7 +1578,8 @@ function renderAlta(container,editData=null){
   const isEdit=!!editData;
   const d=editData||{};
   const depts=Object.keys(PLAZAS);
-  const canEditCuenta=currentRole==='admin'||currentRole==='contabilidad';
+  const canEditCuenta=currentRole==='admin'||currentRole==='contabilidad'||currentRole==='rrhh';
+  const rrhhRestricted=isEdit&&currentRole==='rrhh';
   const doc=d.id?(STATE.documentos[d.id]||{}):{};
 
   container.innerHTML=`<div class="card">
@@ -1619,13 +1587,13 @@ function renderAlta(container,editData=null){
     <div class="card-body"><div class="form-grid" id="alta-form">
 
       <div class="form-section-title">📋 Datos Personales</div>
-      <div class="form-group"><label class="field-label required">Fecha de Alta</label><input type="date" id="a-fechaAlta" value="${d.fechaAlta||''}" required></div>
-      <div class="form-group"><label class="field-label required">Nombres</label><input type="text" id="a-nombres" value="${d.nombres||''}" placeholder="Nombre(s)" required></div>
-      <div class="form-group"><label class="field-label required">Apellidos</label><input type="text" id="a-apellidos" value="${d.apellidos||''}" placeholder="Apellido(s)" required></div>
-      <div class="form-group"><label class="field-label required" data-tip="Exactamente 11 cifras numéricas. Este número será el número de expediente laboral.">N° Carnet / N° Expediente (11 dígitos)</label><input type="text" id="a-carnet" maxlength="11" value="${d.carnet||''}" placeholder="12345678901" oninput="this.value=this.value.split('').filter(c=>c>='0'&&c<='9').join('').slice(0,11);autoFillFechaNacimiento(this.value)"></div>
+      <div class="form-group"><label class="field-label required">Fecha de Alta</label><input type="date" id="a-fechaAlta" value="${d.fechaAlta||''}" ${rrhhRestricted?'readonly':''} required></div>
+      <div class="form-group"><label class="field-label required">Nombres ${rrhhRestricted?'🔒':''}</label><input type="text" id="a-nombres" value="${d.nombres||''}" placeholder="Nombre(s)" ${rrhhRestricted?'readonly':''} required></div>
+      <div class="form-group"><label class="field-label required">Apellidos ${rrhhRestricted?'🔒':''}</label><input type="text" id="a-apellidos" value="${d.apellidos||''}" placeholder="Apellido(s)" ${rrhhRestricted?'readonly':''} required></div>
+      <div class="form-group"><label class="field-label required" data-tip="Exactamente 11 cifras numéricas. Este número será el número de expediente laboral.">N° Carnet / N° Expediente (11 dígitos) ${rrhhRestricted?'🔒':''}</label><input type="text" id="a-carnet" maxlength="11" value="${d.carnet||''}" placeholder="12345678901" ${rrhhRestricted?'readonly':`oninput="this.value=this.value.split('').filter(c=>c>='0'&&c<='9').join('').slice(0,11);autoFillFechaNacimiento(this.value)"`}></div>
       <div class="form-group"><label class="field-label">Teléfono</label><input type="tel" id="a-telefono" value="${d.telefono||''}" required></div>
       <div class="form-group"><label class="field-label required">Correo Electrónico</label><input type="email" id="a-email" value="${d.email||''}" placeholder="ejemplo@correo.com" required autocomplete="email"></div>
-      <div class="form-group"><label class="field-label">Fecha de Nacimiento</label><input type="date" id="a-fechaNacimiento" value="${d.fechaNacimiento||''}" required></div>
+      <div class="form-group"><label class="field-label">Fecha de Nacimiento ${rrhhRestricted?'🔒':''}</label><input type="date" id="a-fechaNacimiento" value="${d.fechaNacimiento||''}" ${rrhhRestricted?'readonly':''} required></div>
       <div class="form-group full"><label class="field-label">Dirección Particular</label><input type="text" id="a-direccion" value="${d.direccion||''}" placeholder="Calle, número, ciudad..." required></div>
 
       
@@ -1648,11 +1616,6 @@ function renderAlta(container,editData=null){
         <select id="a-departamento" onchange="updatePlazas()" required>${depts.map(dept=>`<option ${d.departamento===dept?'selected':''}>${dept}</option>`).join('')}</select></div>
       <div class="form-group"><label class="field-label required">Plaza</label>
         <select id="a-plaza" required>${d.plaza?`<option selected>${d.plaza}</option>`:''}</select></div>
-
-      <div class="form-section-title">🏥 Certificado Médico Pre-Empleo</div>
-      <div class="form-group"><label class="field-label required" data-tip="Fecha en que se expidió el certificado médico. Vence automáticamente a los 6 meses.">Fecha del Certificado Médico</label>
-        <input type="date" id="a-certFecha" value="${doc.certMedicoFecha||''}">
-        <div class="input-hint">⏱️ Vence a los 6 meses. El sistema notificará cuando esté próximo a vencer (30 días antes) o vencido. <b>El documento físico se archiva en papel.</b></div></div>
 
       <div class="form-section-title">📄 Documentos</div>
       <div class="form-group full"><label class="field-label required">🪪 Escaneo del Carnet de Identidad</label>
@@ -1690,8 +1653,6 @@ function renderAlta(container,editData=null){
 // Temp store for new licencias being added in form
 let tempLicencias = [];
 let tempFotoCarnet = null;
-
-let tempFotoEmpleado = null;
 
 // Auto-fill fecha de nacimiento desde carnet (AAMMDD en primeros 6 dígitos)
 function autoFillFechaNacimiento(carnet){
@@ -1731,11 +1692,10 @@ function previewFotoCarnet(input){
 }
 function clearFoto(){
   tempFotoCarnet='__clear__';
-  tempFotoEmpleado='__clear__';
-  const prev=document.getElementById('foto-preview');
-  const ph=document.getElementById('foto-placeholder');
+  const prev=document.getElementById('preview-carnet');
+  const nameEl=document.getElementById('carnet-scan-name');
   if(prev){prev.src='';prev.style.display='none';}
-  if(ph)ph.style.display='flex';
+  if(nameEl)nameEl.textContent='Sin archivo';
 }
 
 function previewFile(input,labelId){
@@ -1823,15 +1783,11 @@ async function guardarAlta(){
     departamento:val('a-departamento'),
     plaza:val('a-plaza'),
     salarioBase:null,activo:true,
-    certMedicoFecha:'',fotoEmpleadoId:'',fotoCarnetId:'',
-    carpetaExpId:'',contratoId:'',obligacionesId:''
+    fotoCarnetId:'',carpetaExpId:'',contratoId:'',obligacionesId:''
   };
 
-  const certFecha=document.getElementById('a-certFecha').value;
-  if(certFecha) emp.certMedicoFecha=certFecha;
-
   STATE.empleados.push(emp);
-  const docData={certMedicoFecha:certFecha||''};
+  const docData={};
   STATE.documentos[id]=docData;
   saveState();
 
@@ -1847,18 +1803,7 @@ async function guardarAlta(){
       emp.carpetaExpId = carpetaId;
     } catch(e){ console.warn('Carpeta Drive no creada:',e.message); }
 
-    // 3. Subir foto retrato si existe
-    if(tempFotoEmpleado && tempFotoEmpleado!=='__clear__'){
-      try{
-        const res=await subirBase64ADrive(tempFotoEmpleado,'image/jpeg','foto_retrato',id,emp.carpetaExpId||'','foto_retrato');
-        emp.fotoEmpleadoId=res.fileId;
-        docData.fotoEmpleadoThumb=res.thumbnailUrl;
-        await registrarDocumentoSheets(id,'foto_retrato',res.fileId,res.viewUrl,res.nombre,res.tamaño);
-      }catch(e){console.warn('Error subiendo foto retrato:',e.message);}
-    }
-    tempFotoEmpleado=null;
-
-    // 4. Subir escaneo carnet si existe
+    // 3. Subir escaneo carnet si existe
     if(tempFotoCarnet && tempFotoCarnet!=='__clear__'){
       try{
         const carnetMime=tempFotoCarnet.match(/^data:([^;]+);/)?.[1]||'image/jpeg';
@@ -1915,12 +1860,17 @@ function editarEmpleado(id){
 async function guardarEdicionEmpleado(id){
   const emp=STATE.empleados.find(e=>e.id===id);
   if(!emp)return;
-  const carnet=document.getElementById('a-carnet').value.trim();
-  if(!/^\d{11}$/.test(carnet)){showToast('El carnet debe tener exactamente 11 dígitos','error');return}
-  const existing=STATE.empleados.find(e=>e.carnet===carnet&&e.id!==id);
-  if(existing){showToast('Ya existe otro empleado con ese carnet','error');return}
+  const isRrhh=currentRole==='rrhh';
 
   function val(id){const el=document.getElementById(id);return el?el.value.trim():'';}
+
+  // Carnet validation only when admin (RRHH field is readonly)
+  if(!isRrhh){
+    const carnet=document.getElementById('a-carnet').value.trim();
+    if(!/^\d{11}$/.test(carnet)){showToast('El carnet debe tener exactamente 11 dígitos','error');return}
+    const existing=STATE.empleados.find(e=>e.carnet===carnet&&e.id!==id);
+    if(existing){showToast('Ya existe otro empleado con ese carnet','error');return}
+  }
 
   const emailEdit=val('a-email');
   if(!emailEdit){showToast('El correo electrónico es obligatorio','warning');return}
@@ -1928,15 +1878,15 @@ async function guardarEdicionEmpleado(id){
   const dupEmail=STATE.empleados.find(e=>e.email&&e.email.toLowerCase()===emailEdit.toLowerCase()&&e.id!==id);
   if(dupEmail){showToast('Ya existe otro empleado con ese correo','error');return}
 
-  const canEditCuenta=currentRole==='admin'||currentRole==='contabilidad';
+  const canEditCuenta=currentRole==='admin'||currentRole==='contabilidad'||currentRole==='rrhh';
   Object.assign(emp,{
-    fechaAlta:val('a-fechaAlta')||emp.fechaAlta,
-    nombres:val('a-nombres')||emp.nombres,
-    apellidos:val('a-apellidos')||emp.apellidos,
-    carnet,
+    fechaAlta:isRrhh?emp.fechaAlta:(val('a-fechaAlta')||emp.fechaAlta),
+    nombres:isRrhh?emp.nombres:(val('a-nombres')||emp.nombres),
+    apellidos:isRrhh?emp.apellidos:(val('a-apellidos')||emp.apellidos),
+    carnet:isRrhh?emp.carnet:(document.getElementById('a-carnet').value.trim()||emp.carnet),
     email:emailEdit,
     telefono:val('a-telefono')||emp.telefono,
-    fechaNacimiento:val('a-fechaNacimiento')||emp.fechaNacimiento,
+    fechaNacimiento:isRrhh?emp.fechaNacimiento:(val('a-fechaNacimiento')||emp.fechaNacimiento),
     direccion:val('a-direccion')||emp.direccion,
     cuenta:canEditCuenta?(val('a-cuenta')||emp.cuenta):emp.cuenta,
     tipoContrato:val('a-contrato')||emp.tipoContrato,
@@ -1946,11 +1896,7 @@ async function guardarEdicionEmpleado(id){
     plaza:val('a-plaza')||emp.plaza
   });
 
-  const certFecha=document.getElementById('a-certFecha').value;
-  if(certFecha) emp.certMedicoFecha=certFecha;
-
   const docData=STATE.documentos[id]||{};
-  if(certFecha) docData.certMedicoFecha=certFecha;
 
   saveState();
   showSyncIndicator('⏳ Guardando...','syncing');
@@ -1961,22 +1907,6 @@ async function guardarEdicionEmpleado(id){
       try{ await asegurarCarpetaEmpleado(emp); }
       catch(e){ console.warn('Carpeta no creada:',e.message); }
     }
-
-    // Subir foto retrato nueva si existe
-    if(tempFotoEmpleado && tempFotoEmpleado!=='__clear__'){
-      try{
-        if(emp.fotoEmpleadoId) await eliminarArchivoDrive(emp.fotoEmpleadoId);
-        const res=await subirBase64ADrive(tempFotoEmpleado,'image/jpeg','foto_retrato',id,emp.carpetaExpId||'','foto_retrato');
-        emp.fotoEmpleadoId=res.fileId;
-        docData.fotoEmpleadoThumb=res.thumbnailUrl;
-        await registrarDocumentoSheets(id,'foto_retrato',res.fileId,res.viewUrl,res.nombre,res.tamaño);
-      }catch(e){console.warn('Error foto retrato:',e.message);}
-    } else if(tempFotoEmpleado==='__clear__'){
-      if(emp.fotoEmpleadoId) await eliminarArchivoDrive(emp.fotoEmpleadoId);
-      emp.fotoEmpleadoId='';
-      delete docData.fotoEmpleadoThumb;
-    }
-    tempFotoEmpleado=null;
 
     // Subir escaneo carnet nuevo si existe
     if(tempFotoCarnet && tempFotoCarnet!=='__clear__'){
@@ -2107,8 +2037,6 @@ function verExpediente(id){
   const traslados=STATE.traslados.filter(t=>t.empleadoId===id);
   const bajas=STATE.bajas.filter(b=>b.empleadoId===id);
   const sanciones=(currentRole==='admin'||currentRole==='juridico')?STATE.sanciones.filter(s=>s.empleadoId===id):[];
-  const cs=getCertMedicoStatus(e);
-
   // Build timeline events
   const events=[];
   events.push({fecha:e.fechaAlta,tipo:'ALTA',titulo:'Alta Laboral',desc:`Departamento: ${e.departamento} | Plaza: ${e.plaza} | Jornada: ${e.jornada} días`,color:'green'});
@@ -2119,12 +2047,8 @@ function verExpediente(id){
   events.sort((a,b)=>new Date(a.fecha)-new Date(b.fecha));
 
   const licencias=doc.licencias||[];
-  const fotoExpSrc = getFotoUrl(e, doc, 'carnet') || getFotoUrl(e, doc, 'empleado');
 
   let body=`<div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap">
-    <div>
-      ${fotoExpSrc?`<img src="${fotoExpSrc}" class="foto-carnet-preview">`:`<div class="foto-carnet-placeholder"><span style="font-size:28px">👤</span></div>`}
-    </div>
     <div style="flex:1">
       <div style="background:var(--cream-dark);border-radius:8px;padding:12px 16px;margin-bottom:10px">
         <div style="font-size:12px;color:var(--text-light);text-transform:uppercase;letter-spacing:1px">N° de Expediente</div>
@@ -2137,7 +2061,6 @@ function verExpediente(id){
         <div><b>Antigüedad:</b> ${calcAntiguedad(e.fechaAlta)} años</div>
         <div><b>Clasificación:</b> ${e.clasificacion}</div>
         <div><b>Estado:</b> <span class="badge ${e.activo?'badge-active':'badge-inactive'}">${e.activo?'Activo':'Baja'}</span></div>
-        <div style="grid-column:1/-1"><b>Cert.Médico:</b> <span class="${cs.color}">${cs.status==='vencido'?'🔴':cs.status==='proximo'?'🟡':cs.status==='ok'?'🟢':'⚪'} ${cs.label}</span></div>
       </div>
     </div>
   </div>
@@ -2161,12 +2084,11 @@ function verExpediente(id){
   +'<b>📎 Documentos del Expediente</b><br><br>'
   +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
   +(doc.contratoFecha?'<span class="badge badge-approved" style="padding:6px 12px;font-size:12px;">✅ Contrato firmado '+fmtDate(doc.contratoFecha)+(e.contratoId?' — <a href="'+driveViewUrl(e.contratoId)+'" target="_blank" style="color:white;text-decoration:underline;">📄 Ver en Drive</a>':' — 📄 Archivado en papel')+'</span>':'<span class="badge badge-draft" style="padding:6px 12px;font-size:12px;">⏳ Contrato pendiente de firma</span>')
-  +(doc.certMedicoFecha?' <span class="badge badge-info" style="padding:6px 12px;font-size:12px;">🏥 Cert. Médico — 📄 Archivado en papel</span>':'')
   +(e.obligacionesId?' <a href="'+driveViewUrl(e.obligacionesId)+'" target="_blank" class="btn btn-secondary btn-xs">📄 Obligaciones (Drive)</a>':(doc.obligaciones?' <button class="btn btn-secondary btn-xs" onclick="downloadBase64(STATE.documentos[\''+e.id+'\'].obligaciones,\'Obligaciones.pdf\')">📄 Obligaciones</button>':''))
   +'</div>';
   const footer=`<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
-    ${currentRole==='admin'||currentRole==='juridico'?`<button class="btn btn-primary btn-sm" onclick="previewContrato('${id}')">📄 Generar Contrato</button>`:''}
-    ${currentRole==='admin'?`<button class="btn btn-gold btn-sm" onclick="closeModal();editarEmpleado('${id}')">✏️ Editar</button>`:''}`;
+    ${currentRole==='admin'||currentRole==='juridico'||currentRole==='rrhh'?`<button class="btn btn-primary btn-sm" onclick="previewContrato('${id}')">📄 Generar Contrato</button>`:''}
+    ${(currentRole==='admin'||currentRole==='rrhh')?`<button class="btn btn-gold btn-sm" onclick="closeModal();editarEmpleado('${id}')">✏️ Editar</button>`:''}`;
 
   openModal(`📁 Expediente #${e.carnet} — ${e.nombres} ${e.apellidos}`,body,footer,'lg');
 }
@@ -2423,9 +2345,6 @@ function renderContratos(container){
     const estadoBadge=doc.contratoFecha
       ?'<span class="badge badge-approved" style="font-size:11px;">✅ Firmado '+fmtDate(doc.contratoFecha)+'</span>'
       :'<span class="badge badge-draft" style="font-size:11px;">⏳ Pendiente</span>';
-    const estadoCert=doc.certMedicoFecha
-      ?'<span class="badge badge-info" style="font-size:11px;">📄 Archivado en papel</span>'
-      :'<span class="text-muted" style="font-size:12px;">—</span>';
     rowsHtml+='<tr>'
       +'<td><b>'+e.nombres+' '+e.apellidos+'</b> <span class="badge '+(e.activo?'badge-active':'badge-inactive')+'">'+(e.activo?'Activo':'Baja')+'</span></td>'
       +'<td>'+e.departamento+'</td>'
@@ -2433,14 +2352,13 @@ function renderContratos(container){
       +'<td>'+e.tipoContrato+'</td>'
       +'<td>'+fmtDate(e.fechaAlta)+'</td>'
       +'<td>'+estadoBadge+'<br>'+(e.contratoId?'<a href="'+driveViewUrl(e.contratoId)+'" target="_blank" class="btn btn-secondary btn-xs" style="font-size:11px;margin-top:4px;">📄 Ver en Drive</a>':'<small class="text-muted">📄 Archivado en papel</small>')+'</td>'
-      +'<td>'+estadoCert+'</td>'
       +'<td><button class="btn btn-primary btn-xs" onclick="previewContrato(\''+e.id+'\')">📄 Generar</button>'
       +(canEdit?(' <button class="btn btn-gold btn-xs" onclick="openModalFechaContratoEmp(\''+e.id+'\')">✏️ Fecha firma</button>'):'')
       +'</td>'
       +'</tr>';
   });
   container.innerHTML='<div class="card"><div class="table-wrap"><table>'
-    +'<thead><tr><th>Empleado</th><th>Departamento</th><th>Plaza</th><th>Tipo Contrato</th><th>Fecha Alta</th><th>Contrato</th><th>Cert.Médico</th><th>Acciones</th></tr></thead>'
+    +'<thead><tr><th>Empleado</th><th>Departamento</th><th>Plaza</th><th>Tipo Contrato</th><th>Fecha Alta</th><th>Contrato</th><th>Acciones</th></tr></thead>'
     +'<tbody>'+rowsHtml+'</tbody>'
     +'</table></div></div>';
 }
@@ -3148,12 +3066,6 @@ function renderAsistencia(container){
   activos.forEach(function(e, i){
     const estadoActual = estadosGuardados[e.id] || 'P';
     const motivoActual = (motivos[e.id] || '').replace(/"/g,'&quot;');
-    const doc = STATE.documentos[e.id]||{};
-    const asistFotoSrc = doc.fotoEmpleado||doc.fotoCarnet||null;
-    const fotoHtml = asistFotoSrc
-      ? '<img src="'+asistFotoSrc+'" style="width:32px;height:40px;object-fit:cover;border-radius:4px;border:1px solid var(--border);flex-shrink:0;">'
-      : '<div style="width:32px;height:40px;background:var(--cream-dark);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">👤</div>';
-
     let btnsHtml = '';
     ['P','A','T'].forEach(function(est){
       const cfg = estadoConfig[est];
@@ -3175,7 +3087,7 @@ function renderAsistencia(container){
     const motStyle = yaGuardado ? 'background:var(--cream);color:var(--text-light);' : '';
 
     rowsHtml += '<div id="row-'+e.id+'" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border-light);background:'+rowBg+';">'
-      +'<div style="display:flex;align-items:center;gap:10px;">'+fotoHtml
+      +'<div style="display:flex;align-items:center;gap:10px;">'
       +'<div><div style="font-weight:700;font-size:14px;color:var(--text-dark);">'+e.nombres+' '+e.apellidos+'</div>'
       +'<div style="font-size:11px;color:var(--text-light);">'+e.plaza+' · '+e.departamento+'</div></div></div>'
       +'<div style="display:flex;justify-content:center;gap:6px;">'+btnsHtml+'</div>'

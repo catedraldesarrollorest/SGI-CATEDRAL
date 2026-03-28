@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Permisos RRHH — SGI La Catedral</title>
+<style>
+  body { font-family: Georgia, serif; background: #FAF6EE; color: #1A1A1A; padding: 24px; max-width: 700px; margin: 0 auto; }
+  h1 { font-size: 22px; color: #6B1A1A; margin-bottom: 4px; }
+  p.sub { color: #7A7A7A; font-size: 14px; margin-bottom: 28px; }
+  .section { margin-bottom: 28px; }
+  .section-title { font-size: 15px; font-weight: bold; color: #6B1A1A; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; padding-bottom: 6px; border-bottom: 2px solid #C9A84C; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+  .card { background: #fff; border: 2px solid #D5C9A8; border-radius: 10px; padding: 14px 16px; cursor: pointer; transition: all 0.15s; user-select: none; display: flex; align-items: center; gap: 10px; }
+  .card:hover { border-color: #6B1A1A; background: #F5EDD5; }
+  .card.on { border-color: #2D6A4F; background: #D8F3DC; }
+  .card .check { width: 22px; height: 22px; border-radius: 6px; border: 2px solid #D5C9A8; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.15s; }
+  .card.on .check { background: #2D6A4F; border-color: #2D6A4F; color: #fff; }
+  .card .label { font-size: 14px; line-height: 1.3; }
+  .footer { margin-top: 32px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .btn { padding: 12px 28px; border: none; border-radius: 8px; font-family: Georgia, serif; font-size: 15px; font-weight: bold; cursor: pointer; }
+  .btn-primary { background: #6B1A1A; color: #fff; }
+  .btn-primary:hover { background: #4A0E0E; }
+  .btn-secondary { background: #D5C9A8; color: #1A1A1A; }
+  .output { display: none; margin-top: 20px; background: #1C1C1E; color: #D8F3DC; border-radius: 10px; padding: 16px 20px; font-family: monospace; font-size: 13px; white-space: pre-wrap; word-break: break-all; }
+</style>
+</head>
+<body>
+<h1>⚙️ Permisos de edición — Rol RRHH</h1>
+<p class="sub">Marca los campos que RRHH podrá editar en la ficha del empleado.</p>
+
+<div class="section">
+  <div class="section-title">👤 Datos Personales</div>
+  <div class="cards">
+    <div class="card" data-id="nombres" onclick="toggle(this)"><div class="check"></div><div class="label">Nombres</div></div>
+    <div class="card" data-id="apellidos" onclick="toggle(this)"><div class="check"></div><div class="label">Apellidos</div></div>
+    <div class="card" data-id="carnet" onclick="toggle(this)"><div class="check"></div><div class="label">Carnet de identidad</div></div>
+    <div class="card" data-id="email" onclick="toggle(this)"><div class="check"></div><div class="label">Correo electrónico</div></div>
+    <div class="card" data-id="telefono" onclick="toggle(this)"><div class="check"></div><div class="label">Teléfono</div></div>
+    <div class="card" data-id="fechaNacimiento" onclick="toggle(this)"><div class="check"></div><div class="label">Fecha de nacimiento</div></div>
+    <div class="card" data-id="direccion" onclick="toggle(this)"><div class="check"></div><div class="label">Dirección</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">💼 Datos Laborales</div>
+  <div class="cards">
+    <div class="card" data-id="tipoContrato" onclick="toggle(this)"><div class="check"></div><div class="label">Tipo de contrato</div></div>
+    <div class="card" data-id="clasificacion" onclick="toggle(this)"><div class="check"></div><div class="label">Clasificación</div></div>
+    <div class="card" data-id="jornada" onclick="toggle(this)"><div class="check"></div><div class="label">Jornada</div></div>
+    <div class="card" data-id="departamento" onclick="toggle(this)"><div class="check"></div><div class="label">Departamento</div></div>
+    <div class="card" data-id="plaza" onclick="toggle(this)"><div class="check"></div><div class="label">Plaza</div></div>
+    <div class="card" data-id="salarioBase" onclick="toggle(this)"><div class="check"></div><div class="label">Salario base</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">📄 Documentos</div>
+  <div class="cards">
+    <div class="card" data-id="fotoCarnet" onclick="toggle(this)"><div class="check"></div><div class="label">Escaneo del carnet</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">📝 Contrato</div>
+  <div class="cards">
+    <div class="card" data-id="contratoFechaFirma" onclick="toggle(this)"><div class="check"></div><div class="label">Fecha de firma</div></div>
+    <div class="card" data-id="contratoObs" onclick="toggle(this)"><div class="check"></div><div class="label">Observaciones</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">🏦 Cuenta Bancaria</div>
+  <div class="cards">
+    <div class="card" data-id="banco" onclick="toggle(this)"><div class="check"></div><div class="label">Banco</div></div>
+    <div class="card" data-id="numeroCuenta" onclick="toggle(this)"><div class="check"></div><div class="label">Número de cuenta</div></div>
+  </div>
+</div>
+
+<div class="footer">
+  <button class="btn btn-primary" onclick="copiar()">📋 Copiar selección</button>
+  <button class="btn btn-secondary" onclick="marcarTodos()">Marcar todos</button>
+  <button class="btn btn-secondary" onclick="desmarcarTodos()">Desmarcar todos</button>
+</div>
+<div class="output" id="output"></div>
+
+<script>
+function toggle(card) {
+  card.classList.toggle('on');
+  card.querySelector('.check').textContent = card.classList.contains('on') ? '✓' : '';
+}
+function marcarTodos() {
+  document.querySelectorAll('.card').forEach(c => { c.classList.add('on'); c.querySelector('.check').textContent = '✓'; });
+}
+function desmarcarTodos() {
+  document.querySelectorAll('.card').forEach(c => { c.classList.remove('on'); c.querySelector('.check').textContent = ''; });
+}
+function copiar() {
+  const sel = [...document.querySelectorAll('.card.on')].map(c => c.dataset.id);
+  const text = 'RRHH puede editar: ' + (sel.length ? sel.join(', ') : '(ninguno)');
+  const out = document.getElementById('output');
+  out.style.display = 'block';
+  out.textContent = text;
+  navigator.clipboard.writeText(text).catch(()=>{});
+}
+</script>
+</body>
+</html>
