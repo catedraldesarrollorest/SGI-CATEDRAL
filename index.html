@@ -655,7 +655,7 @@ function doLogin(){
     renderSidebar();
     navigateTo('dashboard');
     setTimeout(function(){ updateAlertaBadgeJur(); }, 300);
-    setTimeout(() => sincronizarDesdeSheets(), 500);
+    setTimeout(async () => { await sincronizarDesdeSheets(); await flushPendingOps(); }, 500);
   } else {
     document.getElementById('login-error').style.display='block';
     clearPin();
@@ -2061,8 +2061,13 @@ async function guardarEdicionEmpleado(id){
   } catch(e){
     console.error('Error guardando edición:',e);
     DB_PENDING_OPS.push({tabla:'empleados',accion:'actualizar',valores:emp,id:emp.id});
-    showSyncIndicator('⚠️ Guardado local','offline');
+    saveState();
+    showSyncIndicator('⚠️ Guardado local — se reintentará al sincronizar','offline');
     DB_ONLINE=false; updateSyncBadge(false);
+    addAuditLog('EDICION','Edición empleado (local): '+emp.nombres+' '+emp.apellidos+' por '+getRoleName(currentRole));
+    showToast('Cambios guardados localmente ⚠️ (sin conexión a Sheets)','warning');
+    navigateTo('empleados');
+    return;
   }
 
   addAuditLog('EDICION','Edición empleado: '+emp.nombres+' '+emp.apellidos+' por '+getRoleName(currentRole));
@@ -2702,11 +2707,16 @@ function cargarNomina(){
   const activos=getEmpleadosActivos();
   if(!nomina){
     nomina={id:'N'+uid(),periodo:periodoKey,mes,ano,mesNombre,estado:'borrador',lineas:[],totalDevengado:0};
-    activos.forEach(e=>nomina.lineas.push({empleadoId:e.id,diasTrabajados:getDiasJornada(e.jornada),horasExtras:0}));
+    activos.forEach(e=>nomina.lineas.push({empleadoId:e.id,nominaId:nomina.id,diasTrabajados:getDiasJornada(e.jornada),horasExtras:0}));
     STATE.nominas.push(nomina);saveState();
+    const {lineas:_l,...nominaHeader}=nomina;
+    pushToSheets('nominas','insertar',nominaHeader,null);
+    nomina.lineas.forEach(l=>pushToSheets('nominaLineas','insertar',l,null));
   } else {
-    activos.forEach(e=>{if(!nomina.lineas.find(l=>l.empleadoId===e.id))nomina.lineas.push({empleadoId:e.id,diasTrabajados:getDiasJornada(e.jornada),horasExtras:0})});
-    saveState();
+    let newLines=false;
+    activos.forEach(e=>{if(!nomina.lineas.find(l=>l.empleadoId===e.id)){nomina.lineas.push({empleadoId:e.id,nominaId:nomina.id,diasTrabajados:getDiasJornada(e.jornada),horasExtras:0});newLines=true;}});
+    if(newLines){saveState();nomina.lineas.filter(l=>l.nominaId===nomina.id).forEach(l=>pushToSheets('nominaLineas','insertar',l,null));}
+    else saveState();
   }
   let html=`<div class="card">
     <div class="card-header"><h3>Nómina: ${mesNombre} ${ano}</h3><span class="badge badge-${nomina.estado==='aprobada'?'approved':nomina.estado==='pendiente'?'pending':'draft'}">${nomina.estado}</span></div>
@@ -2778,16 +2788,32 @@ function updateNominaLine(nomId,empId){
   const tgEl=document.getElementById('nom-total-general');if(tgEl)tgEl.innerHTML=`<b>${fmtMoney(tg)}</b>`;saveState();
 }
 
-function calcularNomina(nomId){const nomina=STATE.nominas.find(n=>n.id===nomId);if(!nomina)return;nomina.lineas.forEach(l=>updateNominaLine(nomId,l.empleadoId));showToast('Nómina calculada','success')}
+function calcularNomina(nomId){
+  const nomina=STATE.nominas.find(n=>n.id===nomId);if(!nomina)return;
+  nomina.lineas.forEach(l=>updateNominaLine(nomId,l.empleadoId));
+  saveState();
+  const {lineas:_l,...nominaHeader}=nomina;
+  pushToSheets('nominas','actualizar',nominaHeader,nomina.id);
+  nomina.lineas.forEach(l=>{const lineaData={...l,nominaId:nomina.id};pushToSheets('nominaLineas','actualizar',lineaData,lineaData.id||null);});
+  showToast('Nómina calculada','success');
+}
 
 function solicitarAprobacion(nomId){
   const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
-  confirmAction('¿Enviar nómina a revisión de Administración?',function(){n.estado='pendiente';saveState();addAuditLog('NOMINA_PENDIENTE',`Nómina ${n.mesNombre} ${n.ano} enviada a aprobación`);showToast('Nómina enviada','info');cargarNomina()});
+  confirmAction('¿Enviar nómina a revisión de Administración?',function(){
+    n.estado='pendiente';saveState();
+    const {lineas:_l,...nominaHeader}=n;pushToSheets('nominas','actualizar',nominaHeader,n.id);
+    addAuditLog('NOMINA_PENDIENTE',`Nómina ${n.mesNombre} ${n.ano} enviada a aprobación`);showToast('Nómina enviada','info');cargarNomina();
+  });
 }
 
 function aprobarNomina(nomId){
   const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
-  confirmAction('¿Aprobar y cerrar esta nómina?',function(){n.estado='aprobada';n.fechaAprobacion=new Date().toISOString();saveState();addAuditLog('NOMINA_APROBADA',`Nómina ${n.mesNombre} ${n.ano} aprobada. Total: ${fmtMoney(n.totalDevengado)}`);showToast('Nómina aprobada','success');renderHistoricoNominas()});
+  confirmAction('¿Aprobar y cerrar esta nómina?',function(){
+    n.estado='aprobada';n.fechaAprobacion=new Date().toISOString();saveState();
+    const {lineas:_l,...nominaHeader}=n;pushToSheets('nominas','actualizar',nominaHeader,n.id);
+    addAuditLog('NOMINA_APROBADA',`Nómina ${n.mesNombre} ${n.ano} aprobada. Total: ${fmtMoney(n.totalDevengado)}`);showToast('Nómina aprobada','success');renderHistoricoNominas();
+  });
 }
 
 function reabrirNomina(nomId){
@@ -2800,6 +2826,7 @@ function confirmarReopenNomina(nomId){
   const motivo=document.getElementById('reabrir-motivo').value.trim();
   if(!motivo){showToast('El motivo es obligatorio','warning');return}
   const n=STATE.nominas.find(x=>x.id===nomId);n.estado='borrador';saveState();
+  const {lineas:_l,...nominaHeader}=n;pushToSheets('nominas','actualizar',nominaHeader,n.id);
   addAuditLog('NOMINA_REABIERTA',`Nómina ${n.mesNombre} ${n.ano} reabierta. Motivo: ${motivo}`);
   showToast('Nómina reabierta','warning');closeModal();renderHistoricoNominas();
 }
