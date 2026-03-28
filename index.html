@@ -1617,24 +1617,6 @@ function renderAlta(container,editData=null){
   container.innerHTML=`<div class="card">
     <div class="card-header"><h3>${isEdit?'✏️ Editar Empleado':'➕ Alta de Empleado'}</h3></div>
     <div class="card-body"><div class="form-grid" id="alta-form">
-      <div class="form-section-title">📸 Foto del Carnet de Identidad</div>
-      <div class="form-group full">
-        <div style="display:flex;justify-content:center;margin-bottom:8px;">
-
-          <!-- FOTO CARNET -->
-          <div style="text-align:center;">
-            <label class="field-label required" style="display:block;margin-bottom:10px;">🪪 Foto del Carnet de Identidad</label>
-            ${(getFotoUrl(d,doc,'carnet')||null)
-              ?`<img src="${getFotoUrl(d,doc,'carnet')}" style="width:200px;height:130px;object-fit:cover;border-radius:8px;border:2px solid var(--border);display:block;margin:0 auto 10px;" id="preview-carnet">`
-              :`<div id="preview-carnet-ph" onclick="document.getElementById('input-foto-carnet').click()" style="width:200px;height:130px;background:var(--cream-dark);border-radius:8px;border:2px dashed var(--burgundy);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;margin:0 auto 10px;gap:6px;"><span style="font-size:36px;">🪪</span><span style="font-size:12px;color:var(--burgundy);font-weight:600;">Fotografiar carnet</span></div>
-               <img id="preview-carnet" style="display:none;width:200px;height:130px;object-fit:cover;border-radius:8px;border:2px solid var(--success);margin:0 auto 10px;">`}
-            <input type="file" id="input-foto-carnet" accept="image/*" capture="environment" style="display:none" onchange="previewFotoCarnet(this)">
-            <button type="button" class="btn btn-secondary btn-xs" onclick="document.getElementById('input-foto-carnet').click()">📷 Cámara / Galería</button>
-            <div class="input-hint" style="margin-top:6px;">Ambas caras del carnet</div>
-          </div>
-
-        </div>
-      </div>
 
       <div class="form-section-title">📋 Datos Personales</div>
       <div class="form-group"><label class="field-label required">Fecha de Alta</label><input type="date" id="a-fechaAlta" value="${d.fechaAlta||''}" required></div>
@@ -1673,6 +1655,19 @@ function renderAlta(container,editData=null){
         <div class="input-hint">⏱️ Vence a los 6 meses. El sistema notificará cuando esté próximo a vencer (30 días antes) o vencido. <b>El documento físico se archiva en papel.</b></div></div>
 
       <div class="form-section-title">📄 Documentos</div>
+      <div class="form-group full"><label class="field-label required">🪪 Escaneo del Carnet de Identidad</label>
+        <div class="file-drop file-drop-sm" onclick="document.getElementById('input-foto-carnet').click()" style="cursor:pointer">
+          <div class="file-icon">🪪</div>
+          <div>
+            <p style="margin:0">Seleccionar imagen escaneada del carnet</p>
+            <span id="carnet-scan-name" class="text-muted" style="font-size:12px">${(d.fotoCarnetId||doc.fotoCarnet)?'✅ Imagen adjunta (puede reemplazarla)':'Sin archivo — JPG, PNG o PDF'}</span>
+          </div>
+          <input type="file" id="input-foto-carnet" accept="image/jpeg,image/png,image/webp,image/tiff,application/pdf" style="display:none" onchange="previewFotoCarnet(this)">
+        </div>
+        <img id="preview-carnet" src="${getFotoUrl(d,doc,'carnet')||''}" style="${getFotoUrl(d,doc,'carnet')?'display:block':'display:none'};max-width:340px;max-height:220px;border-radius:8px;border:2px solid var(--success);margin-top:10px;">
+        <div class="input-hint" style="margin-top:4px;">Suba el escaneo del carnet de identidad (ambas caras). No se usa la cámara.</div>
+      </div>
+
       <div class="form-group"><label class="field-label">PDF Obligaciones y Responsabilidades</label>
         <div class="file-drop file-drop-sm" onclick="document.getElementById('a-pdf-obl').click()">
           <div class="file-icon">📄</div>
@@ -1722,73 +1717,18 @@ function autoFillFechaNacimiento(carnet){
   if(campo&&!campo.dataset.manual){campo.value=isoDate;}
 }
 
-// Procesamiento de foto carnet: detectar bordes y limpiar fondo
-function procesarFotoCarnet(base64Original,callback){
-  const img=new Image();
-  img.onload=function(){
-    const canvas=document.createElement('canvas');
-    const W=img.width,H=img.height;
-    canvas.width=W;canvas.height=H;
-    const ctx=canvas.getContext('2d');
-    ctx.drawImage(img,0,0);
-    const imageData=ctx.getImageData(0,0,W,H);
-    const data=imageData.data;
-    // Detectar color de fondo (esquinas)
-    function getPixel(x,y){const i=(y*W+x)*4;return[data[i],data[i+1],data[i+2],data[i+3]];}
-    const corners=[[0,0],[W-1,0],[0,H-1],[W-1,H-1],[Math.floor(W/2),0],[0,Math.floor(H/2)]];
-    let rSum=0,gSum=0,bSum=0;
-    corners.forEach(([x,y])=>{const p=getPixel(x,y);rSum+=p[0];gSum+=p[1];bSum+=p[2];});
-    const bgR=Math.round(rSum/corners.length),bgG=Math.round(gSum/corners.length),bgB=Math.round(bSum/corners.length);
-    // Umbral de similitud con el fondo
-    const threshold=55;
-    for(let i=0;i<data.length;i+=4){
-      const r=data[i],g=data[i+1],b=data[i+2];
-      const dist=Math.sqrt((r-bgR)**2+(g-bgG)**2+(b-bgB)**2);
-      if(dist<threshold){data[i+3]=0;} // transparente
-    }
-    ctx.putImageData(imageData,0,0);
-    callback(canvas.toDataURL('image/png'));
-  };
-  img.src=base64Original;
-}
-
-function previewFotoEmpleado(input){
-  if(!input.files[0])return;
-  const reader=new FileReader();
-  reader.onload=function(ev){
-    tempFotoEmpleado=ev.target.result;
-    const prev=document.getElementById('preview-empleado');
-    const ph=document.getElementById('preview-empleado-ph');
-    if(prev){prev.src=ev.target.result;prev.style.display='block';}
-    if(ph)ph.style.display='none';
-  };
-  reader.readAsDataURL(input.files[0]);
-}
-
 function previewFotoCarnet(input){
   if(!input.files[0])return;
   const reader=new FileReader();
   reader.onload=function(ev){
-    const original=ev.target.result;
-    // Mostrar original primero, luego procesar fondo
+    tempFotoCarnet=ev.target.result;
     const prev=document.getElementById('preview-carnet');
-    const ph=document.getElementById('preview-carnet-ph');
-    if(prev){prev.src=original;prev.style.display='block';}
-    if(ph)ph.style.display='none';
-    // Procesar eliminación de fondo
-    procesarFotoCarnet(original,function(procesada){
-      tempFotoCarnet=procesada;
-      if(prev){prev.src=procesada;}
-      const legacyPrev=document.getElementById('foto-preview');
-      if(legacyPrev){legacyPrev.src=procesada;legacyPrev.style.display='block';}
-    });
-    // Legacy placeholder
-    const legacyPh=document.getElementById('foto-placeholder');
-    if(legacyPh)legacyPh.style.display='none';
+    const nameEl=document.getElementById('carnet-scan-name');
+    if(prev){prev.src=ev.target.result;prev.style.display='block';}
+    if(nameEl)nameEl.textContent='\u2705 '+input.files[0].name;
   };
   reader.readAsDataURL(input.files[0]);
 }
-
 function clearFoto(){
   tempFotoCarnet='__clear__';
   tempFotoEmpleado='__clear__';
