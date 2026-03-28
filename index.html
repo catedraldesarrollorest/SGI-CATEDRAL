@@ -1476,6 +1476,7 @@ function guardarCuenta(id){
   const emp=STATE.empleados.find(e=>e.id===id);
   emp.cuenta=val;
   saveState();
+  pushToSheets('empleados','actualizar',emp,emp.id);
   addAuditLog('EDICION_CUENTA',`Cuenta bancaria actualizada para ${emp.nombres} ${emp.apellidos} por ${getRoleName(currentRole)}`);
   showToast('Cuenta bancaria actualizada','success');
   closeModal();
@@ -2521,6 +2522,7 @@ function guardarFechaContratoEmp(empId){
   STATE.documentos[empId].contratoObs=obs;
   saveState();
   const emp=STATE.empleados.find(function(e){return e.id===empId;});
+  if(emp){emp.contratoFechaFirma=fecha;emp.contratoObs=obs;pushToSheets('empleados','actualizar',emp,empId);}
   addAuditLog('CONTRATO','Contrato firmado registrado para '+(emp?emp.nombres+' '+emp.apellidos:'')+'  — Fecha: '+fmtDate(fecha)+' (archivado en papel)');
   showToast('Fecha de contrato registrada ✅','success');
   closeModal();
@@ -2637,7 +2639,7 @@ async function guardarSancion(){
 function eliminarSancion(id){
   confirmAction('¿Eliminar esta sanción? Quedará en auditoría.',function(){
     const idx=STATE.sanciones.findIndex(s=>s.id===id);
-    if(idx>-1){STATE.sanciones.splice(idx,1);saveState();addAuditLog('ELIMINAR_SANCION','Sanción eliminada por Admin');showToast('Sanción eliminada','info');renderSanciones(document.getElementById('app-content'))}
+    if(idx>-1){const sanId=STATE.sanciones[idx].id;STATE.sanciones.splice(idx,1);saveState();pushToSheets('sanciones','eliminar',null,sanId);addAuditLog('ELIMINAR_SANCION','Sanción eliminada por Admin');showToast('Sanción eliminada','info');renderSanciones(document.getElementById('app-content'))}
   });
 }
 
@@ -2915,12 +2917,20 @@ function guardarIncidencia(){
   const inc={id:'I'+uid(),empleadoId:empId,tipo,periodo,fechaInicio,fechaFin,diasAfectados};
   if(tipo==='Permiso no retribuido'||tipo==='Ausencia injustificada'){
     const nomina=STATE.nominas.find(n=>n.periodo===periodo);
-    if(nomina){const linea=nomina.lineas.find(l=>l.empleadoId===empId);if(linea)linea.diasTrabajados=Math.max(0,linea.diasTrabajados-diasAfectados)}
+    if(nomina){
+      const linea=nomina.lineas.find(l=>l.empleadoId===empId);
+      if(linea){
+        linea.diasTrabajados=Math.max(0,linea.diasTrabajados-diasAfectados);
+        pushToSheets('nominaLineas','actualizar',{...linea,nominaId:nomina.id},linea.id||null);
+        const {lineas:_l,...nominaHeader}=nomina;
+        pushToSheets('nominas','actualizar',nominaHeader,nomina.id);
+      }
+    }
   }
   if(tipo==='Vacaciones'){
     let ctrl=STATE.vacacionesControl.find(v=>v.empleadoId===empId&&v.ano===new Date(fechaInicio).getFullYear());
-    if(!ctrl){ctrl={empleadoId:empId,ano:new Date(fechaInicio).getFullYear(),diasTomados:0};STATE.vacacionesControl.push(ctrl)}
-    ctrl.diasTomados+=diasAfectados;
+    if(!ctrl){ctrl={id:'VC'+uid(),empleadoId:empId,ano:new Date(fechaInicio).getFullYear(),diasTomados:0};STATE.vacacionesControl.push(ctrl);pushToSheets('vacacionesControl','insertar',ctrl,null);}
+    else{ctrl.diasTomados+=diasAfectados;pushToSheets('vacacionesControl','actualizar',ctrl,ctrl.id);}
   }
   STATE.incidencias.push(inc);saveState();
   pushToSheets('incidencias','insertar', inc);
@@ -2932,7 +2942,7 @@ function guardarIncidencia(){
 function eliminarIncidencia(id){
   confirmAction('¿Eliminar esta incidencia?',function(){
     const idx=STATE.incidencias.findIndex(i=>i.id===id);
-    if(idx>-1){STATE.incidencias.splice(idx,1);saveState();addAuditLog('ELIMINAR_INCIDENCIA','Incidencia eliminada por Admin');showToast('Eliminada','info');renderIncidencias(document.getElementById('app-content'))}
+    if(idx>-1){const incId=STATE.incidencias[idx].id;STATE.incidencias.splice(idx,1);saveState();pushToSheets('incidencias','eliminar',null,incId);addAuditLog('ELIMINAR_INCIDENCIA','Incidencia eliminada por Admin');showToast('Eliminada','info');renderIncidencias(document.getElementById('app-content'))}
   });
 }
 
