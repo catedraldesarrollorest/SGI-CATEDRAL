@@ -1858,14 +1858,15 @@ async function guardarAlta(){
     }
     tempFotoEmpleado=null;
 
-    // 4. Subir foto carnet si existe
+    // 4. Subir escaneo carnet si existe
     if(tempFotoCarnet && tempFotoCarnet!=='__clear__'){
       try{
-        const res=await subirBase64ADrive(tempFotoCarnet,'image/jpeg','foto_carnet',id,emp.carpetaExpId||'','foto_carnet');
+        const carnetMime=tempFotoCarnet.match(/^data:([^;]+);/)?.[1]||'image/jpeg';
+        const res=await subirBase64ADrive(tempFotoCarnet,carnetMime,'foto_carnet',id,emp.carpetaExpId||'','foto_carnet');
         emp.fotoCarnetId=res.fileId;
         docData.fotoCarnetThumb=res.thumbnailUrl;
         await registrarDocumentoSheets(id,'foto_carnet',res.fileId,res.viewUrl,res.nombre,res.tamaño);
-      }catch(e){console.warn('Error subiendo foto carnet:',e.message);}
+      }catch(e){console.warn('Error subiendo escaneo carnet:',e.message);}
     }
     tempFotoCarnet=null;
 
@@ -1977,15 +1978,16 @@ async function guardarEdicionEmpleado(id){
     }
     tempFotoEmpleado=null;
 
-    // Subir foto carnet nueva si existe
+    // Subir escaneo carnet nuevo si existe
     if(tempFotoCarnet && tempFotoCarnet!=='__clear__'){
       try{
         if(emp.fotoCarnetId) await eliminarArchivoDrive(emp.fotoCarnetId);
-        const res=await subirBase64ADrive(tempFotoCarnet,'image/jpeg','foto_carnet',id,emp.carpetaExpId||'','foto_carnet');
+        const carnetMime=tempFotoCarnet.match(/^data:([^;]+);/)?.[1]||'image/jpeg';
+        const res=await subirBase64ADrive(tempFotoCarnet,carnetMime,'foto_carnet',id,emp.carpetaExpId||'','foto_carnet');
         emp.fotoCarnetId=res.fileId;
         docData.fotoCarnetThumb=res.thumbnailUrl;
         await registrarDocumentoSheets(id,'foto_carnet',res.fileId,res.viewUrl,res.nombre,res.tamaño);
-      }catch(e){console.warn('Error foto carnet:',e.message);}
+      }catch(e){console.warn('Error escaneo carnet:',e.message);}
     } else if(tempFotoCarnet==='__clear__'){
       if(emp.fotoCarnetId) await eliminarArchivoDrive(emp.fotoCarnetId);
       emp.fotoCarnetId='';
