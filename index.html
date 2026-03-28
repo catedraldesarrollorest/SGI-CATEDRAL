@@ -3075,9 +3075,14 @@ function importBackup(){
 // ASISTENCIA — JEFE DE TURNO
 // ══════════════════════════════════════════════════
 
+const DEPTS_EXCLUIDOS_JEFE_TURNO = ['ADMINISTRACIÓN','LOGÍSTICA'];
+
 function renderAsistencia(container){
   const hoy = new Date().toISOString().slice(0,10);
-  const activos = getEmpleadosActivos();
+  const todosActivos = getEmpleadosActivos();
+  const activos = currentRole === 'jefe_turno'
+    ? todosActivos.filter(e => !DEPTS_EXCLUIDOS_JEFE_TURNO.includes(e.departamento))
+    : todosActivos;
   const registroHoy = STATE.asistencia.find(a => a.fecha === hoy);
   const yaGuardado = registroHoy && registroHoy.cerrado;
 
@@ -3195,8 +3200,15 @@ function getEstadoActual(empId){
   return 'P';
 }
 
+function getActivosParaTurno(){
+  const todos = getEmpleadosActivos();
+  return currentRole === 'jefe_turno'
+    ? todos.filter(e => !DEPTS_EXCLUIDOS_JEFE_TURNO.includes(e.departamento))
+    : todos;
+}
+
 function actualizarContadores(hoy){
-  const activos = getEmpleadosActivos();
+  const activos = getActivosParaTurno();
   var cP=0, cA=0, cT=0;
   activos.forEach(function(e){
     const est = getEstadoActual(e.id);
@@ -3217,7 +3229,7 @@ function autoGuardarLinea(empId, hoy){
 }
 
 function autoGuardarTurno(hoy){
-  const activos = getEmpleadosActivos();
+  const activos = getActivosParaTurno();
   let registro = STATE.asistencia.find(function(a){ return a.fecha === hoy; });
   const lineas = activos.map(function(e){
     const motivoEl = document.getElementById('motivo-'+e.id);
@@ -3237,7 +3249,7 @@ function autoGuardarTurno(hoy){
 }
 
 function cerrarTurno(hoy){
-  const activos = getEmpleadosActivos();
+  const activos = getActivosParaTurno();
   const ausentes = activos.filter(function(e){ return getEstadoActual(e.id) === 'A'; }).length;
   const tardanzas = activos.filter(function(e){ return getEstadoActual(e.id) === 'T'; }).length;
   const msg = '¿Confirmar cierre del turno? '+ausentes+' ausente(s), '+tardanzas+' tardanza(s). <b>No se podrá modificar.</b>';
@@ -3305,12 +3317,22 @@ function verDetalleAsistencia(regId){
   const estadoIcon = {P:'✅',A:'❌',T:'🕐'};
   const estadoLabel = {P:'Presente',A:'Ausente',T:'Tardanza'};
   const estadoColor = {P:'var(--success)',A:'var(--danger)',T:'var(--warning)'};
-  const P = (reg.lineas||[]).filter(function(l){return l.estado==='P';}).length;
-  const A = (reg.lineas||[]).filter(function(l){return l.estado==='A';}).length;
-  const T = (reg.lineas||[]).filter(function(l){return l.estado==='T';}).length;
+  const lineasVisibles = (reg.lineas||[]).filter(function(l){
+    if(currentRole !== 'jefe_turno') return true;
+    const emp = STATE.empleados.find(function(e){return e.id===l.empleadoId;});
+    return emp && !DEPTS_EXCLUIDOS_JEFE_TURNO.includes(emp.departamento);
+  });
+  const P = lineasVisibles.filter(function(l){return l.estado==='P';}).length;
+  const A = lineasVisibles.filter(function(l){return l.estado==='A';}).length;
+  const T = lineasVisibles.filter(function(l){return l.estado==='T';}).length;
 
   let rowsHtml = '';
-  (reg.lineas||[]).forEach(function(l){
+  const lineasFiltradas = (reg.lineas||[]).filter(function(l){
+    if(currentRole !== 'jefe_turno') return true;
+    const emp = STATE.empleados.find(function(e){return e.id===l.empleadoId;});
+    return emp && !DEPTS_EXCLUIDOS_JEFE_TURNO.includes(emp.departamento);
+  });
+  lineasFiltradas.forEach(function(l){
     const emp = STATE.empleados.find(function(e){return e.id===l.empleadoId;});
     rowsHtml += '<tr>'
       +'<td><b>'+(emp ? emp.nombres+' '+emp.apellidos : '—')+'</b></td>'
