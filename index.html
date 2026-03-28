@@ -1403,9 +1403,9 @@ function verFicha(id){
         <div><b>Teléfono:</b> ${e.telefono||'—'}</div>
         <div><b>F.Nacimiento:</b> ${fmtDate(e.fechaNacimiento)}</div>
         <div><b>Dirección:</b> ${e.direccion||'—'}</div>
+        <div><b>Correo:</b> ${e.email?`<a href="mailto:${e.email}" style="color:var(--burgundy)">${e.email}</a>`:'—'}</div>
         <div><b>Banco:</b> ${e.banco||'—'}</div>
         <div><b>Cuenta:</b> ${e.cuenta?e.cuenta.replace(/(.{4})/g,'$1 ').trim():'—'}</div>
-        <div><b>Profesión:</b> ${e.profesion||'—'}</div>
         <div><b>Dpto/Plaza:</b> ${e.departamento} / ${e.plaza}</div>
         <div><b>Contrato:</b> ${e.tipoContrato||'—'}</div>
         <div><b>Clasificación:</b> <span class="tag tag-${(e.clasificacion||'').toLowerCase()}">${e.clasificacion||'—'}</span></div>
@@ -1501,7 +1501,7 @@ function guardarCuenta(id){
 function exportFichaExcel(id){
   const e=STATE.empleados.find(x=>x.id===id);
   if(!e)return;
-  exportToExcel([{Nombre:`${e.nombres} ${e.apellidos}`,Carnet:e.carnet,Teléfono:e.telefono,'F.Nacimiento':fmtDate(e.fechaNacimiento),Dirección:e.direccion,Banco:e.banco,Cuenta:e.cuenta,Profesión:e.profesion,'Tipo Contrato':e.tipoContrato,Departamento:e.departamento,Plaza:e.plaza,Clasificación:e.clasificacion,Jornada:getLabelJornada(e.jornada),'Fecha Alta':fmtDate(e.fechaAlta),'Antigüedad':calcAntiguedad(e.fechaAlta)+' años','Salario Base':e.salarioBase,Estado:e.activo?'Activo':'Baja'}],`Ficha_${e.nombres.replace(/ /g,'_')}`);
+  exportToExcel([{Nombre:`${e.nombres} ${e.apellidos}`,Carnet:e.carnet,Teléfono:e.telefono,Correo:e.email||'—','F.Nacimiento':fmtDate(e.fechaNacimiento),Dirección:e.direccion,Banco:e.banco,Cuenta:e.cuenta,'Tipo Contrato':e.tipoContrato,Departamento:e.departamento,Plaza:e.plaza,Clasificación:e.clasificacion,Jornada:getLabelJornada(e.jornada),'Fecha Alta':fmtDate(e.fechaAlta),'Antigüedad':calcAntiguedad(e.fechaAlta)+' años','Salario Base':e.salarioBase,Estado:e.activo?'Activo':'Baja'}],`Ficha_${e.nombres.replace(/ /g,'_')}`);
   showToast('Ficha exportada','success');
 }
 
@@ -1642,6 +1642,7 @@ function renderAlta(container,editData=null){
       <div class="form-group"><label class="field-label required">Apellidos</label><input type="text" id="a-apellidos" value="${d.apellidos||''}" placeholder="Apellido(s)" required></div>
       <div class="form-group"><label class="field-label required" data-tip="Exactamente 11 cifras numéricas. Este número será el número de expediente laboral.">N° Carnet / N° Expediente (11 dígitos)</label><input type="text" id="a-carnet" maxlength="11" value="${d.carnet||''}" placeholder="12345678901" oninput="this.value=this.value.split('').filter(c=>c>='0'&&c<='9').join('').slice(0,11);autoFillFechaNacimiento(this.value)"></div>
       <div class="form-group"><label class="field-label">Teléfono</label><input type="tel" id="a-telefono" value="${d.telefono||''}" required></div>
+      <div class="form-group"><label class="field-label required">Correo Electrónico</label><input type="email" id="a-email" value="${d.email||''}" placeholder="ejemplo@correo.com" required autocomplete="email"></div>
       <div class="form-group"><label class="field-label">Fecha de Nacimiento</label><input type="date" id="a-fechaNacimiento" value="${d.fechaNacimiento||''}" required></div>
       <div class="form-group full"><label class="field-label">Dirección Particular</label><input type="text" id="a-direccion" value="${d.direccion||''}" placeholder="Calle, número, ciudad..." required></div>
 
@@ -1649,7 +1650,6 @@ function renderAlta(container,editData=null){
       <div class="form-group"><label class="field-label" data-tip="El número de cuenta solo puede editarlo el departamento de Contabilidad o Administración. Exactamente 16 dígitos.">N° de Cuenta (16 dígitos) ${canEditCuenta?'':'🔒'}</label>
         <input type="text" id="a-cuenta" maxlength="16" value="${d.cuenta||''}" placeholder="1234567890123456" ${!canEditCuenta?'readonly':''} oninput="this.value=this.value.split('').filter(c=>c>='0'&&c<='9').join('').slice(0,16)">
         ${!canEditCuenta?`<div class="input-hint">🔒 Solo editable por Contabilidad o Administración</div>`:''}</div>
-      <div class="form-group"><label class="field-label">Profesión/Oficio</label><input type="text" id="a-profesion" value="${d.profesion||''}"></div>
 
       <div class="form-section-title">💼 Datos Laborales</div>
       <div class="form-group"><label class="field-label required">Tipo de Contrato</label>
@@ -1854,6 +1854,11 @@ async function guardarAlta(){
   if(!nombres||!apellidos||!carnet||!fechaAlta){showToast('Complete los campos obligatorios','warning');return}
   if(!/^\d{11}$/.test(carnet)){showToast('El carnet debe tener exactamente 11 dígitos','error');return}
   if(STATE.empleados.find(e=>e.carnet===carnet)){showToast('Ya existe un empleado con ese carnet','error');return}
+  function val(id){const el=document.getElementById(id);return el?el.value.trim():'';}
+  const email=val('a-email');
+  if(!email){showToast('El correo electrónico es obligatorio','warning');return}
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)){showToast('El correo electrónico no es válido','error');return}
+  if(STATE.empleados.find(e=>e.email&&e.email.toLowerCase()===email.toLowerCase())){showToast('Ya existe un empleado con ese correo','error');return}
 
   // Validar edad mínima 18 años
   const fechaNacVal=document.getElementById('a-fechaNacimiento').value;
@@ -1865,11 +1870,10 @@ async function guardarAlta(){
     if(edad>70){showToast('Verifique la fecha de nacimiento (más de 70 años)','warning');}
   }
 
-  function val(id){const el=document.getElementById(id);return el?el.value.trim():'';}
-
   const id='E'+uid();
   const emp={
     id,fechaAlta,nombres,apellidos,carnet,
+    email,
     telefono:val('a-telefono'),
     fechaNacimiento:val('a-fechaNacimiento'),
     direccion:val('a-direccion'),
@@ -1977,16 +1981,22 @@ async function guardarEdicionEmpleado(id){
 
   function val(id){const el=document.getElementById(id);return el?el.value.trim():'';}
 
+  const emailEdit=val('a-email');
+  if(!emailEdit){showToast('El correo electrónico es obligatorio','warning');return}
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(emailEdit)){showToast('El correo electrónico no es válido','error');return}
+  const dupEmail=STATE.empleados.find(e=>e.email&&e.email.toLowerCase()===emailEdit.toLowerCase()&&e.id!==id);
+  if(dupEmail){showToast('Ya existe otro empleado con ese correo','error');return}
+
   const canEditCuenta=currentRole==='admin'||currentRole==='contabilidad';
   Object.assign(emp,{
     fechaAlta:val('a-fechaAlta')||emp.fechaAlta,
     nombres:val('a-nombres')||emp.nombres,
     apellidos:val('a-apellidos')||emp.apellidos,
     carnet,
+    email:emailEdit,
     telefono:val('a-telefono')||emp.telefono,
     fechaNacimiento:val('a-fechaNacimiento')||emp.fechaNacimiento,
     direccion:val('a-direccion')||emp.direccion,
-    profesion:val('a-profesion')||emp.profesion,
     cuenta:canEditCuenta?(val('a-cuenta')||emp.cuenta):emp.cuenta,
     tipoContrato:val('a-contrato')||emp.tipoContrato,
     clasificacion:val('a-clasificacion')||emp.clasificacion,
