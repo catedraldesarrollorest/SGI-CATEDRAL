@@ -399,7 +399,7 @@
       <div class="sidebar-role-badge" id="role-badge" onclick="abrirSwitchRol()" title="Cambiar rol" style="cursor:pointer;user-select:none;">—</div>
     </div>
     <div class="sidebar-nav" id="sidebar-nav"></div>
-    <div class="sidebar-footer"><span class="sync-status-bar" id="sync-status-badge">⏳ Verificando...</span><button class="btn" onclick="doLogout()">🚪 Cerrar sesión</button><button class="btn" style="margin-top:6px;font-size:11px" onclick="manualSync()">🔄 Sincronizar</button></div>
+    <div class="sidebar-footer"><span class="sync-status-bar" id="sync-status-badge">⏳ Verificando...</span><button class="btn" onclick="doLogout()">🚪 Cerrar sesión</button><button class="btn" style="margin-top:6px;font-size:11px" onclick="manualSync()">🔄 Sincronizar</button><button class="btn" id="btn-migrar-sb" style="margin-top:6px;font-size:11px;display:none" onclick="migrarDatosASupabase()">📤 Migrar a Supabase</button></div>
   </nav>
   <div id="sidebar-overlay" onclick="closeSidebar()"></div>
   <div id="main">
@@ -569,6 +569,47 @@ async function manualSync() {
     await sincronizarDesdeSheets();
     await flushPendingOps();
   } catch(e) { showSyncIndicator('❌ Error de conexión', 'offline'); }
+}
+
+async function migrarDatosASupabase() {
+  if (!confirm('¿Migrar todos los datos locales a Supabase?\nEsto sube empleados, traslados, nóminas y todos los registros.\nSolo necesitas hacerlo una vez.')) return;
+  showSyncIndicator('⏳ Migrando datos...', 'syncing');
+  const btn = document.getElementById('btn-migrar-sb');
+  if (btn) btn.disabled = true;
+  let ok = 0, fail = 0;
+  const lotes = [
+    { tabla: 'empleados',        datos: STATE.empleados },
+    { tabla: 'traslados',        datos: STATE.traslados },
+    { tabla: 'bajas',            datos: STATE.bajas },
+    { tabla: 'sanciones',        datos: STATE.sanciones },
+    { tabla: 'nominas',          datos: STATE.nominas.map(n=>({...n,lineas:undefined})) },
+    { tabla: 'nominaLineas',     datos: STATE.nominas.flatMap(n=>(n.lineas||[]).map(l=>({...l,nominaId:n.id,id:l.id||('NL'+n.id+l.empleadoId)}))) },
+    { tabla: 'incidencias',      datos: STATE.incidencias },
+    { tabla: 'vacacionesControl',datos: STATE.vacacionesControl.map(v=>({...v,id:v.id||(v.empleadoId+'-'+v.ano)})) },
+    { tabla: 'historialSalarial',datos: STATE.historialSalarial },
+    { tabla: 'asistencia',       datos: STATE.asistencia },
+    { tabla: 'alertasJuridico',  datos: STATE.alertasJuridico||[] },
+    { tabla: 'plazasSalarios',   datos: Object.entries(STATE.plazasSalarios||{}).map(([plaza,salario])=>({plaza,salario})) },
+  ];
+  for (const { tabla, datos } of lotes) {
+    if (!datos || datos.length === 0) continue;
+    // Enviar en chunks de 200
+    const chunks = [];
+    for (let i = 0; i < datos.length; i += 200) chunks.push(datos.slice(i, i + 200));
+    for (const chunk of chunks) {
+      try { await sbUpsert(tabla, chunk); ok++; }
+      catch(e) { console.error('Error migrando', tabla, e); fail++; }
+    }
+  }
+  if (btn) btn.disabled = false;
+  if (fail === 0) {
+    showSyncIndicator('✅ Migración completa', 'ok');
+    showToast('✅ Datos migrados a Supabase correctamente', 'success', 5000);
+    if (btn) btn.style.display = 'none';
+  } else {
+    showSyncIndicator('⚠️ Migración con errores', 'offline');
+    showToast(`⚠️ ${ok} lotes OK, ${fail} con error. Revisa la consola.`, 'warning', 6000);
+  }
 }
 async function flushPendingOps() {
   if (DB_PENDING_OPS.length === 0) return;
@@ -874,6 +915,9 @@ function renderSidebar(){
     html+=`<div class="nav-section"><div class="nav-item" data-section="${item.section}" onclick="navigateTo('${item.section}')" style="justify-content:flex-start;"><span class="nav-icon">${item.icon}</span><span style="flex:1;">${item.label}</span>${badgeHtml}</div></div>`;
   });
   nav.innerHTML=html;
+  // Mostrar botón de migración solo a admin (una vez hasta que se complete)
+  const btnMigrar = document.getElementById('btn-migrar-sb');
+  if (btnMigrar) btnMigrar.style.display = currentRole === 'admin' ? 'block' : 'none';
 }
 
 function toggleSidebar(){
