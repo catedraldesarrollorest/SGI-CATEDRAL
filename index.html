@@ -431,6 +431,8 @@
 // ══════════════════════════════════════════════════
 const STORAGE_KEY = 'lacatedral_v2';
 const API_URL = 'https://script.google.com/macros/s/AKfycby9DnHw36GT9vD675svFyUxMDctnLeNe4Imwi_FEmGkdByV2lAWmFwqBhnAR8hDCzaS/exec';
+const SUPABASE_URL = 'https://uqwmnuqfffgdoobjlzug.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxd21udXFmZmZnZG9vYmpsenVnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNTA1OTQsImV4cCI6MjA5MDYyNjU5NH0.2b1ly2NtuHl6JxUZZHbKEcIgZjDwWR3xxdM1uN3LaFw';
 let DB_ONLINE = false;
 let DB_PENDING_OPS = [];
 
@@ -473,9 +475,55 @@ function showSyncIndicator(msg, type) {
 function updateSyncBadge(online) {
   const b = document.getElementById('sync-status-badge');
   if (!b) return;
-  b.textContent = online ? '🟢 Online — Sheets' : '🔴 Offline — Solo local';
+  b.textContent = online ? '🟢 Online' : '🔴 Offline — Solo local';
   b.style.color = online ? '#81C784' : '#FF8A80';
 }
+
+// ── SUPABASE (Primary DB) ─────────────────────────────────────
+async function sbFetch(method, table, data, qs) {
+  const url = SUPABASE_URL + '/rest/v1/' + table + (qs ? '?' + qs : '');
+  const res = await fetch(url, {
+    method,
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': 'Bearer ' + SUPABASE_KEY,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=minimal'
+    },
+    body: data != null ? JSON.stringify(data) : undefined
+  });
+  if (!res.ok) { const t = await res.text(); throw new Error('SB ' + res.status + ': ' + t.slice(0, 200)); }
+  if (method === 'GET') return res.json();
+  return true;
+}
+async function sbLeer(tabla) {
+  return await sbFetch('GET', tabla, null, 'select=*');
+}
+function sbIdField(tabla) {
+  return tabla === 'plazasSalarios' ? 'plaza' : tabla === 'config' ? 'clave' : 'id';
+}
+async function sbUpsert(tabla, valores) {
+  const idField = sbIdField(tabla);
+  const url = SUPABASE_URL + '/rest/v1/' + tabla + '?on_conflict=' + idField;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': 'Bearer ' + SUPABASE_KEY,
+      'Content-Type': 'application/json',
+      'Prefer': 'resolution=merge-duplicates,return=minimal'
+    },
+    body: JSON.stringify(Array.isArray(valores) ? valores : [valores])
+  });
+  if (!res.ok) { const t = await res.text(); throw new Error('SB upsert ' + res.status + ': ' + t.slice(0, 200)); }
+  return true;
+}
+async function sbEliminarDB(tabla, id) {
+  const idField = sbIdField(tabla);
+  return await sbFetch('DELETE', tabla, null, idField + '=eq.' + encodeURIComponent(id));
+}
+
+// ── SHEETS (Legacy API — Sheets backup) ──────────────────────
 async function apiCall(payload) {
   const res = await fetch(API_URL, {
     method: 'POST',
@@ -487,30 +535,33 @@ async function apiCall(payload) {
   if (json.status === 'error') throw new Error(json.message);
   return json;
 }
-async function dbLeer(tabla) {
-  const r = await apiCall({ accion: 'leer', tabla }); return r.data || [];
+// Backup silencioso a Sheets (fire-and-forget, no bloquea)
+function backupToSheets(tabla, accion, valores, id) {
+  (async () => {
+    try {
+      let payload;
+      if (accion === 'insertar')   payload = { accion: 'insertar', tabla, valores };
+      else if (accion === 'actualizar') payload = { accion: 'actualizar', tabla, id, valores };
+      else if (accion === 'eliminar')   payload = { accion: 'eliminar', tabla, id };
+      else return;
+      await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) });
+    } catch (e) { /* Sheets backup falla silenciosamente */ }
+  })();
 }
-async function dbInsertar(tabla, valores) {
-  return await apiCall({ accion: 'insertar', tabla, valores });
-}
-async function dbActualizar(tabla, id, valores) {
-  return await apiCall({ accion: 'actualizar', tabla, id, valores });
-}
-async function dbEliminar(tabla, id) {
-  return await apiCall({ accion: 'eliminar', tabla, id });
-}
+
+// ── WRITE (Supabase primary + Sheets backup) ──────────────────
 async function pushToSheets(tabla, accion, valores, id) {
   try {
-    if (accion==='insertar') await dbInsertar(tabla, valores);
-    else if (accion==='actualizar') await dbActualizar(tabla, id, valores);
-    else if (accion==='eliminar') await dbEliminar(tabla, id);
+    if (accion === 'eliminar') await sbEliminarDB(tabla, id);
+    else await sbUpsert(tabla, valores);
     DB_ONLINE = true; updateSyncBadge(true);
-    showSyncIndicator('✅ Guardado en Sheets', 'ok');
-  } catch(err) {
+    showSyncIndicator('✅ Guardado', 'ok');
+  } catch (err) {
     DB_ONLINE = false; updateSyncBadge(false);
     DB_PENDING_OPS.push({ tabla, accion, valores, id });
-    showSyncIndicator('⚠️ Guardado local (Sheets no disponible)', 'offline');
+    showSyncIndicator('⚠️ Guardado local (BD no disponible)', 'offline');
   }
+  backupToSheets(tabla, accion, valores, id);
 }
 async function manualSync() {
   showSyncIndicator('⏳ Sincronizando...', 'syncing');
@@ -529,11 +580,12 @@ async function flushPendingOps() {
   if (DB_PENDING_OPS.length === 0) showToast('Operaciones pendientes sincronizadas ✅', 'success');
 }
 async function sincronizarDesdeSheets() {
-  showSyncIndicator('⏳ Conectando con Sheets...', 'syncing');
+  showSyncIndicator('⏳ Conectando...', 'syncing');
   try {
-    await apiCall({ accion: 'ping' });
+    // Verificar conexión Supabase
+    await sbFetch('GET', 'empleados', null, 'select=id&limit=1');
     const tablas = ['empleados','traslados','bajas','sanciones','nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia','plazasSalarios'];
-    const resultados = await Promise.all(tablas.map(t => dbLeer(t).catch(() => null)));
+    const resultados = await Promise.all(tablas.map(t => sbLeer(t).catch(() => null)));
     tablas.forEach((tabla, i) => {
       if (!resultados[i] || resultados[i].length === 0) return;
       const data = resultados[i];
@@ -620,7 +672,7 @@ async function sincronizarDesdeSheets() {
     });
     saveState();
     DB_ONLINE = true; updateSyncBadge(true);
-    showSyncIndicator('✅ Sincronizado con Sheets', 'ok');
+    showSyncIndicator('✅ Sincronizado', 'ok');
     if (currentRole && currentSection) navigateTo(currentSection);
   } catch(err) {
     DB_ONLINE = false; updateSyncBadge(false);
@@ -629,9 +681,12 @@ async function sincronizarDesdeSheets() {
 }
 setInterval(async () => {
   if (!DB_ONLINE && DB_PENDING_OPS.length > 0) {
-    try { await apiCall({ accion: 'ping' }); DB_ONLINE = true; updateSyncBadge(true); await flushPendingOps(); } catch(e) {}
+    try {
+      await sbFetch('GET', 'empleados', null, 'select=id&limit=1');
+      DB_ONLINE = true; updateSyncBadge(true); await flushPendingOps();
+    } catch(e) {}
   }
-}, 60000);
+}, 30000);
 function getDefaultState() {
   return {
     config:{
