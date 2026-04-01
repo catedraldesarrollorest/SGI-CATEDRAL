@@ -502,8 +502,42 @@ async function sbLeer(tabla) {
 function sbIdField(tabla) {
   return tabla === 'plazasSalarios' ? 'plaza' : tabla === 'config' ? 'clave' : 'id';
 }
+
+// Tablas que existen en Supabase (auditLog y otras van solo a Sheets)
+const SUPABASE_TABLES = new Set(['empleados','plazasSalarios','traslados','bajas','sanciones',
+  'nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia','alertasJuridico']);
+
+// Columnas permitidas por tabla (evita error por campos viejos/desconocidos)
+const EMPLEADOS_COLS = ['id','fechaAlta','nombres','apellidos','carnet','email','telefono',
+  'fechaNacimiento','direccion','tipoContrato','clasificacion','jornada','departamento','plaza',
+  'salarioBase','activo','fechaBaja','certMedicoFecha','fotoEmpleadoId','fotoCarnetId',
+  'carpetaExpId','contratoId','obligacionesId','contratoFechaFirma','contratoObs',
+  'banco','cuenta','observaciones'];
+
+function cleanForSB(tabla, obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  const clean = {...obj};
+  if (tabla === 'empleados') {
+    const allowed = new Set(EMPLEADOS_COLS);
+    Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
+  }
+  // Limpiar campos numéricos vacíos → null
+  ['salarioBase','anterior','nuevo','totalDevengado','diasTrabajados','horasExtras','diasAfectados','diasTomados','mes','ano'].forEach(f => {
+    if (f in clean && (clean[f] === '' || clean[f] === undefined)) clean[f] = null;
+    if (f in clean && clean[f] !== null) clean[f] = isNaN(Number(clean[f])) ? null : Number(clean[f]);
+  });
+  return clean;
+}
+
 async function sbUpsert(tabla, valores) {
+  if (!SUPABASE_TABLES.has(tabla)) return; // solo tablas registradas
   const idField = sbIdField(tabla);
+  let arr = (Array.isArray(valores) ? valores : [valores]).map(v => cleanForSB(tabla, v));
+  // Deduplicar por idField dentro del mismo batch
+  const seen = new Map();
+  arr.forEach(v => { if (v[idField] != null) seen.set(String(v[idField]), v); });
+  arr = [...seen.values()];
+  if (arr.length === 0) return;
   const url = SUPABASE_URL + '/rest/v1/' + tabla + '?on_conflict=' + idField;
   const res = await fetch(url, {
     method: 'POST',
@@ -513,12 +547,13 @@ async function sbUpsert(tabla, valores) {
       'Content-Type': 'application/json',
       'Prefer': 'resolution=merge-duplicates,return=minimal'
     },
-    body: JSON.stringify(Array.isArray(valores) ? valores : [valores])
+    body: JSON.stringify(arr)
   });
   if (!res.ok) { const t = await res.text(); throw new Error('SB upsert ' + res.status + ': ' + t.slice(0, 200)); }
   return true;
 }
 async function sbEliminarDB(tabla, id) {
+  if (!SUPABASE_TABLES.has(tabla)) return;
   const idField = sbIdField(tabla);
   return await sbFetch('DELETE', tabla, null, idField + '=eq.' + encodeURIComponent(id));
 }
@@ -583,7 +618,7 @@ async function migrarDatosASupabase() {
     { tabla: 'bajas',            datos: STATE.bajas },
     { tabla: 'sanciones',        datos: STATE.sanciones },
     { tabla: 'nominas',          datos: STATE.nominas.map(n=>({...n,lineas:undefined})) },
-    { tabla: 'nominaLineas',     datos: STATE.nominas.flatMap(n=>(n.lineas||[]).map(l=>({...l,nominaId:n.id,id:l.id||('NL'+n.id+l.empleadoId)}))) },
+    { tabla: 'nominaLineas',     datos: STATE.nominas.flatMap(n=>(n.lineas||[]).map((l,i)=>({...l,nominaId:n.id,id:l.id&&l.id!==''?l.id:('NL'+n.id+'-'+l.empleadoId+'-'+i)}))) },
     { tabla: 'incidencias',      datos: STATE.incidencias },
     { tabla: 'vacacionesControl',datos: STATE.vacacionesControl.map(v=>({...v,id:v.id||(v.empleadoId+'-'+v.ano)})) },
     { tabla: 'historialSalarial',datos: STATE.historialSalarial },
