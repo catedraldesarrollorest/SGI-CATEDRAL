@@ -1088,7 +1088,7 @@ function getCatalogoPlazas(){
   Object.entries(PLAZAS).forEach(([dept,lista])=>{
     lista.forEach(nombre=>{
       const key=dept+'||'+nombre;
-      if(!base[key])base[key]={id:key,departamento:dept,nombre,salarioBase:0,clasificacion:'Directo',jornada:'8x24',tipoContrato:'Indefinido',descripcion:'',funcionesPdfId:''};
+      if(!base[key])base[key]={id:key,departamento:dept,nombre,salarioBase:0,clasificacion:'Directo',jornada:'8x24',tipoContrato:'Indefinido',descripcion:'',funcionesPdfId:'',funcionesPdfUrl:''};
     });
   });
   Object.values(STATE.plazas||{}).forEach(p=>{if(p.id)base[p.id]=p;});
@@ -2640,6 +2640,11 @@ function renderPlazasRows(plazas){
       <td>${count?`<span class="badge badge-active">${count}</span>`:'<span class="badge badge-inactive">0</span>'}</td>
       <td style="white-space:nowrap">
         <button class="btn btn-primary btn-xs" onclick="abrirModalPlaza('${idEsc}')">✏️ Editar</button>
+        ${p.funcionesPdfUrl
+          ?`<a href="${p.funcionesPdfUrl}" target="_blank" class="btn btn-secondary btn-xs" style="margin-left:4px" title="Ver PDF">📄</a>
+             <a href="${p.funcionesPdfUrl.replace('/view','/preview')}" target="_blank" class="btn btn-secondary btn-xs" title="Imprimir PDF" onclick="setTimeout(()=>{try{document.querySelector('iframe')?.contentWindow?.print()}catch(e){}},1500)">🖨️</a>
+             <button class="btn btn-gold btn-xs" style="margin-left:4px" onclick="enviarPdfPlaza('${idEsc}')">📧</button>`
+          :''}
         <button class="btn btn-danger btn-xs" style="margin-left:4px" onclick="eliminarPlaza('${idEsc}')">🗑️</button>
       </td></tr>`;
   }).join('');
@@ -2685,8 +2690,13 @@ function abrirModalPlaza(plazaId){
       <div class="form-group"><label class="field-label">Tipo Contrato</label>
         <select id="mp-contrato"><option ${!p||p.tipoContrato==='Indefinido'?'selected':''}>Indefinido</option><option ${p&&p.tipoContrato==='Determinado'?'selected':''}>Determinado</option></select></div>
     </div>
-    <div class="form-group full"><label class="field-label">Descripción / Funciones (texto)</label>
-      <textarea id="mp-desc" placeholder="Resumen de funciones...">${p?p.descripcion||'':''}</textarea></div>`;
+    <div class="form-group full"><label class="field-label">Descripción breve</label>
+      <textarea id="mp-desc" placeholder="Resumen de funciones...">${p?p.descripcion||'':''}</textarea></div>
+    <div class="form-group full">
+      <label class="field-label">PDF de Funciones${p&&p.funcionesPdfId?` <a href="${p.funcionesPdfUrl||'#'}" target="_blank" style="font-size:12px;color:var(--burgundy);margin-left:8px;">📄 Ver actual</a>`:''}</label>
+      <input type="file" id="mp-pdf" accept=".pdf" style="padding:6px">
+      ${p&&p.funcionesPdfId?`<small class="text-muted">Selecciona un archivo para reemplazar el PDF actual</small>`:`<small class="text-muted">Sube el documento de funciones del puesto (PDF)</small>`}
+    </div>`;
   const footer=`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
     <button class="btn btn-primary" onclick="guardarPlaza('${plazaId?plazaId.replace(/'/g,'\\&apos;'):''}')">💾 Guardar Plaza</button>`;
   openModal(plazaId?'Editar Plaza':'Nueva Plaza',body,footer,'md');
@@ -2702,9 +2712,39 @@ async function guardarPlaza(plazaId){
   if(!nombre||!dept){showToast('Completa departamento y nombre','warning');return;}
   const id=plazaId||(dept+'||'+nombre);
   const existing=(STATE.plazas||{})[id]||{};
-  // Solo admin puede cambiar salario
   const salario=currentRole==='admin'?(parseFloat(document.getElementById('mp-salario')?.value)||0):(existing.salarioBase||0);
-  const plaza={...existing,id,departamento:dept,nombre,salarioBase:salario,clasificacion:clasif,jornada,tipoContrato:contrato,descripcion:desc,funcionesPdfId:existing.funcionesPdfId||''};
+  const plaza={...existing,id,departamento:dept,nombre,salarioBase:salario,clasificacion:clasif,jornada,tipoContrato:contrato,descripcion:desc,
+    funcionesPdfId:existing.funcionesPdfId||'',funcionesPdfUrl:existing.funcionesPdfUrl||''};
+
+  // Subir PDF de funciones si se seleccionó
+  const pdfInput=document.getElementById('mp-pdf');
+  if(pdfInput&&pdfInput.files[0]){
+    showSyncIndicator('⏳ Subiendo PDF...','syncing');
+    try{
+      // Obtener/crear carpeta de plazas en Drive
+      let carpetaId=STATE.config?.plazasCarpetaId;
+      if(!carpetaId){
+        const cr=await apiCall({accion:'getCarpetaPlazasId'});
+        carpetaId=cr.carpetaId;
+        if(!STATE.config)STATE.config={};
+        STATE.config.plazasCarpetaId=carpetaId;
+      }
+      const b64=await fileToBase64(pdfInput.files[0]);
+      const nombreArchivo=`${dept}_${nombre}_funciones.pdf`.replace(/[^a-zA-Z0-9_.-]/g,'_');
+      // Si había un PDF anterior, mandarlo a papelera
+      if(plaza.funcionesPdfId){
+        apiCall({accion:'eliminarDrive',fileId:plaza.funcionesPdfId}).catch(()=>{});
+      }
+      const res=await apiCall({accion:'subirDrive',base64:b64,mimeType:'application/pdf',nombre:nombreArchivo,carpetaId});
+      plaza.funcionesPdfId=res.fileId;
+      plaza.funcionesPdfUrl=res.viewUrl;
+      showSyncIndicator('✅ PDF subido','ok');
+    }catch(e){
+      showToast('Error subiendo PDF: '+e.message,'error');
+      showSyncIndicator('⚠️ Error PDF','offline');
+    }
+  }
+
   if(!STATE.plazas)STATE.plazas={};
   STATE.plazas[id]=plaza;
   saveState();
@@ -2714,7 +2754,7 @@ async function guardarPlaza(plazaId){
   if(!PLAZAS[dept].includes(nombre))PLAZAS[dept].push(nombre);
   pushToSheets('plazas','actualizar',plaza,id);
   closeModal();
-  addAuditLog('PLAZA',`Plaza "${nombre}" (${dept}) guardada por ${getRoleName(currentRole)}${currentRole==='admin'?'. Salario: '+fmtMoney(salario):''}. Emp. actualizados: ${actualizados}`);
+  addAuditLog('PLAZA',`Plaza "${nombre}" (${dept}) guardada por ${getRoleName(currentRole)}${currentRole==='admin'?'. Salario: '+fmtMoney(salario):''}${plaza.funcionesPdfId?'. PDF funciones adjunto':''}`);
   showToast(`Plaza guardada${actualizados>0?'. '+actualizados+' empleados actualizados':''} ✅`,'success');
   renderGestionPlazas(document.getElementById('app-content'));
 }
@@ -2746,6 +2786,87 @@ function eliminarPlaza(plazaId){
 }
 
 // ══════════════════════════════════════════════════
+// EMAIL — ENVÍO DE DOCUMENTOS
+// ══════════════════════════════════════════════════
+function enviarPdfPlaza(plazaId){
+  const p=(STATE.plazas||{})[plazaId];
+  if(!p||!p.funcionesPdfId){showToast('Esta plaza no tiene PDF de funciones adjunto','warning');return;}
+  _abrirModalEnviarDoc({
+    titulo:`📧 Enviar Funciones — ${p.nombre}`,
+    asuntoDefault:`Funciones del puesto: ${p.nombre} (${p.departamento})`,
+    cuerpoDefault:`Estimado/a,\n\nAdjunto encontrará el documento de funciones correspondiente al puesto de ${p.nombre}, departamento ${p.departamento}.\n\nAtentamente,\nRRHH — La Catedral`,
+    fileId:p.funcionesPdfId,
+    nombreArchivo:`Funciones_${p.nombre}.pdf`.replace(/\s+/g,'_'),
+    auditTipo:'EMAIL_FUNCIONES_PLAZA',auditDetalle:`Funciones plaza "${p.nombre}" (${p.departamento})`
+  });
+}
+
+function enviarContratoEmp(empId){
+  const emp=STATE.empleados.find(e=>e.id===empId);
+  if(!emp){showToast('Empleado no encontrado','error');return;}
+  if(!emp.contratoId){showToast('Este empleado no tiene contrato subido en Drive','warning');return;}
+  _abrirModalEnviarDoc({
+    titulo:`📧 Enviar Contrato — ${emp.nombres} ${emp.apellidos}`,
+    asuntoDefault:`Contrato de Trabajo — ${emp.nombres} ${emp.apellidos}`,
+    cuerpoDefault:`Estimado/a ${emp.nombres},\n\nAdjunto encontrará su contrato de trabajo.\n\nAtentamente,\nRRHH — La Catedral`,
+    fileId:emp.contratoId,
+    nombreArchivo:`Contrato_${emp.apellidos}_${emp.nombres}.pdf`.replace(/\s+/g,'_'),
+    emailDefault:emp.email||'',empId:emp.id,
+    auditTipo:'EMAIL_CONTRATO',auditDetalle:`Contrato enviado a ${emp.nombres} ${emp.apellidos}`
+  });
+}
+
+function _abrirModalEnviarDoc({titulo,asuntoDefault,cuerpoDefault,fileId,nombreArchivo,emailDefault='',empId='',auditTipo,auditDetalle}){
+  const activos=getEmpleadosActivos();
+  const optsEmp=activos.map(e=>`<option value="${e.id}" data-email="${e.email||''}" ${empId&&e.id===empId?'selected':''}>${e.nombres} ${e.apellidos}${e.email?'':' ⚠️'}</option>`).join('');
+  const initEmail=empId?(activos.find(e=>e.id===empId)?.email||emailDefault):emailDefault;
+  const body=`
+    <div class="form-group"><label class="field-label required">Empleado destinatario</label>
+      <select id="med-emp" onchange="(function(sel){
+        const em=(sel.options[sel.selectedIndex]?.dataset?.email||'').trim();
+        document.getElementById('med-email').value=em;
+        document.getElementById('med-nomail').style.display=em?'none':'block';
+      })(this)"><option value="">Seleccione empleado...</option>${optsEmp}</select></div>
+    <div class="form-group"><label class="field-label required">Email del destinatario</label>
+      <input type="email" id="med-email" value="${initEmail}" placeholder="correo@ejemplo.com"></div>
+    <div id="med-nomail" style="display:${initEmail?'none':'block'};padding:10px;background:#fff3cd;border-radius:6px;font-size:12px;margin-bottom:8px">
+      ⚠️ Sin email registrado. Ingrésalo arriba.
+      <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:13px"><input type="checkbox" id="med-guardar-email"> Guardar este email en el expediente</label>
+    </div>
+    <div class="form-group"><label class="field-label required">Asunto</label>
+      <input id="med-asunto" value="${asuntoDefault}"></div>
+    <div class="form-group"><label class="field-label">Mensaje</label>
+      <textarea id="med-cuerpo" rows="5">${cuerpoDefault}</textarea></div>`;
+  const footer=`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" id="med-btn-send" onclick="_confirmarEnvioDoc('${fileId}','${nombreArchivo}','${auditTipo}','${auditDetalle.replace(/'/g,'\\'+'&apos;')}')">📧 Enviar</button>`;
+  openModal(titulo,body,footer,'md');
+}
+
+async function _confirmarEnvioDoc(fileId,nombreArchivo,auditTipo,auditDetalle){
+  const empId=document.getElementById('med-emp')?.value||'';
+  const email=(document.getElementById('med-email')?.value||'').trim();
+  const asunto=(document.getElementById('med-asunto')?.value||'').trim();
+  const cuerpo=(document.getElementById('med-cuerpo')?.value||'').trim();
+  if(!email){showToast('Ingresa un email destinatario','warning');return;}
+  if(!asunto){showToast('El asunto es obligatorio','warning');return;}
+  if(document.getElementById('med-guardar-email')?.checked&&empId){
+    const emp=STATE.empleados.find(e=>e.id===empId);
+    if(emp&&!emp.email){emp.email=email;saveState();pushToSheets('empleados','actualizar',emp,emp.id);}
+  }
+  const btn=document.getElementById('med-btn-send');
+  if(btn){btn.disabled=true;btn.textContent='Enviando...';}
+  try{
+    await apiCall({accion:'enviarEmail',para:email,asunto,cuerpo,fileId,nombreArchivo});
+    addAuditLog(auditTipo,`${auditDetalle} → ${email}`);
+    showToast('Email enviado correctamente ✅','success');
+    closeModal();
+  }catch(e){
+    showToast('Error al enviar: '+e.message,'error');
+    if(btn){btn.disabled=false;btn.textContent='📧 Enviar';}
+  }
+}
+
+// ══════════════════════════════════════════════════
 // CONTRATOS
 // ══════════════════════════════════════════════════
 function renderContratos(container){
@@ -2766,7 +2887,13 @@ function renderContratos(container){
       +'<td>'+e.plaza+'</td>'
       +'<td>'+e.tipoContrato+'</td>'
       +'<td>'+fmtDate(e.fechaAlta)+'</td>'
-      +'<td>'+estadoBadge+'<br>'+(e.contratoId?'<a href="'+driveViewUrl(e.contratoId)+'" target="_blank" class="btn btn-secondary btn-xs" style="font-size:11px;margin-top:4px;">📄 Ver en Drive</a>':'<small class="text-muted">📄 Archivado en papel</small>')+'</td>'
+      +'<td>'+estadoBadge+'<br>'
+      +(e.contratoId
+        ?'<a href="'+driveViewUrl(e.contratoId)+'" target="_blank" class="btn btn-secondary btn-xs" style="font-size:11px;margin-top:4px;">📄 Ver</a>'
+        +' <a href="'+driveViewUrl(e.contratoId).replace('/view','/preview')+'" target="_blank" class="btn btn-secondary btn-xs" style="font-size:11px;margin-top:4px;" title="Imprimir">🖨️</a>'
+        +' <button class="btn btn-gold btn-xs" style="font-size:11px;margin-top:4px;" onclick="enviarContratoEmp(\''+e.id+'\')">📧 Enviar</button>'
+        :'<small class="text-muted">📄 Archivado en papel</small>')
+      +'</td>'
       +'<td><button class="btn btn-primary btn-xs" onclick="previewContrato(\''+e.id+'\')">📄 Generar</button>'
       +(canEdit?(' <button class="btn btn-gold btn-xs" onclick="openModalFechaContratoEmp(\''+e.id+'\')">✏️ Fecha firma</button>'):'')
       +'</td>'
