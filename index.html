@@ -2663,9 +2663,12 @@ function filtrarPlazas(){
 
 function updateModalPlazaNombres(){
   const dept=document.getElementById('mp-dept')?.value||'';
-  const dl=document.getElementById('mp-sugerencias');
-  if(!dl)return;
-  dl.innerHTML=(PLAZAS[dept]||[]).map(n=>`<option value="${n}">`).join('');
+  const chips=document.getElementById('mp-sugerencias');
+  if(!chips)return;
+  const sugs=PLAZAS[dept]||[];
+  chips.innerHTML=sugs.length
+    ?sugs.map(n=>`<span class="sug-chip" onclick="document.getElementById('mp-nombre').value='${n.replace(/'/g,'\\&apos;')}'" style="display:inline-block;padding:3px 10px;margin:3px;border-radius:20px;background:var(--gold-pale);border:1px solid var(--gold);cursor:pointer;font-size:12px">${n}</span>`).join('')
+    :'<span style="font-size:12px;color:var(--muted)">Sin sugerencias para este departamento</span>';
 }
 
 function abrirModalPlaza(plazaId){
@@ -2681,8 +2684,10 @@ function abrirModalPlaza(plazaId){
       <div class="form-group"><label class="field-label required">Departamento</label>
         <select id="mp-dept" onchange="updateModalPlazaNombres()">${depts.map(d=>`<option ${p&&p.departamento===d?'selected':''}>${d}</option>`).join('')}</select></div>
       <div class="form-group"><label class="field-label required">Nombre de Plaza</label>
-        <input id="mp-nombre" list="mp-sugerencias" value="${p?p.nombre:''}" placeholder="Escribe o elige del catálogo" autocomplete="off">
-        <datalist id="mp-sugerencias">${(PLAZAS[p?p.departamento:depts[0]]||[]).map(n=>`<option value="${n}">`).join('')}</datalist></div>
+        <input id="mp-nombre" value="${p?p.nombre:''}" placeholder="Escribe el nombre del puesto" autocomplete="off">
+        <small class="text-muted">Escribe libremente — puedes elegir una sugerencia o crear un nombre nuevo</small>
+        <div id="mp-sugerencias" style="margin-top:6px">${(PLAZAS[p?p.departamento:depts[0]]||[]).map(n=>`<span class="sug-chip" onclick="document.getElementById('mp-nombre').value='${n.replace(/'/g,'\\&apos;')}'" style="display:inline-block;padding:3px 10px;margin:3px;border-radius:20px;background:var(--gold-pale);border:1px solid var(--gold);cursor:pointer;font-size:12px">${n}</span>`).join('')}</div>
+      </div>
       ${salField}
       <div class="form-group"><label class="field-label">Clasificación</label>
         <select id="mp-clasif"><option ${!p||p.clasificacion==='Directo'?'selected':''}>Directo</option><option ${p&&p.clasificacion==='Contratado'?'selected':''}>Contratado</option><option ${p&&p.clasificacion==='Eventual'?'selected':''}>Eventual</option></select></div>
