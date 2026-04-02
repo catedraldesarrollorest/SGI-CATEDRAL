@@ -400,7 +400,7 @@
       <div class="sidebar-role-badge" id="role-badge" onclick="abrirSwitchRol()" title="Cambiar rol" style="cursor:pointer;user-select:none;">—</div>
     </div>
     <div class="sidebar-nav" id="sidebar-nav"></div>
-    <div class="sidebar-footer"><span class="sync-status-bar" id="sync-status-badge">⏳ Verificando...</span><button class="btn" onclick="doLogout()">🚪 Cerrar sesión</button><button class="btn" style="margin-top:6px;font-size:11px" onclick="manualSync()">🔄 Sincronizar</button><button class="btn" id="btn-migrar-sb" style="margin-top:6px;font-size:11px;display:none" onclick="migrarDatosASupabase()">📤 Migrar a Supabase</button><button class="btn" id="btn-import-sheets" style="margin-top:6px;font-size:11px;display:none" onclick="importarDesdeSheets()">📥 Importar desde Sheets</button></div>
+    <div class="sidebar-footer"><span class="sync-status-bar" id="sync-status-badge">⏳ Verificando...</span><button class="btn" onclick="doLogout()">🚪 Cerrar sesión</button><button class="btn" style="margin-top:6px;font-size:11px" onclick="manualSync()">🔄 Sincronizar</button></div>
   </nav>
   <div id="sidebar-overlay" onclick="closeSidebar()"></div>
   <div id="main">
@@ -788,91 +788,6 @@ async function manualSync() {
   } catch(e) { showSyncIndicator('❌ Error de conexión', 'offline'); }
 }
 
-async function migrarDatosASupabase() {
-  if (!confirm('¿Migrar todos los datos locales a Supabase?\nEsto sube empleados, traslados, nóminas y todos los registros.\nSolo necesitas hacerlo una vez.')) return;
-  showSyncIndicator('⏳ Migrando datos...', 'syncing');
-  const btn = document.getElementById('btn-migrar-sb');
-  if (btn) btn.disabled = true;
-  let ok = 0, fail = 0;
-  const lotes = [
-    { tabla: 'empleados',        datos: STATE.empleados },
-    { tabla: 'traslados',        datos: STATE.traslados },
-    { tabla: 'bajas',            datos: STATE.bajas },
-    { tabla: 'sanciones',        datos: STATE.sanciones },
-    { tabla: 'nominas',          datos: STATE.nominas.map(n=>({...n,lineas:undefined})) },
-    { tabla: 'nominaLineas',     datos: STATE.nominas.flatMap(n=>(n.lineas||[]).map((l,i)=>({...l,nominaId:n.id,id:l.id&&l.id!==''?l.id:('NL'+n.id+'-'+l.empleadoId+'-'+i)}))) },
-    { tabla: 'incidencias',      datos: STATE.incidencias },
-    { tabla: 'vacacionesControl',datos: STATE.vacacionesControl.map(v=>({...v,id:v.id||(v.empleadoId+'-'+v.ano)})) },
-    { tabla: 'historialSalarial',datos: STATE.historialSalarial },
-    { tabla: 'asistencia',       datos: STATE.asistencia },
-    { tabla: 'alertasJuridico',  datos: STATE.alertasJuridico||[] },
-    { tabla: 'plazas',           datos: Object.values(STATE.plazas||{}) },
-    { tabla: 'auditLog',         datos: (STATE.auditLog||[]).filter(e=>e.id) },
-    { tabla: 'preformas',        datos: Object.entries(STATE.preformas||{}).map(([grupo,v])=>({id:grupo,grupo,...v})) },
-    { tabla: 'config',           datos: [
-        {clave:'pinRrhh',      valor:STATE.config.pins.rrhh},
-        {clave:'pinJuridico',  valor:STATE.config.pins.juridico},
-        {clave:'pinContabilidad',valor:STATE.config.pins.contabilidad},
-        {clave:'pinJefeTurno', valor:STATE.config.pins.jefe_turno},
-        {clave:'bonAnios1',    valor:String(STATE.config.bonificacion.anios1)},
-        {clave:'bonNivel1',    valor:String(STATE.config.bonificacion.nivel1)},
-        {clave:'bonAnios2',    valor:String(STATE.config.bonificacion.anios2)},
-        {clave:'bonNivel2',    valor:String(STATE.config.bonificacion.nivel2)},
-        {clave:'recargoHE',    valor:String(STATE.config.recargoHorasExtras)},
-        {clave:'diasVacaciones',valor:String(STATE.config.diasVacaciones)},
-        {clave:'diasPagados',  valor:String(STATE.config.diasPagadosPeriodo)},
-      ]},
-  ];
-  for (const { tabla, datos } of lotes) {
-    if (!datos || datos.length === 0) continue;
-    // Enviar en chunks de 200
-    const chunks = [];
-    for (let i = 0; i < datos.length; i += 200) chunks.push(datos.slice(i, i + 200));
-    for (const chunk of chunks) {
-      try { await sbUpsert(tabla, chunk); ok++; }
-      catch(e) { console.error('Error migrando', tabla, e); fail++; }
-    }
-  }
-  if (btn) btn.disabled = false;
-  if (fail === 0) {
-    showSyncIndicator('✅ Migración completa', 'ok');
-    showToast('✅ Datos migrados a Supabase correctamente', 'success', 5000);
-    if (btn) btn.style.display = 'none';
-  } else {
-    showSyncIndicator('⚠️ Migración con errores', 'offline');
-    showToast(`⚠️ ${ok} lotes OK, ${fail} con error. Revisa la consola.`, 'warning', 6000);
-  }
-}
-async function importarDesdeSheets() {
-  if (!confirm('¿Importar datos desde Google Sheets a Supabase?\nEsto recupera registros que estaban en Sheets pero no en Supabase.\nNo borra datos existentes.')) return;
-  const btn = document.getElementById('btn-import-sheets');
-  if (btn) btn.disabled = true;
-  showSyncIndicator('⏳ Leyendo Sheets...', 'syncing');
-  let ok = 0, fail = 0;
-  const tablas = ['empleados','traslados','bajas','sanciones','nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia','plazas','alertasJuridico','auditLog','preformas'];
-  for (const tabla of tablas) {
-    try {
-      const res = await apiCall({ accion: 'leer', tabla });
-      const data = res.data || [];
-      if (!data.length) continue;
-      const chunks = [];
-      for (let i = 0; i < data.length; i += 200) chunks.push(data.slice(i, i + 200));
-      for (const chunk of chunks) {
-        try { await sbUpsert(tabla, chunk); ok++; }
-        catch(e) { console.error('Import error', tabla, e); fail++; }
-      }
-    } catch(e) { console.warn('No se pudo leer', tabla, e); fail++; }
-  }
-  if (btn) btn.disabled = false;
-  if (fail === 0) {
-    showSyncIndicator('✅ Importación completa', 'ok');
-    showToast('✅ Datos de Sheets importados a Supabase', 'success', 5000);
-    await sincronizarDesdeSheets();
-  } else {
-    showSyncIndicator('⚠️ Importación con errores', 'offline');
-    showToast(`⚠️ ${ok} OK, ${fail} con error. Puede que Sheets esté lento.`, 'warning', 6000);
-  }
-}
 
 async function flushPendingOps() {
   if (DB_PENDING_OPS.length === 0) return;
@@ -1243,11 +1158,6 @@ function renderSidebar(){
     html+=`<div class="nav-section"><div class="nav-item" data-section="${item.section}" onclick="navigateTo('${item.section}')" style="justify-content:flex-start;"><span class="nav-icon">${item.icon}</span><span style="flex:1;">${item.label}</span>${badgeHtml}</div></div>`;
   });
   nav.innerHTML=html;
-  // Mostrar botón de migración solo a admin (una vez hasta que se complete)
-  const btnMigrar = document.getElementById('btn-migrar-sb');
-  if (btnMigrar) btnMigrar.style.display = currentRole === 'admin' ? 'block' : 'none';
-  const btnImport = document.getElementById('btn-import-sheets');
-  if (btnImport) btnImport.style.display = currentRole === 'admin' ? 'block' : 'none';
 }
 
 function toggleSidebar(){
