@@ -399,7 +399,7 @@
       <div class="sidebar-role-badge" id="role-badge" onclick="abrirSwitchRol()" title="Cambiar rol" style="cursor:pointer;user-select:none;">—</div>
     </div>
     <div class="sidebar-nav" id="sidebar-nav"></div>
-    <div class="sidebar-footer"><span class="sync-status-bar" id="sync-status-badge">⏳ Verificando...</span><button class="btn" onclick="doLogout()">🚪 Cerrar sesión</button><button class="btn" style="margin-top:6px;font-size:11px" onclick="manualSync()">🔄 Sincronizar</button><button class="btn" id="btn-migrar-sb" style="margin-top:6px;font-size:11px;display:none" onclick="migrarDatosASupabase()">📤 Migrar a Supabase</button></div>
+    <div class="sidebar-footer"><span class="sync-status-bar" id="sync-status-badge">⏳ Verificando...</span><button class="btn" onclick="doLogout()">🚪 Cerrar sesión</button><button class="btn" style="margin-top:6px;font-size:11px" onclick="manualSync()">🔄 Sincronizar</button><button class="btn" id="btn-migrar-sb" style="margin-top:6px;font-size:11px;display:none" onclick="migrarDatosASupabase()">📤 Migrar a Supabase</button><button class="btn" id="btn-import-sheets" style="margin-top:6px;font-size:11px;display:none" onclick="importarDesdeSheets()">📥 Importar desde Sheets</button></div>
   </nav>
   <div id="sidebar-overlay" onclick="closeSidebar()"></div>
   <div id="main">
@@ -500,11 +500,11 @@ async function sbLeer(tabla) {
   return await sbFetch('GET', tabla, null, 'select=*');
 }
 function sbIdField(tabla) {
-  return tabla === 'plazasSalarios' ? 'plaza' : tabla === 'config' ? 'clave' : 'id';
+  return tabla === 'plazas' ? 'id' : tabla === 'config' ? 'clave' : 'id';
 }
 
 // Tablas que existen en Supabase (auditLog y otras van solo a Sheets)
-const SUPABASE_TABLES = new Set(['empleados','plazasSalarios','traslados','bajas','sanciones',
+const SUPABASE_TABLES = new Set(['empleados','plazas','traslados','bajas','sanciones',
   'nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia','alertasJuridico']);
 
 // Columnas permitidas por tabla (evita error por campos viejos/desconocidos)
@@ -624,7 +624,7 @@ async function migrarDatosASupabase() {
     { tabla: 'historialSalarial',datos: STATE.historialSalarial },
     { tabla: 'asistencia',       datos: STATE.asistencia },
     { tabla: 'alertasJuridico',  datos: STATE.alertasJuridico||[] },
-    { tabla: 'plazasSalarios',   datos: Object.entries(STATE.plazasSalarios||{}).map(([plaza,salario])=>({plaza,salario})) },
+    { tabla: 'plazas',           datos: Object.values(STATE.plazas||{}) },
   ];
   for (const { tabla, datos } of lotes) {
     if (!datos || datos.length === 0) continue;
@@ -646,6 +646,37 @@ async function migrarDatosASupabase() {
     showToast(`⚠️ ${ok} lotes OK, ${fail} con error. Revisa la consola.`, 'warning', 6000);
   }
 }
+async function importarDesdeSheets() {
+  if (!confirm('¿Importar datos desde Google Sheets a Supabase?\nEsto recupera registros que estaban en Sheets pero no en Supabase.\nNo borra datos existentes.')) return;
+  const btn = document.getElementById('btn-import-sheets');
+  if (btn) btn.disabled = true;
+  showSyncIndicator('⏳ Leyendo Sheets...', 'syncing');
+  let ok = 0, fail = 0;
+  const tablas = ['empleados','traslados','bajas','sanciones','nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia'];
+  for (const tabla of tablas) {
+    try {
+      const res = await apiCall({ accion: 'leer', tabla });
+      const data = res.data || [];
+      if (!data.length) continue;
+      const chunks = [];
+      for (let i = 0; i < data.length; i += 200) chunks.push(data.slice(i, i + 200));
+      for (const chunk of chunks) {
+        try { await sbUpsert(tabla, chunk); ok++; }
+        catch(e) { console.error('Import error', tabla, e); fail++; }
+      }
+    } catch(e) { console.warn('No se pudo leer', tabla, e); fail++; }
+  }
+  if (btn) btn.disabled = false;
+  if (fail === 0) {
+    showSyncIndicator('✅ Importación completa', 'ok');
+    showToast('✅ Datos de Sheets importados a Supabase', 'success', 5000);
+    await sincronizarDesdeSheets();
+  } else {
+    showSyncIndicator('⚠️ Importación con errores', 'offline');
+    showToast(`⚠️ ${ok} OK, ${fail} con error. Puede que Sheets esté lento.`, 'warning', 6000);
+  }
+}
+
 async function flushPendingOps() {
   if (DB_PENDING_OPS.length === 0) return;
   const ops = [...DB_PENDING_OPS]; DB_PENDING_OPS = [];
@@ -660,7 +691,7 @@ async function sincronizarDesdeSheets() {
   try {
     // Verificar conexión Supabase
     await sbFetch('GET', 'empleados', null, 'select=id&limit=1');
-    const tablas = ['empleados','traslados','bajas','sanciones','nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia','plazasSalarios'];
+    const tablas = ['empleados','traslados','bajas','sanciones','nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia','plazas'];
     const resultados = await Promise.all(tablas.map(t => sbLeer(t).catch(() => null)));
     tablas.forEach((tabla, i) => {
       if (!resultados[i] || resultados[i].length === 0) return;
@@ -716,9 +747,9 @@ async function sincronizarDesdeSheets() {
         STATE.vacacionesControl = data.map(r => ({ empleadoId: r.empleadoId, ano: parseInt(r.ano)||0, diasTomados: parseInt(r.diasTomados)||0 }));
       } else if (tabla === 'asistencia') {
         STATE.asistencia = data;
-      } else if (tabla === 'plazasSalarios') {
-        STATE.plazasSalarios = {};
-        data.forEach(r=>{ if(r.plaza) STATE.plazasSalarios[r.plaza]=parseFloat(r.salario)||0; });
+      } else if (tabla === 'plazas') {
+        STATE.plazas = {};
+        data.forEach(r=>{ if(r.id) STATE.plazas[r.id]={...r, salarioBase:parseFloat(r.salarioBase)||0}; });
       } else {
         STATE[tabla] = data;
       }
@@ -773,10 +804,21 @@ function getDefaultState() {
     },
     empleados:[], traslados:[], bajas:[], sanciones:[],
     nominas:[], incidencias:[], vacacionesControl:[],
-    historialSalarial:[], documentos:{}, auditLog:[], asistencia:[], docsLegales:[], alertasJuridico:[], preformas:{}, historialPreformas:{}, plazasSalarios:{}, nextId:1
+    historialSalarial:[], documentos:{}, auditLog:[], asistencia:[], docsLegales:[], alertasJuridico:[], preformas:{}, historialPreformas:{}, plazas:{}, nextId:1
   };
 }
 let STATE = loadState();
+// Migrate legacy plazasSalarios → plazas
+if(!STATE.plazas)STATE.plazas={};
+if(STATE.plazasSalarios&&Object.keys(STATE.plazasSalarios).length){
+  Object.entries(STATE.plazasSalarios).forEach(([nombre,sal])=>{
+    const dept=Object.entries(PLAZAS).find(([,arr])=>arr.includes(nombre))?.[0]||'';
+    const key=(dept||'?')+'||'+nombre;
+    if(!STATE.plazas[key])STATE.plazas[key]={id:key,departamento:dept,nombre,salarioBase:parseFloat(sal)||0,clasificacion:'Directo',jornada:'8x24',tipoContrato:'Indefinido',descripcion:'',funcionesPdfId:''};
+  });
+  delete STATE.plazasSalarios;
+}
+let _auditBuffer = [];
 let currentRole = null;
 let currentSection = 'dashboard';
 let selectedRole = null;
@@ -894,6 +936,7 @@ const NAV_ITEMS = {
     {section:'traslados',icon:'🔄',label:'Traslados'},
     {section:'bajas',icon:'📤',label:'Bajas'},
     {section:'salarios',icon:'💰',label:'Salarios Base',header:'ADMINISTRACIÓN'},
+    {section:'gestion_plazas',icon:'🏷️',label:'Gestión de Plazas'},
     {section:'contratos',icon:'📄',label:'Contratos',header:'JURÍDICO'},
     {section:'sanciones',icon:'⚠️',label:'Sanciones'},
     {section:'nomina',icon:'📋',label:'Nóminas',header:'CONTABILIDAD'},
@@ -909,7 +952,8 @@ const NAV_ITEMS = {
     {section:'alta',icon:'➕',label:'Alta de Empleado'},
     {section:'expedientes',icon:'📁',label:'Expedientes'},
     {section:'traslados',icon:'🔄',label:'Traslados'},
-    {section:'bajas',icon:'📤',label:'Bajas'}
+    {section:'bajas',icon:'📤',label:'Bajas'},
+    {section:'gestion_plazas',icon:'🏷️',label:'Gestión de Plazas',header:'CONFIGURACIÓN'}
   ],
   juridico:[
     {section:'dashboard',icon:'📈',label:'Dashboard'},
@@ -953,6 +997,8 @@ function renderSidebar(){
   // Mostrar botón de migración solo a admin (una vez hasta que se complete)
   const btnMigrar = document.getElementById('btn-migrar-sb');
   if (btnMigrar) btnMigrar.style.display = currentRole === 'admin' ? 'block' : 'none';
+  const btnImport = document.getElementById('btn-import-sheets');
+  if (btnImport) btnImport.style.display = currentRole === 'admin' ? 'block' : 'none';
 }
 
 function toggleSidebar(){
@@ -967,11 +1013,11 @@ function navigateTo(section){
   closeSidebar();
   currentSection=section;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.section===section));
-  const titles={dashboard:'Dashboard',empleados:'Empleados',alta:'Alta de Empleado',expedientes:'Expedientes Laborales',traslados:'Traslados',bajas:'Bajas',salarios:'Salarios Base',contratos:'Contratos',sanciones:'Sanciones',nomina:'Nóminas',incidencias:'Incidencias',vacaciones:'Submayor de Vacaciones',configuracion:'Configuración',auditoria:'Log de Auditoría',backup:'Copia de Seguridad'};
+  const titles={dashboard:'Dashboard',empleados:'Empleados',alta:'Alta de Empleado',expedientes:'Expedientes Laborales',traslados:'Traslados',bajas:'Bajas',salarios:'Salarios Base',gestion_plazas:'Gestión de Plazas',contratos:'Contratos',sanciones:'Sanciones',nomina:'Nóminas',incidencias:'Incidencias',vacaciones:'Submayor de Vacaciones',configuracion:'Configuración',auditoria:'Log de Auditoría',backup:'Copia de Seguridad'};
   document.getElementById('page-title').textContent=titles[section]||section;
   document.getElementById('topbar-actions').innerHTML='';
   const content=document.getElementById('app-content');
-  const renders={dashboard:renderDashboard,empleados:renderEmpleados,alta:renderAlta,expedientes:renderExpedientes,traslados:renderTraslados,bajas:renderBajas,salarios:renderSalarios,contratos:renderContratos,sanciones:renderSanciones,nomina:renderNomina,incidencias:renderIncidencias,vacaciones:renderVacaciones,configuracion:renderConfiguracion,auditoria:renderAuditoria,backup:renderBackup,asistencia:renderAsistencia,historial_asistencia:renderHistorialAsistencia,docs_legales:renderDocsLegales,preformas:renderPreformas};
+  const renders={dashboard:renderDashboard,empleados:renderEmpleados,alta:renderAlta,expedientes:renderExpedientes,traslados:renderTraslados,bajas:renderBajas,salarios:renderSalarios,gestion_plazas:renderGestionPlazas,contratos:renderContratos,sanciones:renderSanciones,nomina:renderNomina,incidencias:renderIncidencias,vacaciones:renderVacaciones,configuracion:renderConfiguracion,auditoria:renderAuditoria,backup:renderBackup,asistencia:renderAsistencia,historial_asistencia:renderHistorialAsistencia,docs_legales:renderDocsLegales,preformas:renderPreformas};
   if(renders[section])renders[section](content);
   else content.innerHTML='<div class="empty-state"><div class="empty-icon">🚧</div><h4>En construcción</h4></div>';
 }
@@ -985,8 +1031,20 @@ function addAuditLog(tipo,detalle){
   STATE.auditLog.unshift(entry);
   if(STATE.auditLog.length>2000)STATE.auditLog.pop();
   saveState();
-  // Push audit async silently (no esperamos)
-  if(typeof pushToSheets === 'function') pushToSheets('auditLog','insertar', entry);
+  // Batch audit entries — send to Sheets only (auditLog not in Supabase)
+  _auditBuffer.push(entry);
+  if(_auditBuffer.length>=10){
+    const toSend=[..._auditBuffer]; _auditBuffer=[];
+    setTimeout(()=>toSend.forEach(e=>backupToSheets('auditLog','insertar',e,null)),0);
+  }
+}
+function openModalTrasladoEmp(empId){
+  openModalTraslado();
+  setTimeout(()=>{const sel=document.getElementById('tr-emp');if(sel&&empId)sel.value=empId;},120);
+}
+function openModalSancionEmp(empId){
+  openModalSancion();
+  setTimeout(()=>{const sel=document.getElementById('san-emp');if(sel&&empId)sel.value=empId;},120);
 }
 function showToast(msg,type='info',dur=3500){
   const c=document.getElementById('toast-container');
@@ -1025,12 +1083,34 @@ function getBonificacionPct(fechaAlta){
   return 0;
 }
 
-function getSalarioPlaza(plaza){
-  if(!plaza)return null;
-  const s=STATE.plazasSalarios[plaza];
-  return(s!==undefined&&s!==null)?parseFloat(s):null;
+function getCatalogoPlazas(){
+  const base={};
+  Object.entries(PLAZAS).forEach(([dept,lista])=>{
+    lista.forEach(nombre=>{
+      const key=dept+'||'+nombre;
+      if(!base[key])base[key]={id:key,departamento:dept,nombre,salarioBase:0,clasificacion:'Directo',jornada:'8x24',tipoContrato:'Indefinido',descripcion:'',funcionesPdfId:''};
+    });
+  });
+  Object.values(STATE.plazas||{}).forEach(p=>{if(p.id)base[p.id]=p;});
+  return base;
 }
-function plazaInputId(p){return 'sal-'+p.replace(/[^a-zA-Z0-9]/g,'_');}
+function getPlaza(departamento,nombre){
+  return getCatalogoPlazas()[departamento+'||'+nombre]||null;
+}
+function aplicarSalarioPlazaATodos(departamento,nombre,nuevoSalario){
+  const afectados=STATE.empleados.filter(e=>e.departamento===departamento&&e.plaza===nombre&&e.activo);
+  afectados.forEach(emp=>{
+    if(emp.salarioBase===nuevoSalario)return;
+    const anterior=emp.salarioBase;
+    const reg={id:'HS'+uid(),empleadoId:emp.id,fecha:new Date().toISOString(),anterior,nuevo:nuevoSalario,motivo:'Actualización automática por cambio de tarifa plaza '+nombre};
+    STATE.historialSalarial.push(reg);
+    emp.salarioBase=nuevoSalario;
+    pushToSheets('historialSalarial','insertar',reg);
+    pushToSheets('empleados','actualizar',emp,emp.id);
+  });
+  saveState();
+  return afectados.length;
+}
 
 const PLAZAS={
   SALA:['Jefe de turno','Cajero/a','Cantinero/a','Camarero/a','Portero/a','Ayudante de camarero/a','Mochila'],
@@ -1804,7 +1884,7 @@ function renderAlta(container,editData=null){
       <div class="form-group"><label class="field-label required">Departamento</label>
         <select id="a-departamento" onchange="updatePlazas()" required>${depts.map(dept=>`<option ${d.departamento===dept?'selected':''}>${dept}</option>`).join('')}</select></div>
       <div class="form-group"><label class="field-label required">Plaza</label>
-        <select id="a-plaza" onchange="actualizarSalarioHint()" required>${d.plaza?`<option selected>${d.plaza}</option>`:''}</select>
+        <select id="a-plaza" onchange="autoFillDesdePlaza()" required>${d.plaza?`<option selected>${d.plaza}</option>`:''}</select>
         <div class="input-hint" id="salario-hint" style="margin-top:4px;"></div></div>
 
       <div class="form-section-title">📄 Documentos</div>
@@ -1837,7 +1917,7 @@ function renderAlta(container,editData=null){
 
   updatePlazas();
   updateJornadaInfo();
-  if(d.departamento){setTimeout(()=>{const sel=document.getElementById('a-plaza');if(sel&&d.plaza){for(let opt of sel.options){if(opt.value===d.plaza){opt.selected=true;break}}}actualizarSalarioHint();},50)}else{actualizarSalarioHint();}
+  if(d.departamento){setTimeout(()=>{const sel=document.getElementById('a-plaza');if(sel&&d.plaza){for(let opt of sel.options){if(opt.value===d.plaza){opt.selected=true;break}}}autoFillDesdePlaza();},50)}else{autoFillDesdePlaza();}
 }
 
 // Temp store for new licencias being added in form
@@ -1926,16 +2006,27 @@ function updatePlazas(){
   const plaza=document.getElementById('a-plaza');
   if(!dept||!plaza)return;
   plaza.innerHTML=(PLAZAS[dept.value]||[]).map(p=>`<option>${p}</option>`).join('');
-  actualizarSalarioHint();
+  autoFillDesdePlaza();
 }
-function actualizarSalarioHint(){
+function autoFillDesdePlaza(){
+  const deptEl=document.getElementById('a-departamento');
   const plazaEl=document.getElementById('a-plaza');
+  if(!deptEl||!plazaEl)return;
+  const p=getPlaza(deptEl.value,plazaEl.value);
   const hint=document.getElementById('salario-hint');
-  if(!hint||!plazaEl)return;
-  const sal=getSalarioPlaza(plazaEl.value);
-  hint.innerHTML=sal!==null
-    ?`<span style="color:var(--success);font-weight:600;">💰 Salario base de esta plaza: ${fmtMoney(sal)}</span>`
-    :`<span style="color:var(--muted)">💰 Plaza sin salario asignado — se registrará como $0.00 hasta que Admin configure el salario</span>`;
+  if(hint){
+    hint.innerHTML=p&&p.salarioBase
+      ?`<span style="color:var(--success);font-weight:600;">💰 Salario base de esta plaza: ${fmtMoney(p.salarioBase)}</span>${p.descripcion?`<br><small class="text-muted">${p.descripcion}</small>`:''}`
+      :`<span style="color:var(--muted)">💰 Sin salario asignado para esta plaza</span>`;
+  }
+  if(!p)return;
+  // Auto-fill clasificación, jornada, tipo contrato
+  const clasEl=document.getElementById('a-clasificacion');
+  if(clasEl&&p.clasificacion){for(let o of clasEl.options){if(o.value===p.clasificacion||o.text===p.clasificacion){o.selected=true;break;}}}
+  const jorEl=document.getElementById('a-jornada');
+  if(jorEl&&p.jornada){for(let o of jorEl.options){if(o.value===p.jornada){o.selected=true;break;}}updateJornadaInfo();}
+  const contEl=document.getElementById('a-contrato');
+  if(contEl&&p.tipoContrato){for(let o of contEl.options){if(o.value===p.tipoContrato||o.text===p.tipoContrato){o.selected=true;break;}}}
 }
 
 function updateJornadaInfo(){
@@ -1982,7 +2073,7 @@ async function guardarAlta(){
     jornada:val('a-jornada')||'8x24',
     departamento:val('a-departamento'),
     plaza:val('a-plaza'),
-    salarioBase:getSalarioPlaza(val('a-plaza')),activo:true,
+    salarioBase:(()=>{const pz=getPlaza(val('a-departamento'),val('a-plaza'));return pz&&pz.salarioBase?pz.salarioBase:null;})(),activo:true,
     fotoCarnetId:'',carpetaExpId:'',contratoId:'',obligacionesId:''
   };
 
@@ -2098,11 +2189,11 @@ async function guardarEdicionEmpleado(id){
   });
   // Auto-update salary when plaza changes
   if(emp.plaza!==plazaAnterior){
-    const salNuevo=getSalarioPlaza(emp.plaza);
-    if(salNuevo!==null){
-      const regSal={id:'HS'+uid(),empleadoId:emp.id,fecha:new Date().toISOString(),anterior:emp.salarioBase,nuevo:salNuevo,motivo:'Cambio de plaza: '+emp.plaza};
+    const pz=getPlaza(emp.departamento,emp.plaza);
+    if(pz&&pz.salarioBase){
+      const regSal={id:'HS'+uid(),empleadoId:emp.id,fecha:new Date().toISOString(),anterior:emp.salarioBase,nuevo:pz.salarioBase,motivo:'Cambio de plaza: '+emp.plaza};
       STATE.historialSalarial.push(regSal);
-      emp.salarioBase=salNuevo;
+      emp.salarioBase=pz.salarioBase;
       pushToSheets('historialSalarial','insertar',regSal);
     }
   }
@@ -2391,11 +2482,11 @@ function guardarTraslado(){
   if(clsNueva)emp.clasificacion=clsNueva;
   if(cambioJornada)emp.jornada=jornadaNueva;
   // Auto-update salary from new plaza
-  const salNuevoTraslado=getSalarioPlaza(plazaNueva);
-  if(salNuevoTraslado!==null&&salNuevoTraslado!==emp.salarioBase){
-    const regSalT={id:'HS'+uid(),empleadoId:empId,fecha:fecha,anterior:emp.salarioBase,nuevo:salNuevoTraslado,motivo:'Traslado a plaza: '+plazaNueva};
+  const pzTraslado=getPlaza(deptNuevo,plazaNueva);
+  if(pzTraslado&&pzTraslado.salarioBase&&pzTraslado.salarioBase!==emp.salarioBase){
+    const regSalT={id:'HS'+uid(),empleadoId:empId,fecha:fecha,anterior:emp.salarioBase,nuevo:pzTraslado.salarioBase,motivo:'Traslado a plaza: '+plazaNueva};
     STATE.historialSalarial.push(regSalT);
-    emp.salarioBase=salNuevoTraslado;
+    emp.salarioBase=pzTraslado.salarioBase;
     pushToSheets('historialSalarial','insertar',regSalT);
   }
 
@@ -2508,56 +2599,100 @@ function exportBajas(){
 }
 
 // ══════════════════════════════════════════════════
-// SALARIOS
+// SALARIOS / GESTIÓN DE PLAZAS
 // ══════════════════════════════════════════════════
 function renderSalarios(container){
-  if(currentRole!=='admin'){container.innerHTML='<div class="empty-state"><div class="empty-icon">🔒</div><h4>Solo Administración</h4></div>';return}
-  const activos=getEmpleadosActivos();
-  let html='<div class="card"><div class="card-header"><h3>💰 Salarios por Plaza</h3><span style="color:var(--muted);font-size:13px;margin-left:8px">El cambio aplica automáticamente a todos los empleados de esa plaza</span></div>';
-  Object.entries(PLAZAS).forEach(([dept,plazas])=>{
-    html+=`<div style="margin-bottom:20px;padding:0 0 4px 0"><div style="font-weight:bold;color:var(--burgundy);border-bottom:2px solid var(--gold);padding-bottom:4px;margin-bottom:10px;font-size:14px;text-transform:uppercase;letter-spacing:1px">🏢 ${dept}</div><div class="table-wrap"><table><thead><tr><th>Plaza</th><th>Salario Base</th><th>Empleados activos</th><th>Acción</th></tr></thead><tbody>`;
-    plazas.forEach(plaza=>{
-      const sal=getSalarioPlaza(plaza);
-      const count=activos.filter(e=>e.plaza===plaza).length;
-      const iid=plazaInputId(plaza);
-      html+=`<tr><td><b>${plaza}</b></td><td><input type="number" id="${iid}" value="${sal!==null?sal:''}" min="0" step="0.01" style="width:140px" placeholder="Sin asignar"></td><td>${count?`<span class="badge badge-active">${count} emp.</span>`:'<span class="badge badge-inactive">0 emp.</span>'}</td><td><button class="btn btn-primary btn-xs" onclick="guardarSalarioPlaza('${plaza.replace(/'/g,'\\&apos;')}')">💾 Guardar</button></td></tr>`;
-    });
-    html+=`</tbody></table></div></div>`;
-  });
-  html+=`</div>`;
+  renderGestionPlazas(container);
+}
+
+function renderGestionPlazas(container){
+  const canEdit=currentRole==='admin'||currentRole==='rrhh';
+  if(!canEdit){container.innerHTML='<div class="empty-state"><div class="empty-icon">🔒</div><h4>Acceso restringido</h4></div>';return}
+  document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-primary btn-sm" onclick="abrirModalPlaza(null)">➕ Nueva Plaza</button>`;
+  const cat=getCatalogoPlazas();
+  const depts=[...new Set(Object.values(cat).map(p=>p.departamento))].sort();
+  let html=`<div class="card"><div class="card-header"><h3>🏷️ Gestión de Plazas</h3><p class="text-muted" style="margin:4px 0 0;font-size:13px;">Define salario, clasificación, jornada y funciones por plaza. Al guardar, los empleados activos con esa plaza se actualizan automáticamente.</p></div>`;
+  html+=`<div class="filters-bar"><div class="filter-group" style="flex:1"><input type="text" id="plaza-q" placeholder="🔍 Buscar plaza..." oninput="filtrarPlazas()" style="min-width:200px"></div>
+    <div class="filter-group"><label>Departamento</label><select id="plaza-dept" onchange="filtrarPlazas()"><option value="">Todos</option>${depts.map(d=>`<option>${d}</option>`).join('')}</select></div></div>`;
+  html+=`<div class="table-wrap"><table><thead><tr><th>Departamento</th><th>Plaza</th><th>Salario Base</th><th>Clasificación</th><th>Jornada</th><th>Contrato</th><th>Empleados</th><th>Acción</th></tr></thead><tbody id="plazas-tbody">`;
+  html+=renderPlazasRows(Object.values(cat));
+  html+=`</tbody></table></div></div>`;
   container.innerHTML=html;
 }
 
-function guardarSalarioPlaza(plaza){
-  const iid=plazaInputId(plaza);
-  const input=document.getElementById(iid);
-  if(!input){showToast('Campo no encontrado','error');return;}
-  const nuevo=parseFloat(input.value);
-  if(isNaN(nuevo)||nuevo<0){showToast('Ingrese un salario válido','error');return;}
-  const count=getEmpleadosActivos().filter(e=>e.plaza===plaza).length;
-  openModal('Cambio de Salario por Plaza',
-    `<div style="margin-bottom:12px;padding:10px;background:var(--gold-pale);border-radius:8px"><b>Plaza:</b> ${plaza}<br><b>Nuevo salario:</b> ${fmtMoney(nuevo)}<br><b>Empleados afectados:</b> ${count}</div><div class="form-group"><label class="field-label required">Motivo del cambio</label><textarea id="sal-motivo" placeholder="Ej: Incremento anual, ajuste salarial..."></textarea></div>`,
-    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="confirmarSalarioPlaza('${plaza.replace(/'/g,'\\&apos;')}',${nuevo})">Confirmar</button>`,'sm');
+function renderPlazasRows(plazas){
+  const activos=getEmpleadosActivos();
+  return plazas.map(p=>{
+    const count=activos.filter(e=>e.departamento===p.departamento&&e.plaza===p.nombre).length;
+    const salLabel=p.salarioBase?`<span style="color:var(--burgundy);font-weight:600">${fmtMoney(p.salarioBase)}</span>`:'<span class="text-muted">Sin asignar</span>';
+    return `<tr><td>${p.departamento}</td><td><b>${p.nombre}</b>${p.descripcion?`<br><small class="text-muted">${p.descripcion}</small>`:''}</td>
+      <td>${salLabel}</td><td>${p.clasificacion||'—'}</td><td>${p.jornada||'—'}</td><td>${p.tipoContrato||'—'}</td>
+      <td>${count?`<span class="badge badge-active">${count}</span>`:'<span class="badge badge-inactive">0</span>'}</td>
+      <td><button class="btn btn-primary btn-xs" onclick="abrirModalPlaza('${p.id.replace(/'/g,'\\&apos;')}')">✏️ Editar</button></td></tr>`;
+  }).join('');
 }
 
-function confirmarSalarioPlaza(plaza,nuevo){
-  const motivo=document.getElementById('sal-motivo').value.trim();
-  if(!motivo){showToast('El motivo es obligatorio','warning');return;}
-  const anterior=STATE.plazasSalarios[plaza]||null;
-  STATE.plazasSalarios[plaza]=nuevo;
-  const afectados=STATE.empleados.filter(e=>e.activo&&e.plaza===plaza);
-  afectados.forEach(emp=>{
-    const regSal={id:'HS'+uid(),empleadoId:emp.id,fecha:new Date().toISOString(),anterior:emp.salarioBase,nuevo,motivo:'[Plaza: '+plaza+'] '+motivo};
-    STATE.historialSalarial.push(regSal);
-    emp.salarioBase=nuevo;
-    pushToSheets('historialSalarial','insertar',regSal);
-    pushToSheets('empleados','actualizar',emp,emp.id);
-  });
+function filtrarPlazas(){
+  const q=(document.getElementById('plaza-q')?.value||'').toLowerCase();
+  const dept=document.getElementById('plaza-dept')?.value||'';
+  const cat=getCatalogoPlazas();
+  const filtered=Object.values(cat).filter(p=>
+    (!q||(p.nombre+p.departamento).toLowerCase().includes(q))&&
+    (!dept||p.departamento===dept)
+  );
+  const tbody=document.getElementById('plazas-tbody');
+  if(tbody)tbody.innerHTML=renderPlazasRows(filtered);
+}
+
+function abrirModalPlaza(plazaId){
+  const cat=getCatalogoPlazas();
+  const p=plazaId?cat[plazaId]:null;
+  const depts=Object.keys(PLAZAS);
+  const jorOpts=Object.entries(JORNADAS).map(([k,j])=>`<option value="${k}" ${p&&p.jornada===k?'selected':''}>${j.label}</option>`).join('');
+  const body=`
+    <div class="grid-2">
+      <div class="form-group"><label class="field-label required">Departamento</label>
+        <select id="mp-dept" onchange="updateModalPlazaNombres()">${depts.map(d=>`<option ${p&&p.departamento===d?'selected':''}>${d}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="field-label required">Nombre de Plaza</label>
+        <input id="mp-nombre" value="${p?p.nombre:''}" placeholder="Ej: Camarero/a"></div>
+      <div class="form-group"><label class="field-label">Salario Base</label>
+        <input type="number" id="mp-salario" value="${p?p.salarioBase||'':''}" min="0" step="0.01" placeholder="0.00"></div>
+      <div class="form-group"><label class="field-label">Clasificación</label>
+        <select id="mp-clasif"><option ${!p||p.clasificacion==='Directo'?'selected':''}>Directo</option><option ${p&&p.clasificacion==='Contratado'?'selected':''}>Contratado</option><option ${p&&p.clasificacion==='Eventual'?'selected':''}>Eventual</option></select></div>
+      <div class="form-group"><label class="field-label">Jornada</label><select id="mp-jornada">${jorOpts}</select></div>
+      <div class="form-group"><label class="field-label">Tipo Contrato</label>
+        <select id="mp-contrato"><option ${!p||p.tipoContrato==='Indefinido'?'selected':''}>Indefinido</option><option ${p&&p.tipoContrato==='Determinado'?'selected':''}>Determinado</option></select></div>
+    </div>
+    <div class="form-group full"><label class="field-label">Descripción / Funciones (texto)</label>
+      <textarea id="mp-desc" placeholder="Resumen de funciones...">${p?p.descripcion||'':''}</textarea></div>`;
+  const footer=`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="guardarPlaza('${plazaId?plazaId.replace(/'/g,'\\&apos;'):''}')">💾 Guardar Plaza</button>`;
+  openModal(plazaId?'Editar Plaza':'Nueva Plaza',body,footer,'md');
+}
+
+async function guardarPlaza(plazaId){
+  const nombre=document.getElementById('mp-nombre').value.trim();
+  const dept=document.getElementById('mp-dept').value;
+  const salario=parseFloat(document.getElementById('mp-salario').value)||0;
+  const clasif=document.getElementById('mp-clasif').value;
+  const jornada=document.getElementById('mp-jornada').value;
+  const contrato=document.getElementById('mp-contrato').value;
+  const desc=document.getElementById('mp-desc').value.trim();
+  if(!nombre||!dept){showToast('Completa departamento y nombre','warning');return;}
+  const id=plazaId||(dept+'||'+nombre);
+  const plaza={id,departamento:dept,nombre,salarioBase:salario,clasificacion:clasif,jornada,tipoContrato:contrato,descripcion:desc,funcionesPdfId:''};
+  if(!STATE.plazas)STATE.plazas={};
+  STATE.plazas[id]=plaza;
   saveState();
-  pushToSheets('plazasSalarios','actualizar',{plaza,salario:nuevo},plaza);
-  addAuditLog('SALARIO_PLAZA',`Salario plaza "${plaza}": ${fmtMoney(anterior||0)}→${fmtMoney(nuevo)} — ${motivo} (${afectados.length} emp.)`);
-  showToast(`Salario "${plaza}" actualizado. ${afectados.length} empleado${afectados.length===1?'':'s'} actualizado${afectados.length===1?'':'s'} ✅`,'success');
-  closeModal();renderSalarios(document.getElementById('app-content'));
+  let actualizados=0;
+  if(salario>0)actualizados=aplicarSalarioPlazaATodos(dept,nombre,salario);
+  if(!PLAZAS[dept])PLAZAS[dept]=[];
+  if(!PLAZAS[dept].includes(nombre))PLAZAS[dept].push(nombre);
+  pushToSheets('plazas','actualizar',plaza,id);
+  closeModal();
+  addAuditLog('PLAZA',`Plaza "${nombre}" (${dept}) guardada. Salario: ${fmtMoney(salario)}. Emp. actualizados: ${actualizados}`);
+  showToast(`Plaza guardada${actualizados>0?'. '+actualizados+' empleados actualizados':''} ✅`,'success');
+  renderGestionPlazas(document.getElementById('app-content'));
 }
 
 // ══════════════════════════════════════════════════
