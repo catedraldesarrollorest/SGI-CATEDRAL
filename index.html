@@ -15,6 +15,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
   :root {
     --burgundy:#6B1A1A;--burgundy-dark:#4A0E0E;--burgundy-light:#8B2E2E;
@@ -435,6 +436,168 @@ const SUPABASE_URL = 'https://uqwmnuqfffgdoobjlzug.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxd21udXFmZmZnZG9vYmpsenVnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNTA1OTQsImV4cCI6MjA5MDYyNjU5NH0.2b1ly2NtuHl6JxUZZHbKEcIgZjDwWR3xxdM1uN3LaFw';
 let DB_ONLINE = false;
 let DB_PENDING_OPS = [];
+
+// ══════════════════════════════════════════════════
+// SUPABASE REALTIME — cambios instantáneos
+// ══════════════════════════════════════════════════
+let _sbClient = null;
+let _rtChannel = null;
+let _rtRenderTimer = null;
+
+function _initSupabaseClient() {
+  if (_sbClient || !window.supabase) return;
+  _sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+    realtime: { params: { eventsPerSecond: 20 } },
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+}
+
+function connectRealtime() {
+  _initSupabaseClient();
+  if (!_sbClient || !currentRole) return;
+  disconnectRealtime();
+  const TABLAS_RT = ['empleados','plazas','traslados','bajas','sanciones',
+    'nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial',
+    'asistencia','alertasJuridico','auditLog','config','preformas'];
+  _rtChannel = _sbClient.channel('sgi-catedral-rt');
+  TABLAS_RT.forEach(tabla => {
+    _rtChannel.on('postgres_changes', { event: '*', schema: 'public', table: tabla },
+      payload => _applyRealtimeChange(payload));
+  });
+  _rtChannel.subscribe(status => {
+    if (status === 'SUBSCRIBED') {
+      showSyncIndicator('🔴 En tiempo real', 'ok');
+      updateSyncBadge(true);
+    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+      showSyncIndicator('⚠️ Tiempo real caído — reconectando...', 'offline');
+      setTimeout(connectRealtime, 5000);
+    }
+  });
+}
+
+function disconnectRealtime() {
+  if (_rtChannel && _sbClient) {
+    _sbClient.removeChannel(_rtChannel).catch(() => {});
+    _rtChannel = null;
+  }
+}
+
+function _applyRealtimeChange({ eventType, table, new: rec, old: oldRec }) {
+  if (!currentRole) return;
+  // Ignorar cambios originados por esta misma sesión (ya en STATE)
+  // Los aplicamos igual para mantener consistencia entre pestañas/dispositivos
+  switch (table) {
+    case 'empleados': {
+      if (eventType === 'DELETE') {
+        STATE.empleados = STATE.empleados.filter(e => e.id !== oldRec?.id);
+      } else {
+        let jornada = rec.jornada;
+        if (jornada === 24 || jornada === '24') jornada = '8x24';
+        else if (jornada === 15 || jornada === '15') jornada = '12x15';
+        else if (!jornada || !JORNADAS[jornada]) jornada = '8x24';
+        const emp = { ...rec, jornada,
+          activo: rec.activo === true || String(rec.activo) === 'true',
+          salarioBase: rec.salarioBase ? parseFloat(rec.salarioBase) : null,
+          fechaAlta: normalizarFecha(rec.fechaAlta),
+          fotoEmpleadoId: rec.fotoEmpleadoId || '',
+          contratoId: rec.contratoId || '',
+          carpetaExpId: rec.carpetaExpId || ''
+        };
+        const idx = STATE.empleados.findIndex(e => e.id === rec.id);
+        if (idx >= 0) STATE.empleados[idx] = emp; else STATE.empleados.push(emp);
+      }
+      break;
+    }
+    case 'plazas': {
+      if (!STATE.plazas) STATE.plazas = {};
+      if (eventType === 'DELETE') { delete STATE.plazas[oldRec?.id]; }
+      else STATE.plazas[rec.id] = { ...rec, salarioBase: parseFloat(rec.salarioBase) || 0 };
+      break;
+    }
+    case 'nominas': {
+      if (eventType === 'DELETE') {
+        STATE.nominas = STATE.nominas.filter(n => n.id !== oldRec?.id);
+      } else {
+        const nom = { ...rec, mes: parseInt(rec.mes)||1, ano: parseInt(rec.ano)||new Date().getFullYear(), totalDevengado: parseFloat(rec.totalDevengado)||0 };
+        const idx = STATE.nominas.findIndex(n => n.id === rec.id);
+        if (idx >= 0) { nom.lineas = STATE.nominas[idx].lineas || []; STATE.nominas[idx] = nom; }
+        else { nom.lineas = []; STATE.nominas.push(nom); }
+      }
+      break;
+    }
+    case 'nominaLineas': {
+      if (rec) {
+        const nom = STATE.nominas.find(n => n.id === rec.nominaId);
+        if (nom) {
+          if (!nom.lineas) nom.lineas = [];
+          const li = nom.lineas.findIndex(l => l.empleadoId === rec.empleadoId);
+          const linea = { empleadoId: rec.empleadoId, diasTrabajados: parseFloat(rec.diasTrabajados)||0, horasExtras: parseFloat(rec.horasExtras)||0, totalDevengado: parseFloat(rec.totalDevengado)||0 };
+          if (li >= 0) nom.lineas[li] = linea; else nom.lineas.push(linea);
+        }
+      }
+      break;
+    }
+    case 'config': {
+      if (eventType !== 'DELETE' && rec) {
+        const v = rec.valor, k = rec.clave;
+        if (k==='pinRrhh')           STATE.config.pins.rrhh = v;
+        else if (k==='pinJuridico')  STATE.config.pins.juridico = v;
+        else if (k==='pinContabilidad') STATE.config.pins.contabilidad = v;
+        else if (k==='pinJefeTurno') STATE.config.pins.jefe_turno = v;
+        else if (k==='bonAnios1')    STATE.config.bonificacion.anios1 = parseInt(v)||5;
+        else if (k==='bonNivel1')    STATE.config.bonificacion.nivel1 = parseInt(v)||5;
+        else if (k==='bonAnios2')    STATE.config.bonificacion.anios2 = parseInt(v)||10;
+        else if (k==='bonNivel2')    STATE.config.bonificacion.nivel2 = parseInt(v)||10;
+        else if (k==='recargoHE')    STATE.config.recargoHorasExtras = parseFloat(v)||50;
+        else if (k==='diasVacaciones') STATE.config.diasVacaciones = parseInt(v)||14;
+        else if (k==='diasPagados')  STATE.config.diasPagadosPeriodo = parseInt(v)||15;
+      }
+      break;
+    }
+    case 'preformas': {
+      if (!STATE.preformas) STATE.preformas = {};
+      if (eventType === 'DELETE') delete STATE.preformas[oldRec?.grupo || oldRec?.id];
+      else if (rec) STATE.preformas[rec.grupo || rec.id] = { disciplina: rec.disciplina||'', caracteristicas: rec.caracteristicas||'' };
+      break;
+    }
+    case 'auditLog': {
+      if (eventType === 'INSERT' && rec?.id) {
+        if (!STATE.auditLog.some(e => e.id === rec.id)) {
+          STATE.auditLog.unshift(rec);
+          if (STATE.auditLog.length > 2000) STATE.auditLog.pop();
+        }
+      }
+      break;
+    }
+    case 'vacacionesControl': {
+      if (eventType === 'DELETE') {
+        STATE.vacacionesControl = STATE.vacacionesControl.filter(r => r.id !== oldRec?.id);
+      } else if (rec) {
+        const item = { empleadoId: rec.empleadoId, ano: parseInt(rec.ano)||0, diasTomados: parseInt(rec.diasTomados)||0 };
+        const idx = STATE.vacacionesControl.findIndex(r => r.empleadoId === rec.empleadoId && parseInt(r.ano) === item.ano);
+        if (idx >= 0) STATE.vacacionesControl[idx] = item; else STATE.vacacionesControl.push(item);
+      }
+      break;
+    }
+    default: {
+      // Tablas genéricas de array: traslados, bajas, sanciones, incidencias, historialSalarial, asistencia, alertasJuridico
+      if (!Array.isArray(STATE[table])) break;
+      if (eventType === 'DELETE') {
+        STATE[table] = STATE[table].filter(r => r.id !== oldRec?.id);
+      } else if (rec) {
+        const idx = STATE[table].findIndex(r => r.id === rec.id);
+        if (idx >= 0) STATE[table][idx] = rec; else STATE[table].unshift(rec);
+      }
+    }
+  }
+  saveState();
+  // Re-render con debounce para no saturar si llegan varios cambios seguidos
+  if (_rtRenderTimer) clearTimeout(_rtRenderTimer);
+  _rtRenderTimer = setTimeout(() => {
+    _rtRenderTimer = null;
+    if (currentRole && currentSection) navigateTo(currentSection);
+  }, 250);
+}
 
 function loadState() {
   try {
@@ -942,7 +1105,7 @@ function doLogin(){
     renderSidebar();
     navigateTo('dashboard');
     setTimeout(function(){ updateAlertaBadgeJur(); }, 300);
-    setTimeout(async () => { await sincronizarDesdeSheets(); await flushPendingOps(); }, 500);
+    setTimeout(async () => { await sincronizarDesdeSheets(); await flushPendingOps(); connectRealtime(); }, 500);
   } else {
     document.getElementById('login-error').style.display='block';
     clearPin();
@@ -950,6 +1113,7 @@ function doLogin(){
   }
 }
 function doLogout(){
+  disconnectRealtime();
   currentRole=null;
   document.getElementById('app').classList.add('hidden');
   document.getElementById('login-screen').classList.remove('hidden');
