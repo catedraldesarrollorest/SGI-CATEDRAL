@@ -652,7 +652,7 @@ async function importarDesdeSheets() {
   if (btn) btn.disabled = true;
   showSyncIndicator('⏳ Leyendo Sheets...', 'syncing');
   let ok = 0, fail = 0;
-  const tablas = ['empleados','traslados','bajas','sanciones','nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia'];
+  const tablas = ['empleados','traslados','bajas','sanciones','nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia','plazas','alertasJuridico'];
   for (const tabla of tablas) {
     try {
       const res = await apiCall({ accion: 'leer', tabla });
@@ -688,17 +688,20 @@ async function flushPendingOps() {
 }
 async function sincronizarDesdeSheets() {
   showSyncIndicator('⏳ Conectando...', 'syncing');
+  // Vaciar buffer de auditoría pendiente antes de sincronizar
+  if(_auditBuffer.length > 0){
+    const toSend=[..._auditBuffer]; _auditBuffer=[];
+    setTimeout(()=>toSend.forEach(e=>backupToSheets('auditLog','insertar',e,null)),0);
+  }
   try {
-    // Verificar conexión Supabase
     await sbFetch('GET', 'empleados', null, 'select=id&limit=1');
-    const tablas = ['empleados','traslados','bajas','sanciones','nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia','plazas'];
+    const tablas = ['empleados','traslados','bajas','sanciones','nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia','plazas','alertasJuridico'];
     const resultados = await Promise.all(tablas.map(t => sbLeer(t).catch(() => null)));
     tablas.forEach((tabla, i) => {
       if (!resultados[i] || resultados[i].length === 0) return;
       const data = resultados[i];
       if (tabla === 'empleados') {
         STATE.empleados = data.map(r => {
-          // Normalizar jornada: si viene como número (24 o 15) convertir de vuelta a clave
           let jornada = r.jornada;
           if (jornada === 24 || jornada === '24' || jornada === 30 || jornada === '30') jornada = '8x24';
           else if (jornada === 15 || jornada === '15') jornada = '12x15';
@@ -715,7 +718,6 @@ async function sincronizarDesdeSheets() {
             contratoId: r.contratoId||'',
             obligacionesId: r.obligacionesId||''
           };
-          // Restaurar certMedicoFecha a documentos si viene de Sheets
           if (r.certMedicoFecha) {
             if (!STATE.documentos[r.id]) STATE.documentos[r.id] = {};
             STATE.documentos[r.id].certMedicoFecha = r.certMedicoFecha;
@@ -732,7 +734,6 @@ async function sincronizarDesdeSheets() {
             if (!nom.lineas) nom.lineas = [];
             const existing = nom.lineas.find(l => l.empleadoId === linea.empleadoId);
             if (existing) {
-              // Actualizar con datos de Sheets si la versión local no tiene totalDevengado calculado
               if (!existing.totalDevengado && parseFloat(linea.totalDevengado)) {
                 existing.diasTrabajados = parseFloat(linea.diasTrabajados)||existing.diasTrabajados;
                 existing.horasExtras = parseFloat(linea.horasExtras)||existing.horasExtras;
@@ -754,7 +755,7 @@ async function sincronizarDesdeSheets() {
         STATE[tabla] = data;
       }
     });
-    // Config
+    // Config desde Sheets
     try {
       const cfgRes = await apiCall({ accion: 'leerConfig', tabla: 'config' });
       const cfg = cfgRes.data || {};
@@ -770,11 +771,22 @@ async function sincronizarDesdeSheets() {
       if (cfg.diasVacaciones) STATE.config.diasVacaciones      = parseInt(cfg.diasVacaciones);
       if (cfg.diasPagados)    STATE.config.diasPagadosPeriodo  = parseInt(cfg.diasPagados);
     } catch(e) {}
-    // Re-aplicar cambios locales pendientes para no perderlos con la sync
+    // Re-aplicar ops pendientes para TODAS las tablas sobre los datos recién sincronizados
     DB_PENDING_OPS.forEach(op => {
-      if (op.tabla === 'empleados' && op.accion === 'actualizar' && op.id) {
-        const idx = STATE.empleados.findIndex(e => e.id === op.id);
-        if (idx >= 0) Object.assign(STATE.empleados[idx], op.valores);
+      if (!op.accion || !op.tabla) return;
+      if (op.accion === 'actualizar' && op.id) {
+        if (Array.isArray(STATE[op.tabla])) {
+          const idx = STATE[op.tabla].findIndex(r => r.id === op.id);
+          if (idx >= 0) Object.assign(STATE[op.tabla][idx], op.valores||{});
+        } else if (op.tabla === 'plazas' && STATE.plazas && op.valores?.id) {
+          STATE.plazas[op.id] = {...(STATE.plazas[op.id]||{}), ...op.valores};
+        }
+      } else if (op.accion === 'insertar' && op.valores?.id) {
+        if (Array.isArray(STATE[op.tabla])) {
+          if (!STATE[op.tabla].some(r => r.id === op.valores.id)) STATE[op.tabla].push(op.valores);
+        } else if (op.tabla === 'plazas') {
+          if (!STATE.plazas[op.valores.id]) STATE.plazas[op.valores.id] = op.valores;
+        }
       }
     });
     saveState();
@@ -786,12 +798,20 @@ async function sincronizarDesdeSheets() {
     showSyncIndicator('⚠️ Modo offline — usando datos locales', 'offline');
   }
 }
+let _syncTick = 0;
 setInterval(async () => {
-  if (!DB_ONLINE && DB_PENDING_OPS.length > 0) {
-    try {
-      await sbFetch('GET', 'empleados', null, 'select=id&limit=1');
-      DB_ONLINE = true; updateSyncBadge(true); await flushPendingOps();
-    } catch(e) {}
+  _syncTick++;
+  if (!DB_ONLINE) {
+    // Intentar reconectar cada 30s si hay ops pendientes
+    if (DB_PENDING_OPS.length > 0) {
+      try {
+        await sbFetch('GET', 'empleados', null, 'select=id&limit=1');
+        DB_ONLINE = true; updateSyncBadge(true); await flushPendingOps();
+      } catch(e) {}
+    }
+  } else if (_syncTick % 10 === 0) {
+    // Cada 10 ticks × 30s = 5 minutos — refresh silencioso en background
+    try { await sincronizarDesdeSheets(); } catch(e) {}
   }
 }, 30000);
 function getDefaultState() {
