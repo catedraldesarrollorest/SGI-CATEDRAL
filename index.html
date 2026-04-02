@@ -682,6 +682,7 @@ const EMPLEADOS_COLS = ['id','fechaAlta','nombres','apellidos','carnet','email',
 const AUDITLOG_COLS = ['id','fecha','rol','tipo','detalle'];
 const PREFORMAS_COLS = ['id','grupo','disciplina','caracteristicas'];
 const CONFIG_COLS    = ['clave','valor'];
+const PLAZAS_COLS    = ['id','departamento','nombre','salarioBase','clasificacion','jornada','tipoContrato','descripcion','funcionesPdfId','funcionesPdfUrl'];
 
 function cleanForSB(tabla, obj) {
   if (!obj || typeof obj !== 'object') return obj;
@@ -697,6 +698,9 @@ function cleanForSB(tabla, obj) {
     Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
   } else if (tabla === 'config') {
     const allowed = new Set(CONFIG_COLS);
+    Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
+  } else if (tabla === 'plazas') {
+    const allowed = new Set(PLAZAS_COLS);
     Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
   }
   // Limpiar campos numéricos vacíos → null
