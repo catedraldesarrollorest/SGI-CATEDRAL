@@ -500,12 +500,14 @@ async function sbLeer(tabla) {
   return await sbFetch('GET', tabla, null, 'select=*');
 }
 function sbIdField(tabla) {
-  return tabla === 'plazas' ? 'id' : tabla === 'config' ? 'clave' : 'id';
+  if (tabla === 'config') return 'clave';
+  return 'id'; // auditLog, preformas, plazas y resto usan 'id'
 }
 
-// Tablas que existen en Supabase (auditLog y otras van solo a Sheets)
+// Tablas que existen en Supabase
 const SUPABASE_TABLES = new Set(['empleados','plazas','traslados','bajas','sanciones',
-  'nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia','alertasJuridico']);
+  'nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia',
+  'alertasJuridico','auditLog','config','preformas']);
 
 // Columnas permitidas por tabla (evita error por campos viejos/desconocidos)
 const EMPLEADOS_COLS = ['id','fechaAlta','nombres','apellidos','carnet','email','telefono',
@@ -514,11 +516,24 @@ const EMPLEADOS_COLS = ['id','fechaAlta','nombres','apellidos','carnet','email',
   'carpetaExpId','contratoId','obligacionesId','contratoFechaFirma','contratoObs',
   'banco','cuenta','observaciones'];
 
+const AUDITLOG_COLS = ['id','fecha','rol','tipo','detalle'];
+const PREFORMAS_COLS = ['id','grupo','disciplina','caracteristicas'];
+const CONFIG_COLS    = ['clave','valor'];
+
 function cleanForSB(tabla, obj) {
   if (!obj || typeof obj !== 'object') return obj;
   const clean = {...obj};
   if (tabla === 'empleados') {
     const allowed = new Set(EMPLEADOS_COLS);
+    Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
+  } else if (tabla === 'auditLog') {
+    const allowed = new Set(AUDITLOG_COLS);
+    Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
+  } else if (tabla === 'preformas') {
+    const allowed = new Set(PREFORMAS_COLS);
+    Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
+  } else if (tabla === 'config') {
+    const allowed = new Set(CONFIG_COLS);
     Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
   }
   // Limpiar campos numéricos vacíos → null
@@ -625,6 +640,21 @@ async function migrarDatosASupabase() {
     { tabla: 'asistencia',       datos: STATE.asistencia },
     { tabla: 'alertasJuridico',  datos: STATE.alertasJuridico||[] },
     { tabla: 'plazas',           datos: Object.values(STATE.plazas||{}) },
+    { tabla: 'auditLog',         datos: (STATE.auditLog||[]).filter(e=>e.id) },
+    { tabla: 'preformas',        datos: Object.entries(STATE.preformas||{}).map(([grupo,v])=>({id:grupo,grupo,...v})) },
+    { tabla: 'config',           datos: [
+        {clave:'pinRrhh',      valor:STATE.config.pins.rrhh},
+        {clave:'pinJuridico',  valor:STATE.config.pins.juridico},
+        {clave:'pinContabilidad',valor:STATE.config.pins.contabilidad},
+        {clave:'pinJefeTurno', valor:STATE.config.pins.jefe_turno},
+        {clave:'bonAnios1',    valor:String(STATE.config.bonificacion.anios1)},
+        {clave:'bonNivel1',    valor:String(STATE.config.bonificacion.nivel1)},
+        {clave:'bonAnios2',    valor:String(STATE.config.bonificacion.anios2)},
+        {clave:'bonNivel2',    valor:String(STATE.config.bonificacion.nivel2)},
+        {clave:'recargoHE',    valor:String(STATE.config.recargoHorasExtras)},
+        {clave:'diasVacaciones',valor:String(STATE.config.diasVacaciones)},
+        {clave:'diasPagados',  valor:String(STATE.config.diasPagadosPeriodo)},
+      ]},
   ];
   for (const { tabla, datos } of lotes) {
     if (!datos || datos.length === 0) continue;
@@ -652,7 +682,7 @@ async function importarDesdeSheets() {
   if (btn) btn.disabled = true;
   showSyncIndicator('⏳ Leyendo Sheets...', 'syncing');
   let ok = 0, fail = 0;
-  const tablas = ['empleados','traslados','bajas','sanciones','nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia','plazas','alertasJuridico'];
+  const tablas = ['empleados','traslados','bajas','sanciones','nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia','plazas','alertasJuridico','auditLog','preformas'];
   for (const tabla of tablas) {
     try {
       const res = await apiCall({ accion: 'leer', tabla });
@@ -695,7 +725,7 @@ async function sincronizarDesdeSheets() {
   }
   try {
     await sbFetch('GET', 'empleados', null, 'select=id&limit=1');
-    const tablas = ['empleados','traslados','bajas','sanciones','nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia','plazas','alertasJuridico'];
+    const tablas = ['empleados','traslados','bajas','sanciones','nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia','plazas','alertasJuridico','auditLog','preformas'];
     const resultados = await Promise.all(tablas.map(t => sbLeer(t).catch(() => null)));
     tablas.forEach((tabla, i) => {
       if (!resultados[i] || resultados[i].length === 0) return;
@@ -751,10 +781,38 @@ async function sincronizarDesdeSheets() {
       } else if (tabla === 'plazas') {
         STATE.plazas = {};
         data.forEach(r=>{ if(r.id) STATE.plazas[r.id]={...r, salarioBase:parseFloat(r.salarioBase)||0}; });
+      } else if (tabla === 'auditLog') {
+        // Merge: combinar remoto + local, deduplicar por id, ordenar por fecha desc
+        const remoteIds = new Set(data.map(e=>e.id).filter(Boolean));
+        const soloLocales = STATE.auditLog.filter(e=>!e.id||!remoteIds.has(e.id));
+        STATE.auditLog = [...data, ...soloLocales]
+          .sort((a,b)=>new Date(b.fecha)-new Date(a.fecha))
+          .slice(0,2000);
+      } else if (tabla === 'preformas') {
+        if(!STATE.preformas) STATE.preformas = {};
+        data.forEach(r=>{ if(r.grupo) STATE.preformas[r.grupo]={disciplina:r.disciplina||'',caracteristicas:r.caracteristicas||''}; });
       } else {
         STATE[tabla] = data;
       }
     });
+    // Config desde Supabase (complementa lo de Sheets)
+    try {
+      const cfgSB = await sbLeer('config').catch(()=>[]);
+      cfgSB.forEach(row => {
+        const v = row.valor; const k = row.clave;
+        if(k==='pinRrhh')         STATE.config.pins.rrhh          = v;
+        else if(k==='pinJuridico') STATE.config.pins.juridico      = v;
+        else if(k==='pinContabilidad') STATE.config.pins.contabilidad = v;
+        else if(k==='pinJefeTurno')    STATE.config.pins.jefe_turno   = v;
+        else if(k==='bonAnios1')   STATE.config.bonificacion.anios1 = parseInt(v)||5;
+        else if(k==='bonNivel1')   STATE.config.bonificacion.nivel1 = parseInt(v)||5;
+        else if(k==='bonAnios2')   STATE.config.bonificacion.anios2 = parseInt(v)||10;
+        else if(k==='bonNivel2')   STATE.config.bonificacion.nivel2 = parseInt(v)||10;
+        else if(k==='recargoHE')   STATE.config.recargoHorasExtras  = parseFloat(v)||50;
+        else if(k==='diasVacaciones') STATE.config.diasVacaciones   = parseInt(v)||14;
+        else if(k==='diasPagados') STATE.config.diasPagadosPeriodo  = parseInt(v)||15;
+      });
+    } catch(e) {}
     // Config desde Sheets
     try {
       const cfgRes = await apiCall({ accion: 'leerConfig', tabla: 'config' });
@@ -799,21 +857,24 @@ async function sincronizarDesdeSheets() {
   }
 }
 let _syncTick = 0;
+// Intervalo rápido (5s): reconecta agresivamente cuando hay ops pendientes offline
+setInterval(async () => {
+  if (!DB_ONLINE && DB_PENDING_OPS.length > 0) {
+    try {
+      await sbFetch('GET', 'empleados', null, 'select=id&limit=1');
+      DB_ONLINE = true; updateSyncBadge(true);
+      showSyncIndicator('✅ Reconectado', 'ok');
+      await flushPendingOps();
+    } catch(e) {}
+  }
+}, 5000);
+// Intervalo largo (5min): refresh silencioso completo cuando online
 setInterval(async () => {
   _syncTick++;
-  if (!DB_ONLINE) {
-    // Intentar reconectar cada 30s si hay ops pendientes
-    if (DB_PENDING_OPS.length > 0) {
-      try {
-        await sbFetch('GET', 'empleados', null, 'select=id&limit=1');
-        DB_ONLINE = true; updateSyncBadge(true); await flushPendingOps();
-      } catch(e) {}
-    }
-  } else if (_syncTick % 10 === 0) {
-    // Cada 10 ticks × 30s = 5 minutos — refresh silencioso en background
+  if (DB_ONLINE) {
     try { await sincronizarDesdeSheets(); } catch(e) {}
   }
-}, 30000);
+}, 300000);
 function getDefaultState() {
   return {
     config:{
@@ -1047,16 +1108,13 @@ function navigateTo(section){
 // ══════════════════════════════════════════════════
 function uid(){return(STATE.nextId++).toString().padStart(6,'0')}
 function addAuditLog(tipo,detalle){
-  const entry={fecha:new Date().toISOString(),rol:getRoleName(currentRole),tipo,detalle};
+  const id='AL'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  const entry={id,fecha:new Date().toISOString(),rol:getRoleName(currentRole),tipo,detalle};
   STATE.auditLog.unshift(entry);
   if(STATE.auditLog.length>2000)STATE.auditLog.pop();
   saveState();
-  // Batch audit entries — send to Sheets only (auditLog not in Supabase)
-  _auditBuffer.push(entry);
-  if(_auditBuffer.length>=10){
-    const toSend=[..._auditBuffer]; _auditBuffer=[];
-    setTimeout(()=>toSend.forEach(e=>backupToSheets('auditLog','insertar',e,null)),0);
-  }
+  // Escribir a Supabase directo (no batched) y backup a Sheets
+  pushToSheets('auditLog','insertar',entry,id);
 }
 function openModalTrasladoEmp(empId){
   openModalTraslado();
@@ -3505,7 +3563,11 @@ function guardarConfiguracion(){
     diasVacaciones: STATE.config.diasVacaciones,
     diasPagados: STATE.config.diasPagadosPeriodo
   };
+  // Backup a Sheets
   apiCall({ accion: 'guardarConfig', tabla: 'config', valores: cfgSheets }).catch(() => {});
+  // Sync a Supabase como filas clave-valor
+  const cfgRows = Object.entries(cfgSheets).map(([clave,valor])=>({clave,valor:String(valor)}));
+  sbUpsert('config', cfgRows).catch(()=>{});
   addAuditLog('CONFIG','Configuración actualizada por Admin');showToast('Configuración guardada','success');
 }
 
@@ -4419,6 +4481,7 @@ function guardarPreforma(grupo) {
 
   STATE.preformas[grupo] = { disciplina, caracteristicas };
   saveState();
+  pushToSheets('preformas','actualizar',{id:grupo,grupo,disciplina,caracteristicas},grupo);
   addAuditLog('PREFORMA', 'Preforma del grupo '+grupo+' actualizada por '+getRoleName(currentRole));
   showToast('Preforma guardada ✅ — Todos los contratos de este grupo usarán esta versión','success', 5000);
   closeModal();
