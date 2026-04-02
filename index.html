@@ -2609,54 +2609,76 @@ function renderGestionPlazas(container){
   const canEdit=currentRole==='admin'||currentRole==='rrhh';
   if(!canEdit){container.innerHTML='<div class="empty-state"><div class="empty-icon">🔒</div><h4>Acceso restringido</h4></div>';return}
   document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-primary btn-sm" onclick="abrirModalPlaza(null)">➕ Nueva Plaza</button>`;
-  const cat=getCatalogoPlazas();
-  const depts=[...new Set(Object.values(cat).map(p=>p.departamento))].sort();
-  let html=`<div class="card"><div class="card-header"><h3>🏷️ Gestión de Plazas</h3><p class="text-muted" style="margin:4px 0 0;font-size:13px;">Define salario, clasificación, jornada y funciones por plaza. Al guardar, los empleados activos con esa plaza se actualizan automáticamente.</p></div>`;
+  const plazas=Object.values(STATE.plazas||{});
+  const depts=[...new Set(plazas.map(p=>p.departamento))].sort();
+  const showSal=currentRole==='admin';
+  let html=`<div class="card"><div class="card-header"><h3>🏷️ Gestión de Plazas</h3><p class="text-muted" style="margin:4px 0 0;font-size:13px;">Crea, edita o elimina puestos de trabajo. Al guardar un salario, los empleados activos con esa plaza se actualizan automáticamente.</p></div>`;
+  if(!plazas.length){
+    html+=`<div class="empty-state" style="padding:40px"><div class="empty-icon">🏷️</div><h4>No hay plazas creadas</h4><p class="text-muted">Pulsa "+ Nueva Plaza" para añadir el primer puesto de trabajo.</p></div></div>`;
+    container.innerHTML=html; return;
+  }
   html+=`<div class="filters-bar"><div class="filter-group" style="flex:1"><input type="text" id="plaza-q" placeholder="🔍 Buscar plaza..." oninput="filtrarPlazas()" style="min-width:200px"></div>
     <div class="filter-group"><label>Departamento</label><select id="plaza-dept" onchange="filtrarPlazas()"><option value="">Todos</option>${depts.map(d=>`<option>${d}</option>`).join('')}</select></div></div>`;
-  html+=`<div class="table-wrap"><table><thead><tr><th>Departamento</th><th>Plaza</th><th>Salario Base</th><th>Clasificación</th><th>Jornada</th><th>Contrato</th><th>Empleados</th><th>Acción</th></tr></thead><tbody id="plazas-tbody">`;
-  html+=renderPlazasRows(Object.values(cat));
+  html+=`<div class="table-wrap"><table><thead><tr><th>Departamento</th><th>Plaza</th>${showSal?'<th>Salario Base</th>':''}<th>Clasificación</th><th>Jornada</th><th>Contrato</th><th>Empleados</th><th>Acciones</th></tr></thead><tbody id="plazas-tbody">`;
+  html+=renderPlazasRows(plazas);
   html+=`</tbody></table></div></div>`;
   container.innerHTML=html;
 }
 
 function renderPlazasRows(plazas){
   const activos=getEmpleadosActivos();
+  const showSal=currentRole==='admin';
+  if(!plazas.length)return`<tr><td colspan="8" class="text-center text-muted" style="padding:20px">Sin resultados</td></tr>`;
   return plazas.map(p=>{
     const count=activos.filter(e=>e.departamento===p.departamento&&e.plaza===p.nombre).length;
-    const salLabel=p.salarioBase?`<span style="color:var(--burgundy);font-weight:600">${fmtMoney(p.salarioBase)}</span>`:'<span class="text-muted">Sin asignar</span>';
-    return `<tr><td>${p.departamento}</td><td><b>${p.nombre}</b>${p.descripcion?`<br><small class="text-muted">${p.descripcion}</small>`:''}</td>
-      <td>${salLabel}</td><td>${p.clasificacion||'—'}</td><td>${p.jornada||'—'}</td><td>${p.tipoContrato||'—'}</td>
+    const idEsc=p.id.replace(/'/g,'\\&apos;');
+    return `<tr>
+      <td>${p.departamento}</td>
+      <td><b>${p.nombre}</b>${p.descripcion?`<br><small class="text-muted">${p.descripcion}</small>`:''}</td>
+      ${showSal?`<td>${p.salarioBase?`<span style="color:var(--burgundy);font-weight:600">${fmtMoney(p.salarioBase)}</span>`:'<span class="text-muted">Sin asignar</span>'}</td>`:''}
+      <td>${p.clasificacion||'—'}</td><td>${p.jornada||'—'}</td><td>${p.tipoContrato||'—'}</td>
       <td>${count?`<span class="badge badge-active">${count}</span>`:'<span class="badge badge-inactive">0</span>'}</td>
-      <td><button class="btn btn-primary btn-xs" onclick="abrirModalPlaza('${p.id.replace(/'/g,'\\&apos;')}')">✏️ Editar</button></td></tr>`;
+      <td style="white-space:nowrap">
+        <button class="btn btn-primary btn-xs" onclick="abrirModalPlaza('${idEsc}')">✏️ Editar</button>
+        <button class="btn btn-danger btn-xs" style="margin-left:4px" onclick="eliminarPlaza('${idEsc}')">🗑️</button>
+      </td></tr>`;
   }).join('');
 }
 
 function filtrarPlazas(){
   const q=(document.getElementById('plaza-q')?.value||'').toLowerCase();
   const dept=document.getElementById('plaza-dept')?.value||'';
-  const cat=getCatalogoPlazas();
-  const filtered=Object.values(cat).filter(p=>
+  const plazas=Object.values(STATE.plazas||{}).filter(p=>
     (!q||(p.nombre+p.departamento).toLowerCase().includes(q))&&
     (!dept||p.departamento===dept)
   );
   const tbody=document.getElementById('plazas-tbody');
-  if(tbody)tbody.innerHTML=renderPlazasRows(filtered);
+  if(tbody)tbody.innerHTML=renderPlazasRows(plazas);
+}
+
+function updateModalPlazaNombres(){
+  const dept=document.getElementById('mp-dept')?.value||'';
+  const dl=document.getElementById('mp-sugerencias');
+  if(!dl)return;
+  dl.innerHTML=(PLAZAS[dept]||[]).map(n=>`<option value="${n}">`).join('');
 }
 
 function abrirModalPlaza(plazaId){
-  const cat=getCatalogoPlazas();
-  const p=plazaId?cat[plazaId]:null;
+  const p=plazaId?(STATE.plazas||{})[plazaId]:null;
   const depts=Object.keys(PLAZAS);
   const jorOpts=Object.entries(JORNADAS).map(([k,j])=>`<option value="${k}" ${p&&p.jornada===k?'selected':''}>${j.label}</option>`).join('');
+  const showSal=currentRole==='admin';
+  const salField=showSal?`<div class="form-group"><label class="field-label">Salario Base</label>
+    <input type="number" id="mp-salario" value="${p?p.salarioBase||'':''}" min="0" step="0.01" placeholder="0.00"></div>`
+    :`<div></div>`;
   const body=`
     <div class="grid-2">
       <div class="form-group"><label class="field-label required">Departamento</label>
         <select id="mp-dept" onchange="updateModalPlazaNombres()">${depts.map(d=>`<option ${p&&p.departamento===d?'selected':''}>${d}</option>`).join('')}</select></div>
       <div class="form-group"><label class="field-label required">Nombre de Plaza</label>
-        <input id="mp-nombre" value="${p?p.nombre:''}" placeholder="Ej: Camarero/a"></div>
-      <div class="form-group"><label class="field-label">Salario Base</label>
-        <input type="number" id="mp-salario" value="${p?p.salarioBase||'':''}" min="0" step="0.01" placeholder="0.00"></div>
+        <input id="mp-nombre" list="mp-sugerencias" value="${p?p.nombre:''}" placeholder="Escribe o elige del catálogo" autocomplete="off">
+        <datalist id="mp-sugerencias">${(PLAZAS[p?p.departamento:depts[0]]||[]).map(n=>`<option value="${n}">`).join('')}</datalist></div>
+      ${salField}
       <div class="form-group"><label class="field-label">Clasificación</label>
         <select id="mp-clasif"><option ${!p||p.clasificacion==='Directo'?'selected':''}>Directo</option><option ${p&&p.clasificacion==='Contratado'?'selected':''}>Contratado</option><option ${p&&p.clasificacion==='Eventual'?'selected':''}>Eventual</option></select></div>
       <div class="form-group"><label class="field-label">Jornada</label><select id="mp-jornada">${jorOpts}</select></div>
@@ -2673,26 +2695,54 @@ function abrirModalPlaza(plazaId){
 async function guardarPlaza(plazaId){
   const nombre=document.getElementById('mp-nombre').value.trim();
   const dept=document.getElementById('mp-dept').value;
-  const salario=parseFloat(document.getElementById('mp-salario').value)||0;
   const clasif=document.getElementById('mp-clasif').value;
   const jornada=document.getElementById('mp-jornada').value;
   const contrato=document.getElementById('mp-contrato').value;
   const desc=document.getElementById('mp-desc').value.trim();
   if(!nombre||!dept){showToast('Completa departamento y nombre','warning');return;}
   const id=plazaId||(dept+'||'+nombre);
-  const plaza={id,departamento:dept,nombre,salarioBase:salario,clasificacion:clasif,jornada,tipoContrato:contrato,descripcion:desc,funcionesPdfId:''};
+  const existing=(STATE.plazas||{})[id]||{};
+  // Solo admin puede cambiar salario
+  const salario=currentRole==='admin'?(parseFloat(document.getElementById('mp-salario')?.value)||0):(existing.salarioBase||0);
+  const plaza={...existing,id,departamento:dept,nombre,salarioBase:salario,clasificacion:clasif,jornada,tipoContrato:contrato,descripcion:desc,funcionesPdfId:existing.funcionesPdfId||''};
   if(!STATE.plazas)STATE.plazas={};
   STATE.plazas[id]=plaza;
   saveState();
   let actualizados=0;
-  if(salario>0)actualizados=aplicarSalarioPlazaATodos(dept,nombre,salario);
+  if(currentRole==='admin'&&salario>0)actualizados=aplicarSalarioPlazaATodos(dept,nombre,salario);
   if(!PLAZAS[dept])PLAZAS[dept]=[];
   if(!PLAZAS[dept].includes(nombre))PLAZAS[dept].push(nombre);
   pushToSheets('plazas','actualizar',plaza,id);
   closeModal();
-  addAuditLog('PLAZA',`Plaza "${nombre}" (${dept}) guardada. Salario: ${fmtMoney(salario)}. Emp. actualizados: ${actualizados}`);
+  addAuditLog('PLAZA',`Plaza "${nombre}" (${dept}) guardada por ${getRoleName(currentRole)}${currentRole==='admin'?'. Salario: '+fmtMoney(salario):''}. Emp. actualizados: ${actualizados}`);
   showToast(`Plaza guardada${actualizados>0?'. '+actualizados+' empleados actualizados':''} ✅`,'success');
   renderGestionPlazas(document.getElementById('app-content'));
+}
+
+function eliminarPlaza(plazaId){
+  const p=(STATE.plazas||{})[plazaId];
+  if(!p){showToast('Plaza no encontrada','error');return;}
+  const afectados=STATE.empleados.filter(e=>e.activo&&e.departamento===p.departamento&&e.plaza===p.nombre);
+  const aviso=afectados.length
+    ?`<div style="margin-top:10px;padding:10px;background:#fff3cd;border-radius:8px;border-left:4px solid var(--gold)">⚠️ <b>${afectados.length} empleado${afectados.length>1?'s':''} activo${afectados.length>1?'s':''}</b> tiene${afectados.length>1?'n':''} esta plaza asignada.<br><small>Su campo plaza quedará vacío — deberás reasignarlos manualmente.</small></div>`:'';
+  confirmAction(`¿Eliminar la plaza <b>"${p.nombre}"</b> del departamento <b>${p.departamento}</b>?${aviso}`, function(){
+    // Limpiar plaza en empleados afectados
+    afectados.forEach(emp=>{
+      emp.plaza='';
+      pushToSheets('empleados','actualizar',emp,emp.id);
+    });
+    // Eliminar del catálogo dinámico
+    if(PLAZAS[p.departamento]){
+      const idx=PLAZAS[p.departamento].indexOf(p.nombre);
+      if(idx>-1)PLAZAS[p.departamento].splice(idx,1);
+    }
+    delete STATE.plazas[plazaId];
+    saveState();
+    pushToSheets('plazas','eliminar',null,plazaId);
+    addAuditLog('ELIMINAR_PLAZA',`Plaza "${p.nombre}" (${p.departamento}) eliminada por ${getRoleName(currentRole)}. Afectados: ${afectados.length} emp.`);
+    showToast(`Plaza eliminada${afectados.length?`. ${afectados.length} empleado${afectados.length>1?'s':''} sin plaza asignada`:''}`, afectados.length?'warning':'success');
+    renderGestionPlazas(document.getElementById('app-content'));
+  });
 }
 
 // ══════════════════════════════════════════════════
