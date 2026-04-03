@@ -824,60 +824,70 @@ async function recuperarDesdeSheets(){
   if(btn)btn.disabled=true;
 
   showSyncIndicator('⏳ Consultando Sheets...','syncing');
-  showToast('🔍 Consultando Sheets y Supabase...','info',3000);
-  let sheetsEmps=[], sbIds=new Set(), sbCarnets=new Set();
+  showToast('🔍 Leyendo Sheets y Supabase...','info',3000);
+
+  let sheetsEmps=[];
   try{
     const res=await apiCall({accion:'leer',tabla:'empleados'});
     sheetsEmps=res.data||[];
   }catch(e){
-    showToast('❌ No se pudo leer Sheets: '+e.message,'error',10000);
-    showSyncIndicator('❌ Error Sheets','offline');
+    showToast('❌ Error leyendo Sheets: '+e.message,'error',10000);
     if(btn)btn.disabled=false; return;
   }
+
+  let sbEmps=[];
   try{
-    const sbRes=await sbFetch('GET','empleados',null,'select=id,carnet');
-    (sbRes||[]).forEach(r=>{ if(r.id)sbIds.add(String(r.id)); if(r.carnet)sbCarnets.add(String(r.carnet)); });
+    sbEmps=await sbFetch('GET','empleados',null,'select=id,nombres,apellidos,carnet');
   }catch(e){
-    showToast('❌ No se pudo leer Supabase: '+e.message,'error',10000);
-    showSyncIndicator('❌ Error Supabase','offline');
+    showToast('❌ Error leyendo Supabase: '+e.message,'error',10000);
     if(btn)btn.disabled=false; return;
   }
 
-  // Empleados con ID conocido que faltan en Supabase
-  const faltanPorId=sheetsEmps.filter(e=>e.id&&!sbIds.has(String(e.id)));
-  // Empleados SIN id pero con carnet distinto a los que ya están (probables registros huérfanos)
-  const sinId=sheetsEmps.filter(e=>!e.id&&e.nombres&&e.apellidos&&!sbCarnets.has(String(e.carnet||'')));
+  // Clave de comparación: nombre+apellidos en minúscula sin espacios extra
+  const clave=e=>(String(e.nombres||'').trim()+String(e.apellidos||'').trim()).toLowerCase().replace(/\s+/g,'');
+  const sbClaves=new Set(sbEmps.map(clave));
 
-  const totalRecuperables=faltanPorId.length+sinId.length;
-  const msg=`📊 Sheets: ${sheetsEmps.length} | Supabase: ${sbIds.size}\nCon ID faltante: ${faltanPorId.length} | Sin ID (huérfanos): ${sinId.length}\nTotal recuperables: ${totalRecuperables}`;
+  // Empleados en Sheets cuyo nombre+apellidos NO está en Supabase
+  const vistos=new Set();
+  const faltantes=sheetsEmps.filter(e=>{
+    const k=clave(e);
+    if(!k||sbClaves.has(k)||vistos.has(k))return false;
+    vistos.add(k);
+    return true;
+  });
 
-  if(totalRecuperables===0){
-    showToast(`Sheets: ${sheetsEmps.length} emp. | Supabase: ${sbIds.size} emp. — ✅ Sin registros recuperables. Los faltantes pueden tener IDs duplicados en Sheets.`,'info',10000);
-    showSyncIndicator('✅ Verificado','ok');
+  const msg=`📊 Sheets: ${sheetsEmps.length} filas | Supabase: ${sbEmps.length} emp.\nNo encontrados por nombre: ${faltantes.length}`;
+
+  if(!faltantes.length){
+    showToast(`Sheets: ${sheetsEmps.length} filas | Supabase: ${sbEmps.length} emp. — Sin empleados nuevos por nombre. Los datos pueden haber estado solo en localStorage.`,'warning',12000);
+    showSyncIndicator('⚠️ Sin datos recuperables','offline');
     if(btn)btn.disabled=false; return;
   }
 
-  if(!confirm(msg+'\n\n¿Recuperar estos empleados en Supabase?')){
+  if(!confirm(msg+'\n\n¿Subir estos '+faltantes.length+' empleados a Supabase?\n(Se les asignará un ID nuevo si no tienen)')){
     if(btn)btn.disabled=false; return;
   }
 
-  // Asignar ID a los huérfanos antes de subir
-  sinId.forEach(e=>{ if(!e.id) e.id='EMP'+Date.now().toString(36)+Math.random().toString(36).slice(2,5); });
+  // Asignar ID nuevo a los que no tienen
+  faltantes.forEach(e=>{
+    if(!e.id) e.id='REC'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+    // Asegurar activo como booleano
+    e.activo=String(e.activo)==='true'||e.activo===true;
+  });
 
-  const todos=[...faltanPorId,...sinId];
   let ok=0,fail=0;
-  for(let i=0;i<todos.length;i+=50){
-    const chunk=todos.slice(i,i+50);
-    showSyncIndicator(`⏳ Subiendo ${Math.min(i+50,todos.length)}/${todos.length}...`,'syncing');
+  for(let i=0;i<faltantes.length;i+=50){
+    const chunk=faltantes.slice(i,i+50);
+    showSyncIndicator(`⏳ Subiendo ${Math.min(i+50,faltantes.length)}/${faltantes.length}...`,'syncing');
     try{ await sbUpsert('empleados',chunk); ok+=chunk.length; }
-    catch(e){ console.error('chunk error',i,e); fail+=chunk.length; }
+    catch(e){ console.error('chunk error',e); fail+=chunk.length; }
   }
 
   if(ok>0){
-    showToast(`✅ ${ok} empleados recuperados${fail?` | ⚠️ ${fail} con error`:''}. Sincronizando...`,'success',7000);
+    showToast(`✅ ${ok} empleados recuperados${fail?` | ⚠️ ${fail} errores`:''}. Sincronizando...`,'success',7000);
     await sincronizarDesdeSheets();
   } else {
-    showToast(`❌ No se pudo subir ningún empleado. ${fail} errores.`,'error',10000);
+    showToast(`❌ No se pudo subir ninguno. ${fail} errores.`,'error',10000);
     showSyncIndicator('❌ Error','offline');
   }
   if(btn)btn.disabled=false;
