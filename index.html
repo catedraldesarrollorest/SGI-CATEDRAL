@@ -429,7 +429,7 @@
       <div class="sidebar-role-badge" id="role-badge" onclick="abrirSwitchRol()" title="Cambiar rol" style="cursor:pointer;user-select:none;">—</div>
     </div>
     <div class="sidebar-nav" id="sidebar-nav"></div>
-    <div class="sidebar-footer"><span class="sync-status-bar" id="sync-status-badge">⏳ Verificando...</span><button class="btn" onclick="doLogout()">🚪 Cerrar sesión</button><button class="btn" style="margin-top:6px;font-size:11px" onclick="manualSync()">🔄 Sincronizar</button></div>
+    <div class="sidebar-footer"><span class="sync-status-bar" id="sync-status-badge">⏳ Verificando...</span><button class="btn" onclick="doLogout()">🚪 Cerrar sesión</button><button class="btn" style="margin-top:6px;font-size:11px" onclick="manualSync()">🔄 Sincronizar</button><button class="btn" id="btn-recuperar-sheets" style="margin-top:6px;font-size:11px;background:rgba(201,168,76,0.2);color:var(--gold-light);border:1px solid rgba(201,168,76,0.4);display:none" onclick="recuperarDesdeSheets()">🚑 Recuperar desde Sheets</button></div>
   </nav>
   <div id="sidebar-overlay" onclick="closeSidebar()"></div>
   <div id="main">
@@ -817,6 +817,44 @@ async function manualSync() {
   } catch(e) { showSyncIndicator('❌ Error de conexión', 'offline'); }
 }
 
+// ── RECUPERACIÓN DESDE SHEETS (solo admin, uso temporal) ──
+async function recuperarDesdeSheets(){
+  if(currentRole!=='admin'){showToast('Solo administración','error');return;}
+  if(!confirm('¿Recuperar empleados desde Google Sheets?\n\nEsto añade a Supabase los empleados que están en Sheets pero faltan en la base de datos.\nNo elimina ni sobreescribe nada existente.'))return;
+  const btn=document.getElementById('btn-recuperar-sheets');
+  if(btn)btn.disabled=true;
+  showSyncIndicator('⏳ Leyendo Sheets...','syncing');
+  try{
+    const res=await apiCall({accion:'leer',tabla:'empleados'});
+    const sheetsEmps=res.data||[];
+    if(!sheetsEmps.length){showToast('No se encontraron empleados en Sheets','warning');return;}
+    // Detectar cuáles faltan en Supabase
+    const sbRes=await sbFetch('GET','empleados',null,'select=id');
+    const sbIds=new Set((sbRes||[]).map(r=>r.id));
+    const faltantes=sheetsEmps.filter(e=>e.id&&!sbIds.has(e.id));
+    if(!faltantes.length){
+      showToast(`Sheets tiene ${sheetsEmps.length} empleados, todos ya están en Supabase ✅`,'info',6000);
+      if(btn)btn.disabled=false;
+      return;
+    }
+    showSyncIndicator(`⏳ Subiendo ${faltantes.length} empleados...`,'syncing');
+    // Subir en chunks
+    let ok=0,fail=0;
+    for(let i=0;i<faltantes.length;i+=50){
+      const chunk=faltantes.slice(i,i+50);
+      try{await sbUpsert('empleados',chunk);ok+=chunk.length;}
+      catch(e){console.error('chunk error',e);fail+=chunk.length;}
+    }
+    showToast(`✅ Recuperados ${ok} empleados desde Sheets${fail?`. ⚠️ ${fail} con error`:''}. Sincronizando...`,'success',7000);
+    await sincronizarDesdeSheets();
+  }catch(e){
+    showToast('Error recuperando: '+e.message,'error',8000);
+    showSyncIndicator('❌ Error','offline');
+  }finally{
+    if(btn)btn.disabled=false;
+  }
+}
+
 
 async function flushPendingOps() {
   if (DB_PENDING_OPS.length === 0) return;
@@ -1187,6 +1225,8 @@ function renderSidebar(){
     html+=`<div class="nav-section"><div class="nav-item" data-section="${item.section}" onclick="navigateTo('${item.section}')" style="justify-content:flex-start;"><span class="nav-icon">${item.icon}</span><span style="flex:1;">${item.label}</span>${badgeHtml}</div></div>`;
   });
   nav.innerHTML=html;
+  const btnRec=document.getElementById('btn-recuperar-sheets');
+  if(btnRec)btnRec.style.display=currentRole==='admin'?'block':'none';
 }
 
 function toggleSidebar(){
