@@ -351,6 +351,35 @@
     tbody td{padding:8px 10px}
   }
 
+  /* ── Plaza cards (móvil) ───────────────────────────────── */
+  .plaza-cards-wrap{display:none}
+  @media(max-width:640px){
+    .plaza-table-wrap{display:none!important}
+    .plaza-cards-wrap{display:block}
+  }
+  .plaza-card{background:var(--white);border:1px solid var(--border-light);border-radius:10px;padding:14px;margin-bottom:10px;box-shadow:var(--shadow-sm)}
+  .plaza-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px}
+  .plaza-card-name{font-weight:700;font-size:15px;color:var(--text-dark)}
+  .plaza-card-dept{font-size:11px;color:var(--burgundy);text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;font-weight:600}
+  .plaza-card-meta{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:12px;color:var(--text-mid);margin:8px 0 10px;border-top:1px solid var(--border-light);padding-top:8px}
+  .plaza-card-meta span{display:flex;flex-direction:column;gap:1px}
+  .plaza-card-meta span b{font-size:13px;color:var(--text-dark)}
+  .plaza-card-actions{display:flex;flex-wrap:wrap;gap:6px;border-top:1px solid var(--border-light);padding-top:10px}
+
+  /* ── Tablas responsivas con etiquetas (.resp-table) ───── */
+  @media(max-width:640px){
+    .resp-table{overflow-x:unset!important}
+    .resp-table table thead{display:none}
+    .resp-table table tbody tr{display:block;border:1px solid var(--border-light);border-radius:10px;margin-bottom:10px;box-shadow:var(--shadow-sm);background:var(--white)}
+    .resp-table table tbody td{display:flex;justify-content:space-between;align-items:center;padding:9px 14px;border-bottom:1px solid var(--border-light);gap:10px;font-size:13px;min-height:38px}
+    .resp-table table tbody td:last-child{border-bottom:none}
+    .resp-table table tbody td::before{content:attr(data-label);font-size:11px;font-weight:600;color:var(--text-light);text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;flex-shrink:0;min-width:80px}
+    .resp-table table tbody td.td-act{flex-direction:column;align-items:flex-start;gap:6px}
+    .resp-table table tbody td.td-act::before{display:none}
+    .resp-table table tbody td.td-act .btn-wrap{display:flex;flex-wrap:wrap;gap:6px}
+    .resp-table table tbody td:empty{display:none}
+  }
+
   /* SYNC INDICATOR */
   .sync-indicator{position:fixed;bottom:16px;right:16px;z-index:9998;padding:8px 16px;border-radius:20px;font-size:13px;font-family:'Crimson Pro',serif;display:none;align-items:center;gap:8px;box-shadow:var(--shadow);transition:all 0.3s}
   .sync-syncing{background:var(--info);color:white}
@@ -400,7 +429,7 @@
       <div class="sidebar-role-badge" id="role-badge" onclick="abrirSwitchRol()" title="Cambiar rol" style="cursor:pointer;user-select:none;">—</div>
     </div>
     <div class="sidebar-nav" id="sidebar-nav"></div>
-    <div class="sidebar-footer"><span class="sync-status-bar" id="sync-status-badge">⏳ Verificando...</span><button class="btn" onclick="doLogout()">🚪 Cerrar sesión</button><button class="btn" style="margin-top:6px;font-size:11px" onclick="manualSync()">🔄 Sincronizar</button><button class="btn" id="btn-migrar-sb" style="margin-top:6px;font-size:11px;display:none" onclick="migrarDatosASupabase()">📤 Migrar a Supabase</button><button class="btn" id="btn-import-sheets" style="margin-top:6px;font-size:11px;display:none" onclick="importarDesdeSheets()">📥 Importar desde Sheets</button></div>
+    <div class="sidebar-footer"><span class="sync-status-bar" id="sync-status-badge">⏳ Verificando...</span><button class="btn" onclick="doLogout()">🚪 Cerrar sesión</button><button class="btn" style="margin-top:6px;font-size:11px" onclick="manualSync()">🔄 Sincronizar</button><button class="btn" id="btn-recuperar-sheets" style="margin-top:6px;font-size:11px;background:rgba(201,168,76,0.2);color:var(--gold-light);border:1px solid rgba(201,168,76,0.4);display:none" onclick="recuperarDesdeSheets()">🚑 Recuperar desde Sheets</button></div>
   </nav>
   <div id="sidebar-overlay" onclick="closeSidebar()"></div>
   <div id="main">
@@ -682,6 +711,7 @@ const EMPLEADOS_COLS = ['id','fechaAlta','nombres','apellidos','carnet','email',
 const AUDITLOG_COLS = ['id','fecha','rol','tipo','detalle'];
 const PREFORMAS_COLS = ['id','grupo','disciplina','caracteristicas'];
 const CONFIG_COLS    = ['clave','valor'];
+const PLAZAS_COLS    = ['id','departamento','nombre','salarioBase','clasificacion','jornada','tipoContrato','descripcion','funcionesPdfId','funcionesPdfUrl'];
 
 function cleanForSB(tabla, obj) {
   if (!obj || typeof obj !== 'object') return obj;
@@ -697,6 +727,9 @@ function cleanForSB(tabla, obj) {
     Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
   } else if (tabla === 'config') {
     const allowed = new Set(CONFIG_COLS);
+    Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
+  } else if (tabla === 'plazas') {
+    const allowed = new Set(PLAZAS_COLS);
     Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
   }
   // Limpiar campos numéricos vacíos → null
@@ -784,91 +817,44 @@ async function manualSync() {
   } catch(e) { showSyncIndicator('❌ Error de conexión', 'offline'); }
 }
 
-async function migrarDatosASupabase() {
-  if (!confirm('¿Migrar todos los datos locales a Supabase?\nEsto sube empleados, traslados, nóminas y todos los registros.\nSolo necesitas hacerlo una vez.')) return;
-  showSyncIndicator('⏳ Migrando datos...', 'syncing');
-  const btn = document.getElementById('btn-migrar-sb');
-  if (btn) btn.disabled = true;
-  let ok = 0, fail = 0;
-  const lotes = [
-    { tabla: 'empleados',        datos: STATE.empleados },
-    { tabla: 'traslados',        datos: STATE.traslados },
-    { tabla: 'bajas',            datos: STATE.bajas },
-    { tabla: 'sanciones',        datos: STATE.sanciones },
-    { tabla: 'nominas',          datos: STATE.nominas.map(n=>({...n,lineas:undefined})) },
-    { tabla: 'nominaLineas',     datos: STATE.nominas.flatMap(n=>(n.lineas||[]).map((l,i)=>({...l,nominaId:n.id,id:l.id&&l.id!==''?l.id:('NL'+n.id+'-'+l.empleadoId+'-'+i)}))) },
-    { tabla: 'incidencias',      datos: STATE.incidencias },
-    { tabla: 'vacacionesControl',datos: STATE.vacacionesControl.map(v=>({...v,id:v.id||(v.empleadoId+'-'+v.ano)})) },
-    { tabla: 'historialSalarial',datos: STATE.historialSalarial },
-    { tabla: 'asistencia',       datos: STATE.asistencia },
-    { tabla: 'alertasJuridico',  datos: STATE.alertasJuridico||[] },
-    { tabla: 'plazas',           datos: Object.values(STATE.plazas||{}) },
-    { tabla: 'auditLog',         datos: (STATE.auditLog||[]).filter(e=>e.id) },
-    { tabla: 'preformas',        datos: Object.entries(STATE.preformas||{}).map(([grupo,v])=>({id:grupo,grupo,...v})) },
-    { tabla: 'config',           datos: [
-        {clave:'pinRrhh',      valor:STATE.config.pins.rrhh},
-        {clave:'pinJuridico',  valor:STATE.config.pins.juridico},
-        {clave:'pinContabilidad',valor:STATE.config.pins.contabilidad},
-        {clave:'pinJefeTurno', valor:STATE.config.pins.jefe_turno},
-        {clave:'bonAnios1',    valor:String(STATE.config.bonificacion.anios1)},
-        {clave:'bonNivel1',    valor:String(STATE.config.bonificacion.nivel1)},
-        {clave:'bonAnios2',    valor:String(STATE.config.bonificacion.anios2)},
-        {clave:'bonNivel2',    valor:String(STATE.config.bonificacion.nivel2)},
-        {clave:'recargoHE',    valor:String(STATE.config.recargoHorasExtras)},
-        {clave:'diasVacaciones',valor:String(STATE.config.diasVacaciones)},
-        {clave:'diasPagados',  valor:String(STATE.config.diasPagadosPeriodo)},
-      ]},
-  ];
-  for (const { tabla, datos } of lotes) {
-    if (!datos || datos.length === 0) continue;
-    // Enviar en chunks de 200
-    const chunks = [];
-    for (let i = 0; i < datos.length; i += 200) chunks.push(datos.slice(i, i + 200));
-    for (const chunk of chunks) {
-      try { await sbUpsert(tabla, chunk); ok++; }
-      catch(e) { console.error('Error migrando', tabla, e); fail++; }
+// ── RECUPERACIÓN DESDE SHEETS (solo admin, uso temporal) ──
+async function recuperarDesdeSheets(){
+  if(currentRole!=='admin'){showToast('Solo administración','error');return;}
+  if(!confirm('¿Recuperar empleados desde Google Sheets?\n\nEsto añade a Supabase los empleados que están en Sheets pero faltan en la base de datos.\nNo elimina ni sobreescribe nada existente.'))return;
+  const btn=document.getElementById('btn-recuperar-sheets');
+  if(btn)btn.disabled=true;
+  showSyncIndicator('⏳ Leyendo Sheets...','syncing');
+  try{
+    const res=await apiCall({accion:'leer',tabla:'empleados'});
+    const sheetsEmps=res.data||[];
+    if(!sheetsEmps.length){showToast('No se encontraron empleados en Sheets','warning');return;}
+    // Detectar cuáles faltan en Supabase
+    const sbRes=await sbFetch('GET','empleados',null,'select=id');
+    const sbIds=new Set((sbRes||[]).map(r=>r.id));
+    const faltantes=sheetsEmps.filter(e=>e.id&&!sbIds.has(e.id));
+    if(!faltantes.length){
+      showToast(`Sheets tiene ${sheetsEmps.length} empleados, todos ya están en Supabase ✅`,'info',6000);
+      if(btn)btn.disabled=false;
+      return;
     }
-  }
-  if (btn) btn.disabled = false;
-  if (fail === 0) {
-    showSyncIndicator('✅ Migración completa', 'ok');
-    showToast('✅ Datos migrados a Supabase correctamente', 'success', 5000);
-    if (btn) btn.style.display = 'none';
-  } else {
-    showSyncIndicator('⚠️ Migración con errores', 'offline');
-    showToast(`⚠️ ${ok} lotes OK, ${fail} con error. Revisa la consola.`, 'warning', 6000);
-  }
-}
-async function importarDesdeSheets() {
-  if (!confirm('¿Importar datos desde Google Sheets a Supabase?\nEsto recupera registros que estaban en Sheets pero no en Supabase.\nNo borra datos existentes.')) return;
-  const btn = document.getElementById('btn-import-sheets');
-  if (btn) btn.disabled = true;
-  showSyncIndicator('⏳ Leyendo Sheets...', 'syncing');
-  let ok = 0, fail = 0;
-  const tablas = ['empleados','traslados','bajas','sanciones','nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia','plazas','alertasJuridico','auditLog','preformas'];
-  for (const tabla of tablas) {
-    try {
-      const res = await apiCall({ accion: 'leer', tabla });
-      const data = res.data || [];
-      if (!data.length) continue;
-      const chunks = [];
-      for (let i = 0; i < data.length; i += 200) chunks.push(data.slice(i, i + 200));
-      for (const chunk of chunks) {
-        try { await sbUpsert(tabla, chunk); ok++; }
-        catch(e) { console.error('Import error', tabla, e); fail++; }
-      }
-    } catch(e) { console.warn('No se pudo leer', tabla, e); fail++; }
-  }
-  if (btn) btn.disabled = false;
-  if (fail === 0) {
-    showSyncIndicator('✅ Importación completa', 'ok');
-    showToast('✅ Datos de Sheets importados a Supabase', 'success', 5000);
+    showSyncIndicator(`⏳ Subiendo ${faltantes.length} empleados...`,'syncing');
+    // Subir en chunks
+    let ok=0,fail=0;
+    for(let i=0;i<faltantes.length;i+=50){
+      const chunk=faltantes.slice(i,i+50);
+      try{await sbUpsert('empleados',chunk);ok+=chunk.length;}
+      catch(e){console.error('chunk error',e);fail+=chunk.length;}
+    }
+    showToast(`✅ Recuperados ${ok} empleados desde Sheets${fail?`. ⚠️ ${fail} con error`:''}. Sincronizando...`,'success',7000);
     await sincronizarDesdeSheets();
-  } else {
-    showSyncIndicator('⚠️ Importación con errores', 'offline');
-    showToast(`⚠️ ${ok} OK, ${fail} con error. Puede que Sheets esté lento.`, 'warning', 6000);
+  }catch(e){
+    showToast('Error recuperando: '+e.message,'error',8000);
+    showSyncIndicator('❌ Error','offline');
+  }finally{
+    if(btn)btn.disabled=false;
   }
 }
+
 
 async function flushPendingOps() {
   if (DB_PENDING_OPS.length === 0) return;
@@ -1239,11 +1225,8 @@ function renderSidebar(){
     html+=`<div class="nav-section"><div class="nav-item" data-section="${item.section}" onclick="navigateTo('${item.section}')" style="justify-content:flex-start;"><span class="nav-icon">${item.icon}</span><span style="flex:1;">${item.label}</span>${badgeHtml}</div></div>`;
   });
   nav.innerHTML=html;
-  // Mostrar botón de migración solo a admin (una vez hasta que se complete)
-  const btnMigrar = document.getElementById('btn-migrar-sb');
-  if (btnMigrar) btnMigrar.style.display = currentRole === 'admin' ? 'block' : 'none';
-  const btnImport = document.getElementById('btn-import-sheets');
-  if (btnImport) btnImport.style.display = currentRole === 'admin' ? 'block' : 'none';
+  const btnRec=document.getElementById('btn-recuperar-sheets');
+  if(btnRec)btnRec.style.display=currentRole==='admin'?'block':'none';
 }
 
 function toggleSidebar(){
@@ -2655,12 +2638,16 @@ function exportExpedientes(){
 function renderTraslados(container){
   document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-primary btn-sm" onclick="openModalTraslado()">➕ Registrar Traslado</button>`;
   const lista=STATE.traslados.slice().reverse();
-  container.innerHTML=`<div class="card"><div class="table-wrap"><table>
+  container.innerHTML=`<div class="card"><div class="table-wrap resp-table"><table>
     <thead><tr><th>Empleado</th><th>Fecha</th><th>Dept.Anterior</th><th>Dept.Nuevo</th><th>Plaza Nueva</th><th>Clasificación</th><th>Motivo</th></tr></thead>
     <tbody>${lista.length?lista.map(t=>{const e=STATE.empleados.find(x=>x.id===t.empleadoId);return`<tr>
-      <td>${e?`${e.nombres} ${e.apellidos}`:'—'}</td><td>${fmtDate(t.fecha)}</td>
-      <td>${t.deptAnterior||'—'}</td><td>${t.deptNuevo}</td><td>${t.plazaNueva}</td>
-      <td>${t.clasificacionNueva||'—'}</td><td>${t.motivo}</td></tr>`;}).join(''):`<tr><td colspan="7" class="text-center text-muted" style="padding:40px">Sin traslados</td></tr>`}
+      <td data-label="Empleado">${e?`${e.nombres} ${e.apellidos}`:'—'}</td>
+      <td data-label="Fecha">${fmtDate(t.fecha)}</td>
+      <td data-label="Dept. Anterior">${t.deptAnterior||'—'}</td>
+      <td data-label="Dept. Nuevo">${t.deptNuevo}</td>
+      <td data-label="Plaza Nueva">${t.plazaNueva}</td>
+      <td data-label="Clasificación">${t.clasificacionNueva||'—'}</td>
+      <td data-label="Motivo">${t.motivo}</td></tr>`;}).join(''):`<tr><td colspan="7" class="text-center text-muted" style="padding:40px">Sin traslados</td></tr>`}
     </tbody>
   </table></div></div>`;
 }
@@ -2768,15 +2755,18 @@ function guardarTraslado(){
 function renderBajas(container){
   const canReg=currentRole==='admin'||currentRole==='rrhh';
   document.getElementById('topbar-actions').innerHTML=`${canReg?`<button class="btn btn-primary btn-sm" onclick="openModalBaja()">📤 Registrar Baja</button>`:''}<button class="btn btn-secondary btn-sm" onclick="exportBajas()">⬇️ Excel</button>`;
-  container.innerHTML=`<div class="card"><div class="table-wrap"><table>
+  container.innerHTML=`<div class="card"><div class="table-wrap resp-table"><table>
     <thead><tr><th>Empleado</th><th>Fecha Baja</th><th>Motivo</th><th>Registrado por</th><th>Documento</th>${currentRole==='admin'?'<th>Acciones</th>':''}</tr></thead>
     <tbody>${STATE.bajas.length?STATE.bajas.slice().reverse().map(b=>{
       const e=STATE.empleados.find(x=>x.id===b.empleadoId);
       const doc=STATE.documentos[b.empleadoId]||{};
-      return`<tr><td>${e?`${e.nombres} ${e.apellidos}`:'—'}</td><td>${fmtDate(b.fecha)}</td><td>${b.motivo}</td>
-      <td><span class="badge badge-info">${b.registradoPor||'—'}</span></td>
-      <td>${doc.bajaPDF?`<button class="btn btn-secondary btn-xs" onclick="downloadBase64(STATE.documentos['${b.empleadoId}'].bajaPDF,'Baja.pdf')">📄</button>`:'—'}</td>
-      ${currentRole==='admin'?`<td><button class="btn btn-success btn-xs" onclick="restaurarEmpleado('${b.empleadoId}')">♻️ Restaurar</button></td>`:''}</tr>`;
+      return`<tr>
+      <td data-label="Empleado">${e?`${e.nombres} ${e.apellidos}`:'—'}</td>
+      <td data-label="Fecha Baja">${fmtDate(b.fecha)}</td>
+      <td data-label="Motivo">${b.motivo}</td>
+      <td data-label="Registrado por"><span class="badge badge-info">${b.registradoPor||'—'}</span></td>
+      <td data-label="Documento">${doc.bajaPDF?`<button class="btn btn-secondary btn-xs" onclick="downloadBase64(STATE.documentos['${b.empleadoId}'].bajaPDF,'Baja.pdf')">📄</button>`:'—'}</td>
+      ${currentRole==='admin'?`<td class="td-act"><div class="btn-wrap"><button class="btn btn-success btn-xs" onclick="restaurarEmpleado('${b.empleadoId}')">♻️ Restaurar</button></div></td>`:''}</tr>`;
     }).join(''):`<tr><td colspan="6" class="text-center text-muted" style="padding:40px">Sin bajas registradas</td></tr>`}
     </tbody>
   </table></div></div>`;
@@ -2859,11 +2849,13 @@ function renderGestionPlazas(container){
     html+=`<div class="empty-state" style="padding:40px"><div class="empty-icon">🏷️</div><h4>No hay plazas creadas</h4><p class="text-muted">Pulsa "+ Nueva Plaza" para añadir el primer puesto de trabajo.</p></div></div>`;
     container.innerHTML=html; return;
   }
-  html+=`<div class="filters-bar"><div class="filter-group" style="flex:1"><input type="text" id="plaza-q" placeholder="🔍 Buscar plaza..." oninput="filtrarPlazas()" style="min-width:200px"></div>
+  html+=`<div class="filters-bar"><div class="filter-group" style="flex:1"><input type="text" id="plaza-q" placeholder="🔍 Buscar plaza..." oninput="filtrarPlazas()"></div>
     <div class="filter-group"><label>Departamento</label><select id="plaza-dept" onchange="filtrarPlazas()"><option value="">Todos</option>${depts.map(d=>`<option>${d}</option>`).join('')}</select></div></div>`;
-  html+=`<div class="table-wrap"><table><thead><tr><th>Departamento</th><th>Plaza</th>${showSal?'<th>Salario Base</th>':''}<th>Clasificación</th><th>Jornada</th><th>Contrato</th><th>Empleados</th><th>Acciones</th></tr></thead><tbody id="plazas-tbody">`;
+  html+=`<div class="table-wrap plaza-table-wrap"><table><thead><tr><th>Departamento</th><th>Plaza</th>${showSal?'<th>Salario Base</th>':''}<th>Clasificación</th><th>Jornada</th><th>Contrato</th><th>Empleados</th><th>Acciones</th></tr></thead><tbody id="plazas-tbody">`;
   html+=renderPlazasRows(plazas);
-  html+=`</tbody></table></div></div>`;
+  html+=`</tbody></table></div>`;
+  html+=`<div class="plaza-cards-wrap" id="plazas-cards" style="padding:12px">${renderPlazasCards(plazas)}</div>`;
+  html+=`</div>`;
   container.innerHTML=html;
 }
 
@@ -2875,20 +2867,55 @@ function renderPlazasRows(plazas){
     const count=activos.filter(e=>e.departamento===p.departamento&&e.plaza===p.nombre).length;
     const idEsc=p.id.replace(/'/g,'\\&apos;');
     return `<tr>
-      <td>${p.departamento}</td>
-      <td><b>${p.nombre}</b>${p.descripcion?`<br><small class="text-muted">${p.descripcion}</small>`:''}</td>
-      ${showSal?`<td>${p.salarioBase?`<span style="color:var(--burgundy);font-weight:600">${fmtMoney(p.salarioBase)}</span>`:'<span class="text-muted">Sin asignar</span>'}</td>`:''}
-      <td>${p.clasificacion||'—'}</td><td>${p.jornada||'—'}</td><td>${p.tipoContrato||'—'}</td>
-      <td>${count?`<span class="badge badge-active">${count}</span>`:'<span class="badge badge-inactive">0</span>'}</td>
-      <td style="white-space:nowrap">
+      <td data-label="Departamento">${p.departamento}</td>
+      <td data-label="Plaza"><b>${p.nombre}</b>${p.descripcion?`<br><small class="text-muted">${p.descripcion}</small>`:''}</td>
+      ${showSal?`<td data-label="Salario">${p.salarioBase?`<span style="color:var(--burgundy);font-weight:600">${fmtMoney(p.salarioBase)}</span>`:'<span class="text-muted">Sin asignar</span>'}</td>`:''}
+      <td data-label="Clasificación">${p.clasificacion||'—'}</td>
+      <td data-label="Jornada">${p.jornada||'—'}</td>
+      <td data-label="Contrato">${p.tipoContrato||'—'}</td>
+      <td data-label="Empleados">${count?`<span class="badge badge-active">${count}</span>`:'<span class="badge badge-inactive">0</span>'}</td>
+      <td class="td-act"><div class="btn-wrap">
         <button class="btn btn-primary btn-xs" onclick="abrirModalPlaza('${idEsc}')">✏️ Editar</button>
         ${p.funcionesPdfUrl
-          ?`<a href="${p.funcionesPdfUrl}" target="_blank" class="btn btn-secondary btn-xs" style="margin-left:4px" title="Ver PDF">📄</a>
-             <a href="${p.funcionesPdfUrl.replace('/view','/preview')}" target="_blank" class="btn btn-secondary btn-xs" title="Imprimir PDF" onclick="setTimeout(()=>{try{document.querySelector('iframe')?.contentWindow?.print()}catch(e){}},1500)">🖨️</a>
-             <button class="btn btn-gold btn-xs" style="margin-left:4px" onclick="enviarPdfPlaza('${idEsc}')">📧</button>`
+          ?`<a href="${p.funcionesPdfUrl}" target="_blank" class="btn btn-secondary btn-xs" title="Ver PDF">📄</a>
+             <a href="${p.funcionesPdfUrl.replace('/view','/preview')}" target="_blank" class="btn btn-secondary btn-xs" title="Imprimir">🖨️</a>
+             <a href="${p.funcionesPdfUrl}" target="_blank" class="btn btn-gold btn-xs" title="Compartir">📤</a>`
           :''}
-        <button class="btn btn-danger btn-xs" style="margin-left:4px" onclick="eliminarPlaza('${idEsc}')">🗑️</button>
-      </td></tr>`;
+        <button class="btn btn-danger btn-xs" onclick="eliminarPlaza('${idEsc}')">🗑️</button>
+      </div></td></tr>`;
+  }).join('');
+}
+
+function renderPlazasCards(plazas){
+  const activos=getEmpleadosActivos();
+  const showSal=currentRole==='admin';
+  if(!plazas.length)return`<p class="text-center text-muted" style="padding:20px">Sin resultados</p>`;
+  return plazas.map(p=>{
+    const count=activos.filter(e=>e.departamento===p.departamento&&e.plaza===p.nombre).length;
+    const idEsc=p.id.replace(/'/g,'\\&apos;');
+    return `<div class="plaza-card">
+      <div class="plaza-card-top">
+        <div>
+          <div class="plaza-card-name">${p.nombre}</div>
+          <div class="plaza-card-dept">${p.departamento}</div>
+        </div>
+        ${count?`<span class="badge badge-active">${count} emp.</span>`:'<span class="badge badge-inactive">0 emp.</span>'}
+      </div>
+      <div class="plaza-card-meta">
+        ${showSal?`<span>Salario<b>${p.salarioBase?fmtMoney(p.salarioBase):'Sin asignar'}</b></span>`:''}
+        <span>Clasificación<b>${p.clasificacion||'—'}</b></span>
+        <span>Jornada<b>${p.jornada||'—'}</b></span>
+        <span>Contrato<b>${p.tipoContrato||'—'}</b></span>
+      </div>
+      <div class="plaza-card-actions">
+        <button class="btn btn-primary btn-xs" onclick="abrirModalPlaza('${idEsc}')">✏️ Editar</button>
+        ${p.funcionesPdfUrl
+          ?`<a href="${p.funcionesPdfUrl}" target="_blank" class="btn btn-secondary btn-xs">📄 Ver</a>
+             <a href="${p.funcionesPdfUrl}" target="_blank" class="btn btn-gold btn-xs" title="Compartir">📤</a>`
+          :''}
+        <button class="btn btn-danger btn-xs" onclick="eliminarPlaza('${idEsc}')">🗑️ Eliminar</button>
+      </div>
+    </div>`;
   }).join('');
 }
 
@@ -2901,6 +2928,8 @@ function filtrarPlazas(){
   );
   const tbody=document.getElementById('plazas-tbody');
   if(tbody)tbody.innerHTML=renderPlazasRows(plazas);
+  const cards=document.getElementById('plazas-cards');
+  if(cards)cards.innerHTML=renderPlazasCards(plazas);
 }
 
 function updateModalPlazaNombres(){
@@ -2968,27 +2997,32 @@ async function guardarPlaza(plazaId){
   if(pdfInput&&pdfInput.files[0]){
     showSyncIndicator('⏳ Subiendo PDF...','syncing');
     try{
-      // Obtener/crear carpeta de plazas en Drive
+      // Obtener carpeta plazas en Drive
       let carpetaId=STATE.config?.plazasCarpetaId;
       if(!carpetaId){
-        const cr=await apiCall({accion:'getCarpetaPlazasId'});
+        let cr;
+        try{ cr=await apiCall({accion:'getCarpetaPlazasId'}); }
+        catch(e2){ throw new Error('Carpeta Drive: '+e2.message+' — ¿Redesplegaste el Apps Script?'); }
         carpetaId=cr.carpetaId;
+        if(!carpetaId) throw new Error('Apps Script no devolvió carpetaId — verifica el despliegue');
         if(!STATE.config)STATE.config={};
         STATE.config.plazasCarpetaId=carpetaId;
       }
       const b64=await fileToBase64(pdfInput.files[0]);
       const nombreArchivo=`${dept}_${nombre}_funciones.pdf`.replace(/[^a-zA-Z0-9_.-]/g,'_');
-      // Si había un PDF anterior, mandarlo a papelera
       if(plaza.funcionesPdfId){
         apiCall({accion:'eliminarDrive',fileId:plaza.funcionesPdfId}).catch(()=>{});
       }
-      const res=await apiCall({accion:'subirDrive',base64:b64,mimeType:'application/pdf',nombre:nombreArchivo,carpetaId});
+      let res;
+      try{ res=await apiCall({accion:'subirDrive',base64:b64,mimeType:'application/pdf',nombre:nombreArchivo,carpetaId}); }
+      catch(e2){ throw new Error('Subida Drive: '+e2.message); }
       plaza.funcionesPdfId=res.fileId;
       plaza.funcionesPdfUrl=res.viewUrl;
       showSyncIndicator('✅ PDF subido','ok');
     }catch(e){
-      showToast('Error subiendo PDF: '+e.message,'error');
+      showToast('❌ '+e.message,'error',8000);
       showSyncIndicator('⚠️ Error PDF','offline');
+      console.error('guardarPlaza PDF error:',e);
     }
   }
 
@@ -3032,86 +3066,6 @@ function eliminarPlaza(plazaId){
   });
 }
 
-// ══════════════════════════════════════════════════
-// EMAIL — ENVÍO DE DOCUMENTOS
-// ══════════════════════════════════════════════════
-function enviarPdfPlaza(plazaId){
-  const p=(STATE.plazas||{})[plazaId];
-  if(!p||!p.funcionesPdfId){showToast('Esta plaza no tiene PDF de funciones adjunto','warning');return;}
-  _abrirModalEnviarDoc({
-    titulo:`📧 Enviar Funciones — ${p.nombre}`,
-    asuntoDefault:`Funciones del puesto: ${p.nombre} (${p.departamento})`,
-    cuerpoDefault:`Estimado/a,\n\nAdjunto encontrará el documento de funciones correspondiente al puesto de ${p.nombre}, departamento ${p.departamento}.\n\nAtentamente,\nRRHH — La Catedral`,
-    fileId:p.funcionesPdfId,
-    nombreArchivo:`Funciones_${p.nombre}.pdf`.replace(/\s+/g,'_'),
-    auditTipo:'EMAIL_FUNCIONES_PLAZA',auditDetalle:`Funciones plaza "${p.nombre}" (${p.departamento})`
-  });
-}
-
-function enviarContratoEmp(empId){
-  const emp=STATE.empleados.find(e=>e.id===empId);
-  if(!emp){showToast('Empleado no encontrado','error');return;}
-  if(!emp.contratoId){showToast('Este empleado no tiene contrato subido en Drive','warning');return;}
-  _abrirModalEnviarDoc({
-    titulo:`📧 Enviar Contrato — ${emp.nombres} ${emp.apellidos}`,
-    asuntoDefault:`Contrato de Trabajo — ${emp.nombres} ${emp.apellidos}`,
-    cuerpoDefault:`Estimado/a ${emp.nombres},\n\nAdjunto encontrará su contrato de trabajo.\n\nAtentamente,\nRRHH — La Catedral`,
-    fileId:emp.contratoId,
-    nombreArchivo:`Contrato_${emp.apellidos}_${emp.nombres}.pdf`.replace(/\s+/g,'_'),
-    emailDefault:emp.email||'',empId:emp.id,
-    auditTipo:'EMAIL_CONTRATO',auditDetalle:`Contrato enviado a ${emp.nombres} ${emp.apellidos}`
-  });
-}
-
-function _abrirModalEnviarDoc({titulo,asuntoDefault,cuerpoDefault,fileId,nombreArchivo,emailDefault='',empId='',auditTipo,auditDetalle}){
-  const activos=getEmpleadosActivos();
-  const optsEmp=activos.map(e=>`<option value="${e.id}" data-email="${e.email||''}" ${empId&&e.id===empId?'selected':''}>${e.nombres} ${e.apellidos}${e.email?'':' ⚠️'}</option>`).join('');
-  const initEmail=empId?(activos.find(e=>e.id===empId)?.email||emailDefault):emailDefault;
-  const body=`
-    <div class="form-group"><label class="field-label required">Empleado destinatario</label>
-      <select id="med-emp" onchange="(function(sel){
-        const em=(sel.options[sel.selectedIndex]?.dataset?.email||'').trim();
-        document.getElementById('med-email').value=em;
-        document.getElementById('med-nomail').style.display=em?'none':'block';
-      })(this)"><option value="">Seleccione empleado...</option>${optsEmp}</select></div>
-    <div class="form-group"><label class="field-label required">Email del destinatario</label>
-      <input type="email" id="med-email" value="${initEmail}" placeholder="correo@ejemplo.com"></div>
-    <div id="med-nomail" style="display:${initEmail?'none':'block'};padding:10px;background:#fff3cd;border-radius:6px;font-size:12px;margin-bottom:8px">
-      ⚠️ Sin email registrado. Ingrésalo arriba.
-      <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:13px"><input type="checkbox" id="med-guardar-email"> Guardar este email en el expediente</label>
-    </div>
-    <div class="form-group"><label class="field-label required">Asunto</label>
-      <input id="med-asunto" value="${asuntoDefault}"></div>
-    <div class="form-group"><label class="field-label">Mensaje</label>
-      <textarea id="med-cuerpo" rows="5">${cuerpoDefault}</textarea></div>`;
-  const footer=`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-    <button class="btn btn-primary" id="med-btn-send" onclick="_confirmarEnvioDoc('${fileId}','${nombreArchivo}','${auditTipo}','${auditDetalle.replace(/'/g,'\\'+'&apos;')}')">📧 Enviar</button>`;
-  openModal(titulo,body,footer,'md');
-}
-
-async function _confirmarEnvioDoc(fileId,nombreArchivo,auditTipo,auditDetalle){
-  const empId=document.getElementById('med-emp')?.value||'';
-  const email=(document.getElementById('med-email')?.value||'').trim();
-  const asunto=(document.getElementById('med-asunto')?.value||'').trim();
-  const cuerpo=(document.getElementById('med-cuerpo')?.value||'').trim();
-  if(!email){showToast('Ingresa un email destinatario','warning');return;}
-  if(!asunto){showToast('El asunto es obligatorio','warning');return;}
-  if(document.getElementById('med-guardar-email')?.checked&&empId){
-    const emp=STATE.empleados.find(e=>e.id===empId);
-    if(emp&&!emp.email){emp.email=email;saveState();pushToSheets('empleados','actualizar',emp,emp.id);}
-  }
-  const btn=document.getElementById('med-btn-send');
-  if(btn){btn.disabled=true;btn.textContent='Enviando...';}
-  try{
-    await apiCall({accion:'enviarEmail',para:email,asunto,cuerpo,fileId,nombreArchivo});
-    addAuditLog(auditTipo,`${auditDetalle} → ${email}`);
-    showToast('Email enviado correctamente ✅','success');
-    closeModal();
-  }catch(e){
-    showToast('Error al enviar: '+e.message,'error');
-    if(btn){btn.disabled=false;btn.textContent='📧 Enviar';}
-  }
-}
 
 // ══════════════════════════════════════════════════
 // CONTRATOS
@@ -3129,24 +3083,24 @@ function renderContratos(container){
       ?'<span class="badge badge-approved" style="font-size:11px;">✅ Firmado '+fmtDate(doc.contratoFecha)+'</span>'
       :'<span class="badge badge-draft" style="font-size:11px;">⏳ Pendiente</span>';
     rowsHtml+='<tr>'
-      +'<td><b>'+e.nombres+' '+e.apellidos+'</b> <span class="badge '+(e.activo?'badge-active':'badge-inactive')+'">'+(e.activo?'Activo':'Baja')+'</span></td>'
-      +'<td>'+e.departamento+'</td>'
-      +'<td>'+e.plaza+'</td>'
-      +'<td>'+e.tipoContrato+'</td>'
-      +'<td>'+fmtDate(e.fechaAlta)+'</td>'
-      +'<td>'+estadoBadge+'<br>'
+      +'<td data-label="Empleado"><b>'+e.nombres+' '+e.apellidos+'</b> <span class="badge '+(e.activo?'badge-active':'badge-inactive')+'">'+(e.activo?'Activo':'Baja')+'</span></td>'
+      +'<td data-label="Departamento">'+e.departamento+'</td>'
+      +'<td data-label="Plaza">'+e.plaza+'</td>'
+      +'<td data-label="Tipo Contrato">'+e.tipoContrato+'</td>'
+      +'<td data-label="Fecha Alta">'+fmtDate(e.fechaAlta)+'</td>'
+      +'<td data-label="Contrato">'+estadoBadge
       +(e.contratoId
-        ?'<a href="'+driveViewUrl(e.contratoId)+'" target="_blank" class="btn btn-secondary btn-xs" style="font-size:11px;margin-top:4px;">📄 Ver</a>'
-        +' <a href="'+driveViewUrl(e.contratoId).replace('/view','/preview')+'" target="_blank" class="btn btn-secondary btn-xs" style="font-size:11px;margin-top:4px;" title="Imprimir">🖨️</a>'
-        +' <button class="btn btn-gold btn-xs" style="font-size:11px;margin-top:4px;" onclick="enviarContratoEmp(\''+e.id+'\')">📧 Enviar</button>'
-        :'<small class="text-muted">📄 Archivado en papel</small>')
+        ?'<br><span style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px"><a href="'+driveViewUrl(e.contratoId)+'" target="_blank" class="btn btn-secondary btn-xs">📄 Ver</a>'
+        +' <a href="'+driveViewUrl(e.contratoId).replace('/view','/preview')+'" target="_blank" class="btn btn-secondary btn-xs">🖨️</a>'
+        +' <a href="'+driveViewUrl(e.contratoId)+'" target="_blank" class="btn btn-gold btn-xs" title="Compartir">📤</a></span>'
+        :'<br><small class="text-muted">📄 Archivado en papel</small>')
       +'</td>'
-      +'<td><button class="btn btn-primary btn-xs" onclick="previewContrato(\''+e.id+'\')">📄 Generar</button>'
-      +(canEdit?(' <button class="btn btn-gold btn-xs" onclick="openModalFechaContratoEmp(\''+e.id+'\')">✏️ Fecha firma</button>'):'')
-      +'</td>'
+      +'<td class="td-act"><div class="btn-wrap"><button class="btn btn-primary btn-xs" onclick="previewContrato(\''+e.id+'\')">📄 Generar</button>'
+      +(canEdit?(' <button class="btn btn-gold btn-xs" onclick="openModalFechaContratoEmp(\''+e.id+'\')">✏️ Firma</button>'):'')
+      +'</div></td>'
       +'</tr>';
   });
-  container.innerHTML='<div class="card"><div class="table-wrap"><table>'
+  container.innerHTML='<div class="card"><div class="table-wrap resp-table"><table>'
     +'<thead><tr><th>Empleado</th><th>Departamento</th><th>Plaza</th><th>Tipo Contrato</th><th>Fecha Alta</th><th>Contrato</th><th>Acciones</th></tr></thead>'
     +'<tbody>'+rowsHtml+'</tbody>'
     +'</table></div></div>';
@@ -3265,14 +3219,17 @@ function selContrEmp(){
 function renderSanciones(container){
   const canAdd=currentRole==='juridico'||currentRole==='admin';
   document.getElementById('topbar-actions').innerHTML=`${canAdd?`<button class="btn btn-primary btn-sm" onclick="openModalSancion()">⚠️ Nueva Sanción</button>`:''}<button class="btn btn-secondary btn-sm" onclick="exportSanciones()">⬇️ Excel</button>`;
-  container.innerHTML=`<div class="card"><div class="table-wrap"><table>
+  container.innerHTML=`<div class="card"><div class="table-wrap resp-table"><table>
     <thead><tr><th>Empleado</th><th>Fecha</th><th>Tipo</th><th>Motivo</th><th>Documento</th>${currentRole==='admin'?'<th>Eliminar</th>':''}</tr></thead>
     <tbody>${STATE.sanciones.length?STATE.sanciones.slice().reverse().map(s=>{
       const e=STATE.empleados.find(x=>x.id===s.empleadoId);
-      return`<tr><td>${e?`${e.nombres} ${e.apellidos}`:'—'}</td><td>${fmtDate(s.fecha)}</td>
-      <td><span class="badge badge-warning">${s.tipo}</span></td><td>${s.motivo}</td>
-      <td>${s.docPDF?`<button class="btn btn-secondary btn-xs" onclick="downloadBase64('${s.docPDF}','Sancion.pdf')">📄</button>`:'—'}</td>
-      ${currentRole==='admin'?`<td><button class="btn btn-danger btn-xs" onclick="eliminarSancion('${s.id}')">🗑️</button></td>`:''}</tr>`;
+      return`<tr>
+      <td data-label="Empleado">${e?`${e.nombres} ${e.apellidos}`:'—'}</td>
+      <td data-label="Fecha">${fmtDate(s.fecha)}</td>
+      <td data-label="Tipo"><span class="badge badge-warning">${s.tipo}</span></td>
+      <td data-label="Motivo">${s.motivo}</td>
+      <td data-label="Documento">${s.docPDF?`<button class="btn btn-secondary btn-xs" onclick="downloadBase64('${s.docPDF}','Sancion.pdf')">📄</button>`:'—'}</td>
+      ${currentRole==='admin'?`<td class="td-act"><div class="btn-wrap"><button class="btn btn-danger btn-xs" onclick="eliminarSancion('${s.id}')">🗑️ Eliminar</button></div></td>`:''}</tr>`;
     }).join(''):`<tr><td colspan="6" class="text-center text-muted" style="padding:40px">Sin sanciones</td></tr>`}
     </tbody>
   </table></div></div>`;
@@ -3634,17 +3591,21 @@ function renderVacaciones(container){
   container.innerHTML=`<div class="card">
     <div class="card-header"><h3>🌴 Submayor de Vacaciones ${anoActual}</h3>
       <span class="text-muted" style="font-size:13px">Derecho: ${STATE.config.diasVacaciones}d/año | Pagados/período: ${STATE.config.diasPagadosPeriodo}d</span></div>
-    <div class="table-wrap"><table>
+    <div class="table-wrap resp-table"><table>
       <thead><tr><th>Empleado</th><th>Dpto</th><th>Derecho Anual</th><th>Días Tomados</th><th>Días Pendientes</th><th>Valor Pendiente</th><th>Progreso</th></tr></thead>
       <tbody>${activos.map(e=>{
         const ctrl=STATE.vacacionesControl.find(v=>v.empleadoId===e.id&&v.ano===anoActual);
         const tomados=(ctrl?ctrl.diasTomados:0)||0;const pendientes=Math.max(0,STATE.config.diasVacaciones-tomados);
         const salDiario=(e.salarioBase||0)/(getDiasJornada(e.jornada));const valPend=salDiario*pendientes;
         const pct=Math.min(100,(tomados/STATE.config.diasVacaciones)*100);
-        return`<tr><td><b>${e.nombres} ${e.apellidos}</b></td><td>${e.departamento}</td>
-        <td>${STATE.config.diasVacaciones}d</td><td>${tomados}</td>
-        <td><b style="color:var(--burgundy)">${pendientes}</b></td><td>${fmtMoney(valPend)}</td>
-        <td><div class="progress-bar-wrap" style="min-width:80px"><div class="progress-bar" style="width:${pct}%"></div></div><small>${pct.toFixed(0)}%</small></td></tr>`;
+        return`<tr>
+        <td data-label="Empleado"><b>${e.nombres} ${e.apellidos}</b></td>
+        <td data-label="Dpto">${e.departamento}</td>
+        <td data-label="Derecho">${STATE.config.diasVacaciones}d</td>
+        <td data-label="Tomados">${tomados}</td>
+        <td data-label="Pendientes"><b style="color:var(--burgundy)">${pendientes}</b></td>
+        <td data-label="Valor">${fmtMoney(valPend)}</td>
+        <td data-label="Progreso"><div class="progress-bar-wrap" style="min-width:80px"><div class="progress-bar" style="width:${pct}%"></div></div><small>${pct.toFixed(0)}%</small></td></tr>`;
       }).join('')}</tbody>
     </table></div>
   </div>`;
@@ -3743,7 +3704,7 @@ function renderAuditoria(container){
   document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-secondary btn-sm" onclick="exportAuditoria()">⬇️ Exportar</button>`;
   container.innerHTML=`<div class="card">
     <div class="filters-bar"><input type="text" id="aud-q" placeholder="🔍 Buscar..." style="min-width:260px" oninput="filtrarAuditoria()"></div>
-    <div class="table-wrap"><table>
+    <div class="table-wrap resp-table"><table>
       <thead><tr><th>Fecha y Hora</th><th>Rol</th><th>Tipo</th><th>Detalle</th></tr></thead>
       <tbody id="aud-tbody">${renderAuditoriaRows(STATE.auditLog)}</tbody>
     </table></div>
@@ -3752,7 +3713,11 @@ function renderAuditoria(container){
 
 function renderAuditoriaRows(logs){
   if(!logs.length)return`<tr><td colspan="4" class="text-center text-muted" style="padding:40px">Sin registros</td></tr>`;
-  return logs.slice(0,200).map(l=>`<tr><td><code style="font-size:12px">${new Date(l.fecha).toLocaleString('es-ES')}</code></td><td><span class="badge badge-info">${l.rol}</span></td><td><span class="chip">${l.tipo}</span></td><td>${l.detalle}</td></tr>`).join('');
+  return logs.slice(0,200).map(l=>`<tr>
+    <td data-label="Fecha"><code style="font-size:12px">${new Date(l.fecha).toLocaleString('es-ES')}</code></td>
+    <td data-label="Rol"><span class="badge badge-info">${l.rol}</span></td>
+    <td data-label="Tipo"><span class="chip">${l.tipo}</span></td>
+    <td data-label="Detalle">${l.detalle}</td></tr>`).join('');
 }
 
 function filtrarAuditoria(){
