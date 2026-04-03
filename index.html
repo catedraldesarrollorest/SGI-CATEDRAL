@@ -2882,27 +2882,32 @@ async function guardarPlaza(plazaId){
   if(pdfInput&&pdfInput.files[0]){
     showSyncIndicator('⏳ Subiendo PDF...','syncing');
     try{
-      // Obtener/crear carpeta de plazas en Drive
+      // Obtener carpeta plazas en Drive
       let carpetaId=STATE.config?.plazasCarpetaId;
       if(!carpetaId){
-        const cr=await apiCall({accion:'getCarpetaPlazasId'});
+        let cr;
+        try{ cr=await apiCall({accion:'getCarpetaPlazasId'}); }
+        catch(e2){ throw new Error('Carpeta Drive: '+e2.message+' — ¿Redesplegaste el Apps Script?'); }
         carpetaId=cr.carpetaId;
+        if(!carpetaId) throw new Error('Apps Script no devolvió carpetaId — verifica el despliegue');
         if(!STATE.config)STATE.config={};
         STATE.config.plazasCarpetaId=carpetaId;
       }
       const b64=await fileToBase64(pdfInput.files[0]);
       const nombreArchivo=`${dept}_${nombre}_funciones.pdf`.replace(/[^a-zA-Z0-9_.-]/g,'_');
-      // Si había un PDF anterior, mandarlo a papelera
       if(plaza.funcionesPdfId){
         apiCall({accion:'eliminarDrive',fileId:plaza.funcionesPdfId}).catch(()=>{});
       }
-      const res=await apiCall({accion:'subirDrive',base64:b64,mimeType:'application/pdf',nombre:nombreArchivo,carpetaId});
+      let res;
+      try{ res=await apiCall({accion:'subirDrive',base64:b64,mimeType:'application/pdf',nombre:nombreArchivo,carpetaId}); }
+      catch(e2){ throw new Error('Subida Drive: '+e2.message); }
       plaza.funcionesPdfId=res.fileId;
       plaza.funcionesPdfUrl=res.viewUrl;
       showSyncIndicator('✅ PDF subido','ok');
     }catch(e){
-      showToast('Error subiendo PDF: '+e.message,'error');
+      showToast('❌ '+e.message,'error',8000);
       showSyncIndicator('⚠️ Error PDF','offline');
+      console.error('guardarPlaza PDF error:',e);
     }
   }
 
