@@ -1810,7 +1810,7 @@ function renderEmpleados(container){
   container.innerHTML=`<div class="card">
     <div class="filters-bar">
       <div class="filter-group" style="flex:1"><input type="text" class="search-input" id="f-nombre" placeholder="🔍 Buscar por nombre..." oninput="applyFilters()"></div>
-      <div class="filter-group"><label>Dpto</label><select id="f-dept" onchange="applyFilters()"><option value="">Todos</option>${Object.keys(PLAZAS).map(d=>`<option>${d}</option>`).join('')}</select></div>
+      <div class="filter-group"><label>Dpto</label><select id="f-dept" onchange="applyFilters()"><option value="">Todos</option>${[...new Set([...Object.keys(PLAZAS),...Object.values(STATE.plazas||{}).map(p=>p.departamento)])].filter(Boolean).sort().map(d=>`<option>${d}</option>`).join('')}</select></div>
       <div class="filter-group"><label>Estado</label><select id="f-estado" onchange="applyFilters()"><option value="">Todos</option><option>Activo</option><option>Baja</option></select></div>
       <div class="filter-group"><label>Clasificación</label><select id="f-cls" onchange="applyFilters()"><option value="">Todos</option><option>Directo</option><option>Indirecto</option></select></div>
       <div class="filter-group"><label>Antigüedad</label><select id="f-ant" onchange="applyFilters()"><option value="">Todos</option><option value="0-4">0-4 años</option><option value="5-9">5-9 años</option><option value="10+">10+ años</option></select></div>
@@ -2306,7 +2306,12 @@ function updatePlazas(){
   const dept=document.getElementById('a-departamento');
   const plaza=document.getElementById('a-plaza');
   if(!dept||!plaza)return;
-  plaza.innerHTML=(PLAZAS[dept.value]||[]).map(p=>`<option>${p}</option>`).join('');
+  const catalogo=getCatalogoPlazas();
+  const opciones=[...new Set([
+    ...Object.values(catalogo).filter(p=>p.departamento===dept.value).map(p=>p.nombre),
+    ...(PLAZAS[dept.value]||[])
+  ])].sort();
+  plaza.innerHTML=opciones.map(p=>`<option>${p}</option>`).join('');
   autoFillDesdePlaza();
 }
 function autoFillDesdePlaza(){
@@ -2756,7 +2761,12 @@ function openModalTraslado(){
 function updateTraslPlazas(){
   const dept=document.getElementById('tr-dept');const plaza=document.getElementById('tr-plaza');
   if(!dept||!plaza)return;
-  plaza.innerHTML=(PLAZAS[dept.value]||[]).map(p=>`<option>${p}</option>`).join('');
+  const catalogo=getCatalogoPlazas();
+  const opciones=[...new Set([
+    ...Object.values(catalogo).filter(p=>p.departamento===dept.value).map(p=>p.nombre),
+    ...(PLAZAS[dept.value]||[])
+  ])].sort();
+  plaza.innerHTML=opciones.map(p=>`<option>${p}</option>`).join('');
 }
 
 function guardarTraslado(){
