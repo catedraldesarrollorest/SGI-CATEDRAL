@@ -1285,8 +1285,7 @@ const NAV_ITEMS = {
     {section:'contratos',icon:'📄',label:'Contratos',header:'JURÍDICO'},
     {section:'preformas',icon:'📝',label:'Preformas'},
     {section:'sanciones',icon:'⚠️',label:'Sanciones'},
-    {section:'docs_legales',icon:'🗂️',label:'Docs. Legales'},
-    {section:'bajas',icon:'📤',label:'Ver Bajas'}
+    {section:'docs_legales',icon:'🗂️',label:'Docs. Legales'}
   ],
   contabilidad:[
     {section:'dashboard',icon:'📈',label:'Dashboard'},
@@ -1311,9 +1310,12 @@ function renderSidebar(){
   items.forEach(item=>{
     if(item.header&&item.header!==curH){curH=item.header;html+=`<div class="nav-section"><div class="nav-section-label">${item.header}</div>`}
     let badgeHtml='';
-    if(item.section==='dashboard'&&currentRole==='juridico'){
+    if(currentRole==='juridico'){
       const pend=(STATE.alertasJuridico||[]).filter(function(a){return !a.leida;}).length;
-      if(pend>0) badgeHtml='<span id="badge-jur-alertas" style="background:var(--danger);color:white;border-radius:50%;width:18px;height:18px;font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;margin-left:auto;">'+pend+'</span>';
+      if(item.section==='dashboard'&&pend>0)
+        badgeHtml='<span id="badge-jur-alertas" style="background:var(--danger);color:white;border-radius:50%;width:18px;height:18px;font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;margin-left:auto;">'+pend+'</span>';
+      if(item.section==='contratos'&&pend>0)
+        badgeHtml='<span style="background:var(--danger);color:white;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:auto;">'+pend+'</span>';
     }
     html+=`<div class="nav-section"><div class="nav-item" data-section="${item.section}" onclick="navigateTo('${item.section}')" style="justify-content:flex-start;"><span class="nav-icon">${item.icon}</span><span style="flex:1;">${item.label}</span>${badgeHtml}</div></div>`;
   });
@@ -1762,21 +1764,37 @@ function renderDashboard(container){
 
   // ── Alertas de cert médico ──
   let alertasHTML='';
-  // Alertas jurídico — traslados pendientes de nuevo contrato
+  // Alertas jurídico — nuevos empleados y traslados pendientes de contrato
   if(!STATE.alertasJuridico) STATE.alertasJuridico=[];
-  const alertasJurPendientes = STATE.alertasJuridico.filter(function(a){return !a.leida;});
-  if(currentRole==='juridico'&&alertasJurPendientes.length){
-    alertasHTML+='<div class="alert-semaforo semaforo-yellow" style="margin-bottom:16px;">'
-      +'<div class="alert-semaforo-header">⚠️ '+alertasJurPendientes.length+' traslado(s) requieren actualización de contrato</div>'
-      +'<div class="alert-semaforo-body">';
-    alertasJurPendientes.forEach(function(a){
-      alertasHTML+='<div class="alert-row" style="justify-content:space-between;">'
-        +'<span>👤 <b>'+a.empleadoNombre+'</b> — '+a.mensaje+'</span>'
-        +'<button class="btn btn-secondary btn-xs" style="margin-left:12px;white-space:nowrap;" onclick="marcarAlertaJurLeida(&quot;'+a.id+'&quot;)">✅ Marcar atendida</button>'
-        +'</div>';
-    });
-    alertasHTML+='<div style="margin-top:8px;"><button class="btn btn-primary btn-xs" onclick="navigateTo(&quot;contratos&quot;)">📄 Ir a Contratos</button></div>'
-      +'</div></div>';
+  if(currentRole==='juridico'){
+    const alertasNuevos = STATE.alertasJuridico.filter(function(a){return !a.leida&&a.tipo==='NUEVO_EMPLEADO';});
+    const alertasTraslado = STATE.alertasJuridico.filter(function(a){return !a.leida&&a.tipo==='TRASLADO';});
+    if(alertasNuevos.length){
+      alertasHTML+='<div class="alert-semaforo semaforo-red" style="margin-bottom:16px;">'
+        +'<div class="alert-semaforo-header">🆕 '+alertasNuevos.length+' empleado(s) nuevo(s) sin contrato generado</div>'
+        +'<div class="alert-semaforo-body">';
+      alertasNuevos.forEach(function(a){
+        alertasHTML+='<div class="alert-row" style="justify-content:space-between;">'
+          +'<span>👤 <b>'+a.empleadoNombre+'</b> — '+a.mensaje+'</span>'
+          +'<button class="btn btn-secondary btn-xs" style="margin-left:12px;white-space:nowrap;" onclick="marcarAlertaJurLeida(&quot;'+a.id+'&quot;)">✅ Atendida</button>'
+          +'</div>';
+      });
+      alertasHTML+='<div style="margin-top:8px;"><button class="btn btn-primary btn-xs" onclick="navigateTo(&quot;contratos&quot;)">📄 Ir a Contratos</button></div>'
+        +'</div></div>';
+    }
+    if(alertasTraslado.length){
+      alertasHTML+='<div class="alert-semaforo semaforo-yellow" style="margin-bottom:16px;">'
+        +'<div class="alert-semaforo-header">⚠️ '+alertasTraslado.length+' traslado(s) requieren actualización de contrato</div>'
+        +'<div class="alert-semaforo-body">';
+      alertasTraslado.forEach(function(a){
+        alertasHTML+='<div class="alert-row" style="justify-content:space-between;">'
+          +'<span>👤 <b>'+a.empleadoNombre+'</b> — '+a.mensaje+'</span>'
+          +'<button class="btn btn-secondary btn-xs" style="margin-left:12px;white-space:nowrap;" onclick="marcarAlertaJurLeida(&quot;'+a.id+'&quot;)">✅ Atendida</button>'
+          +'</div>';
+      });
+      alertasHTML+='<div style="margin-top:8px;"><button class="btn btn-primary btn-xs" onclick="navigateTo(&quot;contratos&quot;)">📄 Ir a Contratos</button></div>'
+        +'</div></div>';
+    }
   }
 
   // Alertas RRHH — traslados recientes con cambio de jornada (salario a revisar)
@@ -2468,7 +2486,22 @@ async function guardarAlta(){
   }
 
   addAuditLog('ALTA','Alta empleado: '+nombres+' '+apellidos+' ('+carnet+') — '+emp.departamento+'/'+emp.plaza);
-  showToast('Empleado registrado. Expediente #'+carnet,'success',5000);
+
+  // Notificar a Jurídico que hay un nuevo empleado sin contrato
+  if(!STATE.alertasJuridico) STATE.alertasJuridico=[];
+  STATE.alertasJuridico.push({
+    id:'AJ'+uid(),
+    tipo:'NUEVO_EMPLEADO',
+    empleadoId:id,
+    empleadoNombre:nombres+' '+apellidos,
+    fecha:new Date().toISOString().slice(0,10),
+    mensaje:emp.departamento+' / '+emp.plaza+' — '+emp.tipoContrato+'. Pendiente de generar y firmar contrato.',
+    leida:false
+  });
+  saveState();
+  updateAlertaBadgeJur();
+
+  showToast('Empleado registrado. Jurídico notificado para generar contrato.','success',5000);
   navigateTo('empleados');
 }
 
@@ -2831,20 +2864,24 @@ function guardarTraslado(){
     pushToSheets('historialSalarial','insertar',regSalT);
   }
 
-  // Crear alerta para Jurídico si hay cambio de jornada o cambio de dept
-  if(!STATE.alertasJuridico)STATE.alertasJuridico=[];
-  STATE.alertasJuridico.push({
-    id:'AJ'+uid(),
-    tipo:'TRASLADO',
-    empleadoId:empId,
-    empleadoNombre:emp.nombres+' '+emp.apellidos,
-    fecha:fecha,
-    mensaje:'Traslado de '+traslado.deptAnterior+' → '+deptNuevo+' / '+plazaNueva
-      +(cambioJornada?' | Jornada: '+getLabelJornada(jornadaAnterior)+' → '+getLabelJornada(jornadaNueva):'')
-      +'. Requiere actualización de contrato.',
-    leida:false,
-    traslado:traslado.id
-  });
+  // Crear alerta para Jurídico SOLO si hay cambio de departamento o de jornada
+  const requiereNuevoContrato = deptNuevo !== traslado.deptAnterior || cambioJornada;
+  if(requiereNuevoContrato){
+    if(!STATE.alertasJuridico)STATE.alertasJuridico=[];
+    STATE.alertasJuridico.push({
+      id:'AJ'+uid(),
+      tipo:'TRASLADO',
+      empleadoId:empId,
+      empleadoNombre:emp.nombres+' '+emp.apellidos,
+      fecha:fecha,
+      mensaje:'Traslado de '+traslado.deptAnterior+' → '+deptNuevo+' / '+plazaNueva
+        +(cambioJornada?' | Jornada: '+getLabelJornada(jornadaAnterior)+' → '+getLabelJornada(jornadaNueva):'')
+        +'. Requiere actualización de contrato.',
+      leida:false,
+      traslado:traslado.id
+    });
+    updateAlertaBadgeJur();
+  }
 
   saveState();
   pushToSheets('traslados','insertar', traslado);
