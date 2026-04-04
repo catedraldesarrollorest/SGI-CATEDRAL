@@ -261,6 +261,42 @@
   .semaforo-green{background:linear-gradient(135deg,#2D6A4F,#27AE60)}
   .semaforo-green .alert-semaforo-header,.semaforo-green .alert-row{color:var(--white)}
 
+  /* ── FICHA UNIFICADA ── */
+  .ficha-hero{background:linear-gradient(135deg,#3D0C11 0%,#6B1A22 60%,#8B2635 100%);border-radius:var(--radius-lg) var(--radius-lg) 0 0;padding:28px 28px 0;color:#fff;position:relative;overflow:hidden}
+  .ficha-hero::before{content:'';position:absolute;top:-40px;right:-40px;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,0.04)}
+  .ficha-hero-top{display:flex;gap:20px;align-items:flex-start;margin-bottom:20px}
+  .ficha-avatar{width:80px;height:80px;border-radius:50%;border:3px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:700;color:#fff;font-family:'Playfair Display',serif;flex-shrink:0;overflow:hidden;object-fit:cover}
+  .ficha-hero-info{flex:1;min-width:0}
+  .ficha-nombre{font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:#fff;margin:0 0 4px;line-height:1.2}
+  .ficha-sub{font-size:13px;color:rgba(255,255,255,0.75);margin-bottom:10px}
+  .ficha-chips{display:flex;flex-wrap:wrap;gap:6px}
+  .ficha-chip{background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);border-radius:20px;padding:3px 10px;font-size:11px;color:#fff;font-weight:600}
+  .ficha-chip.chip-activo{background:rgba(39,174,96,0.35);border-color:rgba(39,174,96,0.6)}
+  .ficha-chip.chip-baja{background:rgba(192,57,43,0.35);border-color:rgba(192,57,43,0.6)}
+  .ficha-expnum{text-align:right;flex-shrink:0}
+  .ficha-expnum-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.5)}
+  .ficha-expnum-val{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:rgba(255,255,255,0.9)}
+  .ficha-tabs{display:flex;gap:0;border-top:1px solid rgba(255,255,255,0.15);margin-top:4px}
+  .ficha-tab{padding:12px 20px;cursor:pointer;font-size:13px;font-weight:600;color:rgba(255,255,255,0.55);border-bottom:3px solid transparent;transition:all 0.2s;white-space:nowrap}
+  .ficha-tab:hover{color:rgba(255,255,255,0.9)}
+  .ficha-tab.active{color:#fff;border-bottom-color:#fff}
+  .ficha-pane{display:none}.ficha-pane.active{display:block}
+  .ficha-section{border-radius:8px;padding:16px;margin-bottom:14px}
+  .ficha-section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px;opacity:.7}
+  .ficha-kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+  .ficha-kv-item{}
+  .ficha-kv-label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:2px}
+  .ficha-kv-val{font-size:13px;font-weight:600;color:var(--text-dark)}
+  .ficha-eco{background:#f0fbf0}.ficha-id{background:#f7f7f7}.ficha-lab{background:#edf6fd}.ficha-pago{background:#f9f9f9}.ficha-vac{background:#e8f4fd}
+  .ficha-actions{display:flex;flex-wrap:wrap;gap:8px;padding:16px 0 4px}
+  .doc-card{display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px 10px;border-radius:10px;border:1.5px solid var(--border-light);background:var(--white);cursor:pointer;text-decoration:none;transition:all 0.2s;text-align:center}
+  .doc-card:hover{border-color:var(--burgundy);transform:translateY(-2px);box-shadow:var(--shadow)}
+  .doc-card-missing{opacity:.5;cursor:default}.doc-card-missing:hover{transform:none;box-shadow:none;border-color:var(--border-light)}
+  .doc-card-icon{font-size:28px}
+  .doc-card-name{font-size:12px;font-weight:600;color:var(--text-dark)}
+  .doc-card-status{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600}
+  .doc-card-status.ok{background:#d4edda;color:#155724}
+  .doc-card-status.miss{background:#f8d7da;color:#721c24}
   /* CONTRACT PRINT */
   @media print{
     #sidebar,#topbar,.topbar,.topbar-actions,.btn,nav,#toast-container,
@@ -1382,7 +1418,14 @@ function openModal(title,body,footer='',size=''){
   document.getElementById('modal-box').className='modal'+(size?' modal-'+size:'');
   document.getElementById('modal-overlay').classList.add('open');
 }
-function closeModal(){document.getElementById('modal-overlay').classList.remove('open')}
+function closeModal(){
+  document.getElementById('modal-overlay').classList.remove('open');
+  // Restaurar estado por defecto del modal (por si verFicha lo modificó)
+  const mh=document.getElementById('modal-header');
+  const mb=document.getElementById('modal-body');
+  if(mh)mh.style.display='';
+  if(mb)mb.style.padding='';
+}
 function confirmAction(msg,cb){
   openModal('Confirmar acción',`<div class="confirm-box" style="text-align:center"><div style="font-size:48px;margin-bottom:12px">⚠️</div><p style="color:var(--text-mid);margin-bottom:20px">${msg}</p></div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-danger" onclick="closeModal();(${cb.toString()})()">Confirmar</button>`,'sm');
@@ -1962,7 +2005,7 @@ function exportEmpleados(){
 // ══════════════════════════════════════════════════
 // FICHA COMPLETA
 // ══════════════════════════════════════════════════
-function verFicha(id){
+function verFicha(id, tabInicial){
   const e=STATE.empleados.find(x=>x.id===id);
   if(!e)return;
   const doc=STATE.documentos[id]||{};
@@ -1970,84 +2013,182 @@ function verFicha(id){
   const bPct=getBonificacionPct(e.fechaAlta);
   const bon=calcBonificacion(e.salarioBase||0,e.fechaAlta);
   const total=(e.salarioBase||0)+bon;
-  const traslados=STATE.traslados.filter(t=>t.empleadoId===id);
+  const traslados=STATE.traslados.filter(t=>t.empleadoId===id).sort((a,b)=>a.fecha>b.fecha?1:-1);
   const sanciones=(currentRole==='admin'||currentRole==='juridico')?STATE.sanciones.filter(s=>s.empleadoId===id):[];
   const histSal=currentRole==='admin'?STATE.historialSalarial.filter(h=>h.empleadoId===id):[];
+  const bajas=STATE.bajas?STATE.bajas.filter(b=>b.empleadoId===id):[];
   const anoActual=new Date().getFullYear();
   const vacTomadas=STATE.incidencias.filter(i=>i.empleadoId===id&&i.tipo==='Vacaciones'&&new Date(i.fechaInicio).getFullYear()===anoActual).reduce((s,i)=>s+parseInt(i.diasAfectados||0),0);
   const vacPend=Math.max(0,STATE.config.diasVacaciones-vacTomadas);
-  const licencias=[];
+  const canEditData=currentRole==='admin'||currentRole==='rrhh';
+  const canEditCuenta=currentRole==='admin'||currentRole==='contabilidad'||currentRole==='rrhh';
+  const canContract=currentRole==='admin'||currentRole==='juridico'||currentRole==='rrhh';
+  const showEco=currentRole==='admin'||currentRole==='contabilidad';
 
-  let body='<div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">';
-  body+=`<div style="flex:1">
-    <div style="flex:1">
-      <div class="grid-2-auto">
-        <div><b>Nombre:</b> ${e.nombres} ${e.apellidos}</div>
-        <div><b>Carnet:</b> <code>${e.carnet}</code></div>
-        <div><b>Teléfono:</b> ${e.telefono||'—'}</div>
-        <div><b>F.Nacimiento:</b> ${fmtDate(e.fechaNacimiento)}</div>
-        <div><b>Dirección:</b> ${e.direccion||'—'}</div>
-        <div><b>Correo:</b> ${e.email?`<a href="mailto:${e.email}" style="color:var(--burgundy)">${e.email}</a>`:'—'}</div>
-        <div><b>Banco:</b> ${e.banco||'—'}</div>
-        <div><b>Cuenta:</b> ${e.cuenta?e.cuenta.replace(/(.{4})/g,'$1 ').trim():'—'}</div>
-        <div><b>Dpto/Plaza:</b> ${e.departamento} / ${e.plaza}</div>
-        <div><b>Contrato:</b> ${e.tipoContrato||'—'}</div>
-        <div><b>Clasificación:</b> <span class="tag tag-${(e.clasificacion||'').toLowerCase()}">${e.clasificacion||'—'}</span></div>
-        <div><b>Jornada:</b> ${getLabelJornada(e.jornada)}</div>
-        <div><b>Alta:</b> ${fmtDate(e.fechaAlta)} (${anos} año${anos===1?'':'s'})</div>
-        <div><b>Estado:</b> <span class="badge ${e.activo?'badge-active':'badge-inactive'}">${e.activo?'Activo':'Baja'}</span></div>
+  // Avatar
+  const initials=((e.nombres||'?')[0]+(e.apellidos||'?')[0]).toUpperCase();
+  const fotoUrl=e.fotoEmpleadoId?driveThumbUrl(e.fotoEmpleadoId,'w120'):null;
+  const avatarHtml=fotoUrl
+    ?`<img class="ficha-avatar" src="${fotoUrl}" alt="${initials}" onerror="this.outerHTML='<div class=\\'ficha-avatar\\'>${initials}</div>'">`
+    :`<div class="ficha-avatar">${initials}</div>`;
+
+  // ── HERO ──
+  const heroHtml=`<div class="ficha-hero" id="ficha-hero-${id}">
+    <div class="ficha-hero-top">
+      ${avatarHtml}
+      <div class="ficha-hero-info">
+        <div class="ficha-nombre">${e.apellidos}, ${e.nombres}</div>
+        <div class="ficha-sub">${e.plaza||'—'} · ${e.departamento||'—'}</div>
+        <div class="ficha-chips">
+          <span class="ficha-chip ${e.activo?'chip-activo':'chip-baja'}">${e.activo?'● Activo':'● Baja'}</span>
+          <span class="ficha-chip">${e.tipoContrato||'—'}</span>
+          <span class="ficha-chip">${getLabelJornada(e.jornada)}</span>
+          <span class="ficha-chip">${e.clasificacion||'—'}</span>
+          <span class="ficha-chip">${anos} año${anos===1?'':'s'} de antigüedad</span>
+        </div>
       </div>
+      <div class="ficha-expnum">
+        <div class="ficha-expnum-label">N° Expediente</div>
+        <div class="ficha-expnum-val">${e.carnet}</div>
+      </div>
+    </div>
+    <div class="ficha-tabs">
+      <div class="ficha-tab active" id="ftab-resumen-${id}" onclick="fichaTab('${id}','resumen')">👤 Resumen</div>
+      <div class="ficha-tab" id="ftab-expediente-${id}" onclick="fichaTab('${id}','expediente')">📅 Expediente</div>
+      <div class="ficha-tab" id="ftab-documentos-${id}" onclick="fichaTab('${id}','documentos')">📎 Documentos</div>
     </div>
   </div>`;
 
-  if(currentRole==='admin'||currentRole==='contabilidad'){
-    body+=`<div style="background:var(--gold-pale);border-radius:8px;padding:14px;margin-bottom:16px">
-      <b>💰 Datos Económicos</b><br><br>
-      <div class="grid-4-auto">
-        <div><span class="text-muted">Salario Base</span><br><b>${fmtMoney(e.salarioBase)}</b></div>
-        <div><span class="text-muted">Bonif.(${bPct}%)</span><br><b>${fmtMoney(bon)}</b></div>
-        <div><span class="text-muted">Total</span><br><b style="color:var(--burgundy)">${fmtMoney(total)}</b></div>
-        <div><span class="text-muted">Sal.Diario</span><br><b>${fmtMoney((e.salarioBase||0)/(getDiasJornada(e.jornada)))}</b></div>
-      </div></div>`;
+  // ── TAB RESUMEN ──
+  let tabResumen=`
+    <div class="ficha-section ficha-id">
+      <div class="ficha-section-title">🪪 Identificación</div>
+      <div class="ficha-kv">
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Nombre completo</div><div class="ficha-kv-val">${e.nombres} ${e.apellidos}</div></div>
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Carnet / Expediente</div><div class="ficha-kv-val"><code>${e.carnet}</code></div></div>
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Fecha de nacimiento</div><div class="ficha-kv-val">${fmtDate(e.fechaNacimiento)}</div></div>
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Dirección</div><div class="ficha-kv-val">${e.direccion||'—'}</div></div>
+      </div>
+    </div>
+    <div class="ficha-section ficha-lab">
+      <div class="ficha-section-title">📋 Relación Laboral</div>
+      <div class="ficha-kv">
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Fecha de alta</div><div class="ficha-kv-val">${fmtDate(e.fechaAlta)}</div></div>
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Antigüedad</div><div class="ficha-kv-val">${anos} año${anos===1?'':'s'}</div></div>
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Departamento</div><div class="ficha-kv-val">${e.departamento||'—'}</div></div>
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Plaza</div><div class="ficha-kv-val">${e.plaza||'—'}</div></div>
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Tipo de contrato</div><div class="ficha-kv-val">${e.tipoContrato||'—'}</div></div>
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Jornada</div><div class="ficha-kv-val">${getLabelJornada(e.jornada)}</div></div>
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Clasificación</div><div class="ficha-kv-val"><span class="tag tag-${(e.clasificacion||'').toLowerCase()}">${e.clasificacion||'—'}</span></div></div>
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Estado</div><div class="ficha-kv-val"><span class="badge ${e.activo?'badge-active':'badge-inactive'}">${e.activo?'Activo':'Baja'}</span></div></div>
+      </div>
+    </div>`;
+  if(showEco){
+    tabResumen+=`<div class="ficha-section ficha-eco">
+      <div class="ficha-section-title">💰 Datos Económicos</div>
+      <div class="ficha-kv">
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Salario base</div><div class="ficha-kv-val" style="color:var(--burgundy);font-size:16px">${fmtMoney(e.salarioBase)}</div></div>
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Bonificación (${bPct}%)</div><div class="ficha-kv-val">${fmtMoney(bon)}</div></div>
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Total mensual</div><div class="ficha-kv-val" style="font-size:16px;font-weight:700">${fmtMoney(total)}</div></div>
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Salario diario</div><div class="ficha-kv-val">${fmtMoney((e.salarioBase||0)/getDiasJornada(e.jornada))}</div></div>
+      </div>
+      ${histSal.length?`<div style="margin-top:12px;font-size:12px;color:var(--text-light)">Últimos cambios salariales: ${histSal.slice(-3).reverse().map(h=>`${fmtDate(h.fecha)} → ${fmtMoney(h.nuevo)}`).join(' | ')}</div>`:''}
+    </div>`;
   }
+  tabResumen+=`
+    <div class="ficha-section ficha-pago">
+      <div class="ficha-section-title">🏦 Contacto y Pago</div>
+      <div class="ficha-kv">
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Correo electrónico</div><div class="ficha-kv-val">${e.email?`<a href="mailto:${e.email}" style="color:var(--burgundy)">${e.email}</a>`:'—'}</div></div>
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Teléfono</div><div class="ficha-kv-val">${e.telefono||'—'}</div></div>
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Banco</div><div class="ficha-kv-val">${e.banco||'—'}</div></div>
+        <div class="ficha-kv-item"><div class="ficha-kv-label">N° de cuenta</div><div class="ficha-kv-val"><code>${e.cuenta?e.cuenta.replace(/(.{4})/g,'$1 ').trim():'—'}</code></div></div>
+      </div>
+    </div>
+    <div class="ficha-section ficha-vac">
+      <div class="ficha-section-title">🌴 Vacaciones ${anoActual}</div>
+      <div class="ficha-kv">
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Derecho anual</div><div class="ficha-kv-val">${STATE.config.diasVacaciones} días</div></div>
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Tomados</div><div class="ficha-kv-val">${vacTomadas} días</div></div>
+        <div class="ficha-kv-item"><div class="ficha-kv-label">Pendientes</div><div class="ficha-kv-val" style="color:var(--burgundy);font-size:16px;font-weight:700">${vacPend} días</div></div>
+      </div>
+    </div>`;
 
-  body+=`<div style="background:var(--info-light);border-radius:8px;padding:14px;margin-bottom:16px">
-    <b>🌴 Vacaciones ${anoActual}</b><br><br>
-    <div class="grid-4-auto">
-      <div><span class="text-muted">Derecho anual</span><br><b>${STATE.config.diasVacaciones} días</b></div>
-      <div><span class="text-muted">Tomados</span><br><b>${vacTomadas} días</b></div>
-      <div><span class="text-muted">Pendientes</span><br><b style="color:var(--burgundy)">${vacPend} días</b></div>
-    </div></div>`;
+  // ── TAB EXPEDIENTE ──
+  const events=[];
+  events.push({fecha:e.fechaAlta,tipo:'ALTA',titulo:'Alta Laboral',desc:`${e.departamento} · ${e.plaza} · ${getLabelJornada(e.jornada)}`,color:'green'});
+  traslados.forEach(t=>events.push({fecha:t.fecha,tipo:'TRASLADO',titulo:'Traslado',desc:`${t.deptAnterior} → ${t.deptNuevo} | ${t.plazaNueva} | ${t.motivo}`,color:'blue'}));
+  if(histSal.length&&currentRole==='admin') histSal.forEach(h=>events.push({fecha:h.fecha,tipo:'SALARIO',titulo:'Cambio Salarial',desc:`${fmtMoney(h.anterior)} → ${fmtMoney(h.nuevo)} | ${h.motivo}`,color:'gold'}));
+  sanciones.forEach(s=>events.push({fecha:s.fecha,tipo:'SANCIÓN',titulo:`Sanción: ${s.tipo}`,desc:s.motivo,color:'red'}));
+  bajas.forEach(b=>events.push({fecha:b.fecha,tipo:'BAJA',titulo:'Baja Laboral',desc:b.motivo,color:'red'}));
+  if(!e.activo&&!bajas.length&&e.fechaBaja) events.push({fecha:e.fechaBaja,tipo:'BAJA',titulo:'Baja Laboral',desc:'Registrada en el sistema',color:'red'});
+  events.sort((a,b)=>new Date(a.fecha)-new Date(b.fecha));
+  const dotColors={green:'#27AE60',blue:'#2980B9',red:'#C0392B',gold:'#D4A017'};
+  const tabExpediente=`<div class="timeline" style="padding:8px 0">
+    ${events.map(ev=>`<div class="timeline-item">
+      <div class="timeline-dot" style="background:${dotColors[ev.color]||'#999'}"></div>
+      <div class="timeline-content">
+        <div class="tl-date">${fmtDate(ev.fecha)} <span class="chip" style="font-size:10px">${ev.tipo}</span></div>
+        <div class="tl-title">${ev.titulo}</div>
+        <div class="tl-desc">${ev.desc}</div>
+      </div>
+    </div>`).join('')}
+    ${!events.length?'<div class="text-muted" style="padding:20px">Sin eventos registrados</div>':''}
+  </div>`;
 
-  if(traslados.length){
-    body+=`<div class="divider"></div><b>📋 Historial de Traslados</b><br><br><div class="history-list">${traslados.map(t=>`<div class="history-item"><div class="hi-date">${fmtDate(t.fecha)}</div><div>${t.deptAnterior}→<b>${t.deptNuevo}</b> | ${t.plazaNueva} | ${t.motivo}</div></div>`).join('')}</div>`;
-  }
-  if(histSal.length){
-    body+=`<div class="divider"></div><b>💰 Historial Salarial</b><br><br><div class="history-list">${histSal.map(h=>`<div class="history-item"><div class="hi-date">${fmtDate(h.fecha)}</div><div>${fmtMoney(h.anterior)}→<b>${fmtMoney(h.nuevo)}</b> | ${h.motivo}</div></div>`).join('')}</div>`;
-  }
-  if(sanciones.length){
-    body+=`<div class="divider"></div><b>⚠️ Sanciones</b><br><br><div class="history-list">${sanciones.map(s=>`<div class="history-item" style="border-left-color:var(--danger)"><div class="hi-date">${fmtDate(s.fecha)}</div><div><b>${s.tipo}</b> — ${s.motivo}</div></div>`).join('')}</div>`;
-  }
+  // ── TAB DOCUMENTOS ──
+  const contratoEstado=doc.contratoFecha
+    ?`<div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:10px"><span style="font-size:20px">✅</span><div><div style="font-weight:700;color:#155724">Contrato firmado</div><div style="font-size:12px;color:#155724">${fmtDate(doc.contratoFecha)}${e.contratoId?' · <a href="'+driveViewUrl(e.contratoId)+'" target="_blank" style="color:#0d5c1f">Ver en Drive</a>':' · Archivado en papel'}</div></div></div>`
+    :`<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:10px"><span style="font-size:20px">⏳</span><div><div style="font-weight:700;color:#856404">Contrato pendiente de firma</div><div style="font-size:12px;color:#856404">Jurídico debe generar y registrar la firma</div></div>${canContract?`<button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="previewContrato('${id}')">📄 Generar</button>`:''}</div>`;
+  const tabDocumentos=`
+    <div style="margin-bottom:16px">${contratoEstado}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
+      ${e.fotoCarnetId?`<a href="${driveViewUrl(e.fotoCarnetId)}" target="_blank" class="doc-card"><div class="doc-card-icon">🪪</div><div class="doc-card-name">Carnet de Identidad</div><div class="doc-card-status ok">En Drive</div></a>`:'<div class="doc-card doc-card-missing"><div class="doc-card-icon">🪪</div><div class="doc-card-name">Carnet de Identidad</div><div class="doc-card-status miss">Sin adjuntar</div></div>'}
+      ${e.obligacionesId?`<a href="${driveViewUrl(e.obligacionesId)}" target="_blank" class="doc-card"><div class="doc-card-icon">📄</div><div class="doc-card-name">Obligaciones</div><div class="doc-card-status ok">En Drive</div></a>`:(doc.obligaciones?`<button class="doc-card" onclick="downloadBase64(STATE.documentos['${id}'].obligaciones,'Obligaciones.pdf')"><div class="doc-card-icon">📄</div><div class="doc-card-name">Obligaciones</div><div class="doc-card-status ok">Descargable</div></button>`:'<div class="doc-card doc-card-missing"><div class="doc-card-icon">📄</div><div class="doc-card-name">Obligaciones</div><div class="doc-card-status miss">Sin adjuntar</div></div>')}
+      ${e.contratoId?`<a href="${driveViewUrl(e.contratoId)}" target="_blank" class="doc-card"><div class="doc-card-icon">📑</div><div class="doc-card-name">Contrato</div><div class="doc-card-status ok">En Drive</div></a>`:'<div class="doc-card doc-card-missing"><div class="doc-card-icon">📑</div><div class="doc-card-name">Contrato</div><div class="doc-card-status miss">Sin adjuntar</div></div>'}
+    </div>`;
 
-  // Documentos
-  body+=`<div class="divider"></div><b>📎 Documentos Adjuntos</b><br><br><div style="display:flex;gap:8px;flex-wrap:wrap">`;
-  if(doc.obligaciones)body+=`<button class="btn btn-secondary btn-xs" onclick="downloadBase64('${doc.obligaciones}','Obligaciones_${e.nombres.replace(/ /g,'_')}.pdf')">📄 Obligaciones</button>`;
-  if(doc.contrato)body+=`<button class="btn btn-secondary btn-xs" onclick="downloadBase64('${doc.contrato}','Contrato_${e.nombres.replace(/ /g,'_')}.pdf')">📑 Contrato PDF</button>`;
-  body+=`</div>`;
-
-    const canEditData=(currentRole==='admin'||currentRole==='rrhh');
-  const canEditCuenta=(currentRole==='admin'||currentRole==='contabilidad'||currentRole==='rrhh');
-  const canContract=(currentRole==='admin'||currentRole==='juridico'||currentRole==='rrhh');
-
-  const footer=`
-    <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+  // ── ACCIONES ──
+  const accionesHtml=`<div class="ficha-actions">
+    ${canEditData?`<button class="btn btn-info btn-sm" onclick="closeModal();editarEmpleado('${id}')">✏️ Editar</button>`:''}
+    ${canEditCuenta?`<button class="btn btn-gold btn-sm" onclick="editarCuenta('${id}')">🏦 Cuenta</button>`:''}
+    ${canContract?`<button class="btn btn-primary btn-sm" onclick="previewContrato('${id}')">📄 Contrato</button>`:''}
     <button class="btn btn-secondary btn-sm" onclick="exportFichaExcel('${id}')">⬇️ Excel</button>
-    ${canEditData?`<button class="btn btn-info btn-sm" onclick="closeModal();editarEmpleado('${id}')">✏️ Editar Datos</button>`:''}
-    ${canEditCuenta?`<button class="btn btn-gold btn-sm" onclick="editarCuenta('${id}')">🏦 Editar Cuenta</button>`:''}
-    ${canContract?`<button class="btn btn-primary btn-sm" onclick="previewContrato('${id}')">📄 Generar Contrato</button>`:''}
-    ${currentRole==='admin'&&!e.activo?`<button class="btn btn-success btn-sm" onclick="closeModal();restaurarEmpleado('${id}')">♻️ Restaurar</button>`:''}`;
+    ${currentRole==='admin'&&!e.activo?`<button class="btn btn-success btn-sm" onclick="closeModal();restaurarEmpleado('${id}')">♻️ Restaurar</button>`:''}
+  </div>`;
 
-  openModal(`Ficha: ${e.nombres} ${e.apellidos}`,body,footer,'lg');
+  const body=`
+    ${heroHtml}
+    <div style="padding:20px">
+      ${accionesHtml}
+      <div class="ficha-pane active" id="fpane-resumen-${id}">${tabResumen}</div>
+      <div class="ficha-pane" id="fpane-expediente-${id}">${tabExpediente}</div>
+      <div class="ficha-pane" id="fpane-documentos-${id}">${tabDocumentos}</div>
+    </div>`;
+
+  // Abrir sin header ni footer propios (la ficha tiene su propio hero)
+  const modalBox=document.getElementById('modal-box');
+  document.getElementById('modal-title').textContent='';
+  document.getElementById('modal-header').style.display='none';
+  document.getElementById('modal-body').innerHTML=body;
+  document.getElementById('modal-body').style.padding='0';
+  const mf=document.getElementById('modal-footer');
+  mf.innerHTML=`<button class="btn btn-secondary" onclick="closeModal();document.getElementById('modal-header').style.display='';document.getElementById('modal-body').style.padding='';">Cerrar</button>`;
+  mf.style.display='flex';
+  modalBox.className='modal modal-xl';
+  document.getElementById('modal-overlay').classList.add('open');
+
+  // Activar pestaña inicial
+  setTimeout(()=>fichaTab(id, tabInicial||'resumen'),50);
+}
+
+function fichaTab(id, tab){
+  ['resumen','expediente','documentos'].forEach(t=>{
+    const pane=document.getElementById('fpane-'+t+'-'+id);
+    const tabEl=document.getElementById('ftab-'+t+'-'+id);
+    if(pane) pane.classList.toggle('active', t===tab);
+    if(tabEl) tabEl.classList.toggle('active', t===tab);
+  });
 }
 
 function editarCuenta(id){
@@ -2698,6 +2839,9 @@ function filtrarExpedientes(){
 }
 
 function verExpediente(id){
+  verFicha(id,'expediente');
+}
+function _verExpedienteLegacy(id){
   const e=STATE.empleados.find(x=>x.id===id);
   if(!e)return;
   const doc=STATE.documentos[id]||{};
