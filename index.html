@@ -1814,6 +1814,7 @@ function renderEmpleados(container){
       <div class="filter-group"><label>Estado</label><select id="f-estado" onchange="applyFilters()"><option value="">Todos</option><option>Activo</option><option>Baja</option></select></div>
       <div class="filter-group"><label>Clasificación</label><select id="f-cls" onchange="applyFilters()"><option value="">Todos</option><option>Directo</option><option>Indirecto</option></select></div>
       <div class="filter-group"><label>Antigüedad</label><select id="f-ant" onchange="applyFilters()"><option value="">Todos</option><option value="0-4">0-4 años</option><option value="5-9">5-9 años</option><option value="10+">10+ años</option></select></div>
+      <div class="filter-group"><label>Ordenar</label><select id="f-orden" onchange="applyFilters()"><option value="nombre">Nombre A-Z</option><option value="dept">Departamento</option><option value="alta_asc">Fecha Alta ↑</option><option value="alta_desc">Fecha Alta ↓</option><option value="salario_desc">Salario ↓</option></select></div>
     </div>
     <div class="emp-cards-wrap" id="emp-cards"></div>
     <div class="table-wrap"><table id="emp-table">
@@ -1839,6 +1840,7 @@ function applyFilters(){
   const est=(document.getElementById('f-estado')||{}).value||'';
   const cls=(document.getElementById('f-cls')||{}).value||'';
   const ant=(document.getElementById('f-ant')||{}).value||'';
+  const orden=(document.getElementById('f-orden')||{}).value||'nombre';
   const showSalary=currentRole==='admin'||currentRole==='contabilidad';
   const canEdit=currentRole==='admin'||currentRole==='rrhh';
   let emps=STATE.empleados.filter(e=>{
@@ -1849,6 +1851,13 @@ function applyFilters(){
     if(cls&&e.clasificacion!==cls)return false;
     if(ant){const a=calcAntiguedad(e.fechaAlta);if(ant==='0-4'&&a>=5)return false;if(ant==='5-9'&&(a<5||a>=10))return false;if(ant==='10+'&&a<10)return false}
     return true;
+  });
+  emps.sort((a,b)=>{
+    if(orden==='dept') return (a.departamento||'').localeCompare(b.departamento||'')||`${a.nombres} ${a.apellidos}`.localeCompare(`${b.nombres} ${b.apellidos}`);
+    if(orden==='alta_asc') return (a.fechaAlta||'').localeCompare(b.fechaAlta||'');
+    if(orden==='alta_desc') return (b.fechaAlta||'').localeCompare(a.fechaAlta||'');
+    if(orden==='salario_desc') return (b.salarioBase||0)-(a.salarioBase||0);
+    return `${a.nombres} ${a.apellidos}`.localeCompare(`${b.nombres} ${b.apellidos}`);
   });
   const tbody=document.getElementById('emp-tbody');
   const cards=document.getElementById('emp-cards');
@@ -2704,7 +2713,7 @@ function exportExpedientes(){
 // ══════════════════════════════════════════════════
 function renderTraslados(container){
   document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-primary btn-sm" onclick="openModalTraslado()">➕ Registrar Traslado</button>`;
-  const lista=STATE.traslados.slice().reverse();
+  const lista=STATE.traslados.slice().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
   container.innerHTML=`<div class="card"><div class="table-wrap resp-table"><table>
     <thead><tr><th>Empleado</th><th>Fecha</th><th>Dept.Anterior</th><th>Dept.Nuevo</th><th>Plaza Nueva</th><th>Clasificación</th><th>Motivo</th></tr></thead>
     <tbody>${lista.length?lista.map(t=>{const e=STATE.empleados.find(x=>x.id===t.empleadoId);return`<tr>
@@ -3654,7 +3663,8 @@ function eliminarIncidencia(id){
 // ══════════════════════════════════════════════════
 function renderVacaciones(container){
   document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-secondary btn-sm" onclick="exportVacaciones()">⬇️ Excel</button>`;
-  const activos=getEmpleadosActivos();const anoActual=new Date().getFullYear();
+  const activos=getEmpleadosActivos().slice().sort((a,b)=>(a.departamento||'').localeCompare(b.departamento||'')||`${a.nombres} ${a.apellidos}`.localeCompare(`${b.nombres} ${b.apellidos}`));
+  const anoActual=new Date().getFullYear();
   container.innerHTML=`<div class="card">
     <div class="card-header"><h3>🌴 Submayor de Vacaciones ${anoActual}</h3>
       <span class="text-muted" style="font-size:13px">Derecho: ${STATE.config.diasVacaciones}d/año | Pagados/período: ${STATE.config.diasPagadosPeriodo}d</span></div>
