@@ -1421,7 +1421,7 @@ function openModal(title,body,footer='',size=''){
 function closeModal(){
   document.getElementById('modal-overlay').classList.remove('open');
   // Restaurar estado por defecto del modal (por si verFicha lo modificó)
-  const mh=document.getElementById('modal-header');
+  const mh=document.querySelector('.modal-header');
   const mb=document.getElementById('modal-body');
   if(mh)mh.style.display='';
   if(mb)mb.style.padding='';
@@ -2166,14 +2166,15 @@ function verFicha(id, tabInicial){
       <div class="ficha-pane" id="fpane-documentos-${id}">${tabDocumentos}</div>
     </div>`;
 
-  // Abrir sin header ni footer propios (la ficha tiene su propio hero)
+  // Abrir sin header propio (la ficha tiene su propio hero)
   const modalBox=document.getElementById('modal-box');
+  const modalHeader=document.querySelector('.modal-header');
   document.getElementById('modal-title').textContent='';
-  document.getElementById('modal-header').style.display='none';
+  if(modalHeader) modalHeader.style.display='none';
   document.getElementById('modal-body').innerHTML=body;
   document.getElementById('modal-body').style.padding='0';
   const mf=document.getElementById('modal-footer');
-  mf.innerHTML=`<button class="btn btn-secondary" onclick="closeModal();document.getElementById('modal-header').style.display='';document.getElementById('modal-body').style.padding='';">Cerrar</button>`;
+  mf.innerHTML=`<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>`;
   mf.style.display='flex';
   modalBox.className='modal modal-xl';
   document.getElementById('modal-overlay').classList.add('open');
