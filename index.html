@@ -868,30 +868,55 @@ async function recuperarDesdeSheets(){
     if(btn)btn.disabled=false; return;
   }
 
-  // Limpiar y preparar cada empleado antes de subir
+  // Preparar empleados
   const FECHA_COLS=['fechaAlta','fechaNacimiento','fechaBaja','certMedicoFecha'];
-  faltantes.forEach((e,idx)=>{
-    if(!e.id) e.id='REC'+Date.now().toString(36)+idx.toString(36);
-    e.activo=String(e.activo)==='true'||e.activo===true;
-    // Fechas vacías → null (Supabase rechaza strings vacíos en columnas date)
-    FECHA_COLS.forEach(f=>{ if(e[f]===''||e[f]==='0'||e[f]==='undefined')e[f]=null; });
-    // salarioBase → número o null
-    e.salarioBase=e.salarioBase&&!isNaN(Number(e.salarioBase))?Number(e.salarioBase):null;
+  const preparados=faltantes.map((e,idx)=>{
+    const clean={};
+    EMPLEADOS_COLS.forEach(col=>{ clean[col]=e[col]!==undefined?e[col]:''; });
+    if(!clean.id) clean.id='REC'+Date.now().toString(36)+idx;
+    clean.activo=String(e.activo)==='true'||e.activo===true;
+    FECHA_COLS.forEach(f=>{ if(!clean[f]||clean[f]==='0'||clean[f]==='undefined')clean[f]=null; });
+    clean.salarioBase=clean.salarioBase&&!isNaN(Number(clean.salarioBase))?Number(clean.salarioBase):null;
+    return clean;
   });
 
-  let ok=0, lastErr='';
-  for(let i=0;i<faltantes.length;i+=50){
-    const chunk=faltantes.slice(i,i+50);
-    showSyncIndicator(`⏳ Subiendo ${Math.min(i+50,faltantes.length)}/${faltantes.length}...`,'syncing');
-    try{ await sbUpsert('empleados',chunk); ok+=chunk.length; }
-    catch(e){ lastErr=e.message; console.error('chunk error',e); }
+  showToast(`⏳ Subiendo ${preparados.length} empleados a Supabase...`,'info',5000);
+  showSyncIndicator('⏳ Subiendo...','syncing');
+
+  // Subida directa a Supabase con feedback completo
+  let ok=0;
+  for(const emp of preparados){
+    try{
+      const url=`${SUPABASE_URL}/rest/v1/empleados`;
+      const res=await fetch(url,{
+        method:'POST',
+        headers:{
+          'apikey':SUPABASE_KEY,
+          'Authorization':'Bearer '+SUPABASE_KEY,
+          'Content-Type':'application/json',
+          'Prefer':'resolution=merge-duplicates,return=minimal'
+        },
+        body:JSON.stringify(emp)
+      });
+      if(res.ok){ ok++; }
+      else{
+        const errBody=await res.text();
+        showToast(`❌ Error ${res.status}: ${errBody.slice(0,120)}`,'error',15000);
+        console.error('Supabase error',res.status,errBody,emp);
+        break;
+      }
+    }catch(err){
+      showToast('❌ Red: '+err.message,'error',15000);
+      break;
+    }
   }
 
   if(ok>0){
-    showToast(`✅ ${ok} empleados recuperados. Sincronizando...`,'success',7000);
+    showToast(`✅ ${ok}/${preparados.length} empleados subidos. Sincronizando...`,'success',7000);
     await sincronizarDesdeSheets();
-  } else {
-    showToast(`❌ Error al subir: ${lastErr||'desconocido'}. Revisa consola.`,'error',15000);
+    navigateTo('empleados');
+  } else if(ok===0&&preparados.length>0){
+    showToast('❌ No se subió ninguno — revisa el error de arriba','error',10000);
     showSyncIndicator('❌ Error','offline');
   }
   if(btn)btn.disabled=false;
