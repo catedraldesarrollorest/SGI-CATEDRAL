@@ -1802,8 +1802,15 @@ function renderDashboard(container){
   };
 
   const actions = HOME_ACTIONS[currentRole]||[];
-  const roleColors={admin:'var(--burgundy)',rrhh:'var(--info)',juridico:'#7B2D8B',contabilidad:'var(--success)'};
-  const roleColor=roleColors[currentRole]||'var(--burgundy)';
+  // Paletas por rol: [gradiente_inicio, gradiente_fin, tinte_icono, color_icono_texto]
+  const ROLE_PALETTE={
+    admin:   {g1:'#4A0E0E', g2:'#8B2E2E', iconBg:'#F5E6E6', iconFg:'#6B1A1A'},
+    rrhh:    {g1:'#0D2E42', g2:'#1B6E8E', iconBg:'#E0F0F8', iconFg:'#1B4D6E'},
+    juridico:{g1:'#3A1050', g2:'#7B2D8B', iconBg:'#F3E5F8', iconFg:'#7B2D8B'},
+    contabilidad:{g1:'#1A4A35', g2:'#2D9060', iconBg:'#E0F5EC', iconFg:'#2D6A4F'},
+    jefe_turno:{g1:'#6B3800', g2:'#C97A2A', iconBg:'#FFF0DC', iconFg:'#B5642A'},
+  };
+  const pal=ROLE_PALETTE[currentRole]||ROLE_PALETTE.admin;
 
   // ── Alertas de cert médico ──
   let alertasHTML='';
@@ -1897,32 +1904,36 @@ function renderDashboard(container){
   container.innerHTML=`
     ${alertasHTML}
 
-    <div style="background:linear-gradient(135deg,${roleColor} 0%,${roleColor}cc 100%);border-radius:16px;padding:24px 28px;margin-bottom:28px;position:relative;overflow:hidden;color:#fff">
-      <div style="position:absolute;right:-20px;top:-20px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,0.07)"></div>
-      <div style="position:absolute;right:40px;bottom:-30px;width:80px;height:80px;border-radius:50%;background:rgba(255,255,255,0.05)"></div>
-      <div style="font-size:12px;text-transform:uppercase;letter-spacing:2px;opacity:.7;margin-bottom:6px">${hoy}</div>
-      <div style="font-family:'Playfair Display',serif;font-size:26px;font-weight:700;margin-bottom:4px">${saludo}, ${nombreSaludo}</div>
-      <div style="font-size:13px;opacity:.75">${responsable?`<span style="opacity:.6">${getRoleName(currentRole)} · </span>`:''} ${activos.length} empleado${activos.length!==1?'s':''} activo${activos.length!==1?'s':''} · ${new Date().getFullYear()}</div>
+    <div style="background:linear-gradient(135deg,${pal.g1} 0%,${pal.g2} 100%);border-radius:20px;padding:28px 32px;margin-bottom:28px;position:relative;overflow:hidden;color:#fff;box-shadow:0 8px 32px rgba(0,0,0,0.18)">
+      <div style="position:absolute;right:-30px;top:-30px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,0.06)"></div>
+      <div style="position:absolute;right:60px;bottom:-40px;width:100px;height:100px;border-radius:50%;background:rgba(255,255,255,0.04)"></div>
+      <div style="position:absolute;left:-20px;bottom:-20px;width:80px;height:80px;border-radius:50%;background:rgba(255,255,255,0.03)"></div>
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:2.5px;opacity:.6;margin-bottom:8px;font-family:'Crimson Pro',serif">${hoy}</div>
+      <div style="font-family:'Playfair Display',serif;font-size:28px;font-weight:700;margin-bottom:6px;line-height:1.1">${saludo},<br>${nombreSaludo}</div>
+      <div style="font-size:13px;opacity:.7;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        ${responsable?`<span style="background:rgba(255,255,255,0.15);border-radius:20px;padding:2px 10px;font-size:11px">${getRoleName(currentRole)}</span>`:''}
+        <span>● ${activos.length} empleados activos</span>
+      </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:32px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:12px;margin-bottom:32px;">
       ${actions.map(a=>`
         <div onclick="navigateTo('${a.section}')"
-          style="background:var(--white);border:1.5px solid var(--border-light);border-radius:14px;padding:20px 14px 16px;cursor:pointer;text-align:center;transition:all 0.2s;box-shadow:var(--shadow-sm);position:relative;overflow:hidden;"
-          onmouseover="this.style.borderColor='${roleColor}';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(0,0,0,0.12)';this.querySelector('.dash-icon-wrap').style.background='${roleColor}';"
-          onmouseout="this.style.borderColor='var(--border-light)';this.style.transform='none';this.style.boxShadow='var(--shadow-sm)';this.querySelector('.dash-icon-wrap').style.background='var(--cream-dark)';">
-          <div class="dash-icon-wrap" style="width:52px;height:52px;border-radius:14px;background:var(--cream-dark);display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:24px;transition:background 0.2s">${a.icon}</div>
-          <div style="font-family:'Playfair Display',serif;font-weight:700;font-size:13px;color:var(--text-dark);margin-bottom:4px;line-height:1.2">${a.label}</div>
-          <div style="font-size:11px;color:var(--text-light);line-height:1.4">${a.desc}</div>
+          style="background:#fff;border:1.5px solid #ece8e0;border-radius:16px;padding:20px 14px 16px;cursor:pointer;text-align:center;transition:all 0.22s;box-shadow:0 2px 8px rgba(0,0,0,0.06);position:relative;overflow:hidden"
+          onmouseover="this.style.borderColor='${pal.g2}';this.style.transform='translateY(-4px)';this.style.boxShadow='0 10px 28px rgba(0,0,0,0.13)';this.querySelector('.dib').style.background='${pal.g2}';this.querySelector('.dib').style.color='#fff';"
+          onmouseout="this.style.borderColor='#ece8e0';this.style.transform='none';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.06)';this.querySelector('.dib').style.background='${pal.iconBg}';this.querySelector('.dib').style.color='${pal.iconFg}';">
+          <div class="dib" style="width:54px;height:54px;border-radius:15px;background:${pal.iconBg};color:${pal.iconFg};display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:24px;transition:all 0.22s">${a.icon}</div>
+          <div style="font-family:'Playfair Display',serif;font-weight:700;font-size:13px;color:#1a1a1a;margin-bottom:4px;line-height:1.2">${a.label}</div>
+          <div style="font-size:11px;color:#888;line-height:1.4">${a.desc}</div>
         </div>`).join('')}
     </div>
 
-    <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--text-light);margin-bottom:12px;padding-left:2px">Resumen</div>
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:#aaa;margin-bottom:12px;padding-left:2px">Resumen</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:24px;">
-      <div class="stat-card burgundy"><span class="stat-icon">👥</span><div class="stat-value">${activos.length}</div><div class="stat-label">Empleados Activos</div></div>
-      <div class="stat-card"><span class="stat-icon">📤</span><div class="stat-value">${STATE.bajas.length}</div><div class="stat-label">Bajas Registradas</div></div>
-      <div class="stat-card success"><span class="stat-icon">📋</span><div class="stat-value">${STATE.nominas.filter(n=>n.estado==='aprobada').length}</div><div class="stat-label">Nóminas Aprobadas</div></div>
-      <div class="stat-card warning"><span class="stat-icon">⚠️</span><div class="stat-value">${STATE.sanciones.length}</div><div class="stat-label">Sanciones Totales</div></div>
+      <div class="stat-card" style="border-top:3px solid ${pal.g2}"><span class="stat-icon">👥</span><div class="stat-value">${activos.length}</div><div class="stat-label">Empleados Activos</div></div>
+      <div class="stat-card" style="border-top:3px solid #C0392B"><span class="stat-icon">📤</span><div class="stat-value">${STATE.bajas.length}</div><div class="stat-label">Bajas Registradas</div></div>
+      <div class="stat-card" style="border-top:3px solid #2D9060"><span class="stat-icon">📋</span><div class="stat-value">${STATE.nominas.filter(n=>n.estado==='aprobada').length}</div><div class="stat-label">Nóminas Aprobadas</div></div>
+      <div class="stat-card" style="border-top:3px solid #C97A2A"><span class="stat-icon">⚠️</span><div class="stat-value">${STATE.sanciones.length}</div><div class="stat-label">Sanciones Totales</div></div>
     </div>`;
 }
 // ══════════════════════════════════════════════════
