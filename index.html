@@ -1925,12 +1925,10 @@ function renderEmpleados(container){
     <div class="table-wrap"><table id="emp-table">
       <thead><tr>
         <th>Nombre</th>
-        <th class="col-hide-md">Carnet</th>
+        <th class="col-hide-md">N° Expediente</th>
         <th class="col-hide-mobile">Departamento</th>
         <th class="col-hide-md">Plaza</th>
-        ${showSalary?'<th class="col-hide-lg">Salario Base</th><th class="col-hide-lg">Bonif.%</th><th class="col-hide-md">Total</th>':''}
         <th class="col-hide-md">Clasificación</th>
-        <th class="col-hide-mobile">Jornada</th>
         <th class="col-hide-md">Antigüedad</th>
         <th>Estado</th><th>Acciones</th>
       </tr></thead>
@@ -1973,42 +1971,30 @@ function applyFilters(){
     if(cards)cards.innerHTML=empty;
     return;
   }
-  const rows=emps.map(e=>{
-    const a=calcAntiguedad(e.fechaAlta);
-    const bPct=getBonificacionPct(e.fechaAlta);
-    const bon=calcBonificacion(e.salarioBase||0,e.fechaAlta);
-    const total=(e.salarioBase||0)+bon;
-    return {e,a,bPct,bon,total};
-  });
-  tbody.innerHTML=rows.map(({e,a,bPct,bon,total})=>`<tr>
+  const rows=emps.map(e=>({e,a:calcAntiguedad(e.fechaAlta)}));
+  tbody.innerHTML=rows.map(({e,a})=>`<tr onclick="verFicha('${e.id}')" style="cursor:pointer" onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background=''">
     <td><strong>${e.nombres} ${e.apellidos}</strong></td>
     <td class="col-hide-md"><code style="font-size:12px">${e.carnet}</code></td>
     <td class="col-hide-mobile"><span class="chip">${e.departamento||'—'}</span></td>
     <td class="col-hide-md">${e.plaza||'—'}</td>
-    ${showSalary?`<td class="col-hide-lg">${fmtMoney(e.salarioBase)}</td><td class="col-hide-lg">${bPct?bPct+'%':'—'}</td><td class="col-hide-md"><strong>${fmtMoney(total)}</strong></td>`:''}
     <td class="col-hide-md"><span class="tag tag-${(e.clasificacion||'').toLowerCase()}">${e.clasificacion||'—'}</span></td>
-    <td class="col-hide-mobile">${getLabelJornada(e.jornada)}</td>
     <td class="col-hide-md">${a} año${a===1?'':'s'}</td>
     <td><span class="badge ${e.activo?'badge-active':'badge-inactive'}">${e.activo?'Activo':'Baja'}</span></td>
-    <td style="white-space:nowrap">
-      <button class="btn btn-secondary btn-xs" onclick="verFicha('${e.id}')">👁️ Ficha</button>
-      <button class="btn btn-gold btn-xs" onclick="navigateTo('expedientes');setTimeout(()=>verExpediente('${e.id}'),200)">📁</button>
+    <td style="white-space:nowrap" onclick="event.stopPropagation()">
+      ${canEdit?`<button class="btn btn-primary btn-xs" onclick="editarEmpleado('${e.id}')">✏️</button>`:''}
     </td>
   </tr>`).join('');
   if(cards) cards.innerHTML=rows.map(({e,a})=>`
-    <div class="emp-card">
+    <div class="emp-card" onclick="verFicha('${e.id}')" style="cursor:pointer">
       <div class="emp-card-info">
         <div class="emp-card-name">${e.nombres} ${e.apellidos}</div>
         <div class="emp-card-sub">${e.departamento||'—'} · ${e.plaza||'—'}</div>
         <div class="emp-card-foot">
           <span class="badge ${e.activo?'badge-active':'badge-inactive'}" style="font-size:11px">${e.activo?'Activo':'Baja'}</span>
-          <span style="font-size:11px;color:var(--text-mid)">${getLabelJornada(e.jornada)}</span>
           <span style="font-size:11px;color:var(--text-mid)">${a} año${a===1?'':'s'}</span>
         </div>
       </div>
-      <div class="emp-card-actions">
-        <button class="btn btn-secondary btn-xs" onclick="verFicha('${e.id}')">👁️</button>
-        <button class="btn btn-gold btn-xs" onclick="navigateTo('expedientes');setTimeout(()=>verExpediente('${e.id}'),200)">📁</button>
+      <div class="emp-card-actions" onclick="event.stopPropagation()">
         ${canEdit?`<button class="btn btn-primary btn-xs" onclick="editarEmpleado('${e.id}')">✏️</button>`:''}
       </div>
     </div>`).join('');
