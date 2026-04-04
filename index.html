@@ -1863,6 +1863,35 @@ function renderDashboard(container){
 
   const hora=new Date().getHours();
   const saludo=hora<13?'Buenos días':hora<20?'Buenas tardes':'Buenas noches';
+
+  // Buscar el responsable del área según rol
+  const ROLE_DEPTS={rrhh:['rrhh','recursos humanos'],juridico:['jurídico','juridico','legal'],contabilidad:['contabilidad','administración','administracion','finanzas'],admin:[]};
+  const palabrasJefe=['gerente','jefe','director','responsable','coordinador','encargado','supervisor'];
+  function getNombreResponsable(){
+    const keywords=ROLE_DEPTS[currentRole];
+    if(!keywords) return null;
+    const activos=STATE.empleados.filter(e=>e.activo);
+    let candidatos=[];
+    if(currentRole==='admin'){
+      // Para admin: buscar gerente general o director general
+      candidatos=activos.filter(e=>palabrasJefe.some(p=>((e.plaza||'')+'|'+(e.departamento||'')).toLowerCase().includes(p))&&['general','gerencia','administración','administracion','dirección','direccion'].some(p=>((e.plaza||'')+'|'+(e.departamento||'')).toLowerCase().includes(p)));
+    } else {
+      candidatos=activos.filter(e=>keywords.some(k=>(e.departamento||'').toLowerCase().includes(k))&&palabrasJefe.some(p=>(e.plaza||'').toLowerCase().includes(p)));
+    }
+    if(!candidatos.length&&currentRole!=='admin'){
+      // Fallback: cualquier empleado en ese departamento
+      candidatos=activos.filter(e=>keywords.some(k=>(e.departamento||'').toLowerCase().includes(k)));
+    }
+    if(!candidatos.length) return null;
+    // Priorizar el de plaza más "alta" (gerente > jefe > director...)
+    candidatos.sort((a,b)=>{
+      const score=e=>palabrasJefe.findIndex(p=>(e.plaza||'').toLowerCase().includes(p));
+      return score(a)-score(b);
+    });
+    return candidatos[0];
+  }
+  const responsable=getNombreResponsable();
+  const nombreSaludo=responsable?responsable.nombres+' '+responsable.apellidos:getRoleName(currentRole);
   const hoy=new Date().toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'});
 
   container.innerHTML=`
@@ -1872,8 +1901,8 @@ function renderDashboard(container){
       <div style="position:absolute;right:-20px;top:-20px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,0.07)"></div>
       <div style="position:absolute;right:40px;bottom:-30px;width:80px;height:80px;border-radius:50%;background:rgba(255,255,255,0.05)"></div>
       <div style="font-size:12px;text-transform:uppercase;letter-spacing:2px;opacity:.7;margin-bottom:6px">${hoy}</div>
-      <div style="font-family:'Playfair Display',serif;font-size:26px;font-weight:700;margin-bottom:4px">${saludo}, ${getRoleName(currentRole)}</div>
-      <div style="font-size:13px;opacity:.75">${activos.length} empleado${activos.length!==1?'s':''} activo${activos.length!==1?'s':''} · ${new Date().getFullYear()}</div>
+      <div style="font-family:'Playfair Display',serif;font-size:26px;font-weight:700;margin-bottom:4px">${saludo}, ${nombreSaludo}</div>
+      <div style="font-size:13px;opacity:.75">${responsable?`<span style="opacity:.6">${getRoleName(currentRole)} · </span>`:''} ${activos.length} empleado${activos.length!==1?'s':''} activo${activos.length!==1?'s':''} · ${new Date().getFullYear()}</div>
     </div>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:32px;">
