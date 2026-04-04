@@ -263,11 +263,34 @@
 
   /* CONTRACT PRINT */
   @media print{
-    #sidebar,#topbar,.topbar,.topbar-actions,.btn,nav,#toast-container{display:none!important}
+    #sidebar,#topbar,.topbar,.topbar-actions,.btn,nav,#toast-container,
+    .plantilla-controls{display:none!important}
     #main{margin-left:0!important}
     .contract-print-area{display:block!important}
     body{background:white;font-family:serif}
+    .plantilla-table-wrap{overflow:visible!important}
+    .plantilla-table{font-size:9px!important}
+    .plantilla-table th,.plantilla-table td{padding:3px 5px!important}
   }
+  /* ── Plantilla de Personal ── */
+  .plantilla-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
+  .plantilla-table-wrap{overflow-x:auto;border-radius:8px;border:1px solid var(--border)}
+  .plantilla-table{width:100%;border-collapse:collapse;font-size:12px;min-width:900px}
+  .plantilla-table thead tr.pt-group th{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:6px 8px;text-align:center;border:1px solid #ccc}
+  .plantilla-table thead tr.pt-cols th{font-size:10px;color:#555;padding:5px 8px;border:1px solid #ddd;white-space:nowrap;text-align:left}
+  .plantilla-table tbody tr:nth-child(even){background:#fafafa}
+  .plantilla-table tbody tr:hover{background:#f0f0f0}
+  .plantilla-table td{padding:6px 8px;border:1px solid #e0e0e0;vertical-align:middle;white-space:nowrap}
+  .pt-id{background:#f5f5f5}
+  .pt-lab{background:#e8f4fd}
+  .pt-eco{background:#e8f8e8}
+  .pt-con{background:#f5f5f5}
+  .pt-ges{background:#fffde7}
+  .pt-id-cell{background:#fafafa}
+  .pt-lab-cell{background:#f0f8ff}
+  .pt-eco-cell{background:#f0fbf0}
+  .pt-con-cell{background:#f9f9f9}
+  .pt-ges-cell{background:#fffdf0}
   .contract-print-area{font-family:'Times New Roman',serif;font-size:13px;line-height:1.8;color:#000;padding:40px;max-width:800px;margin:0 auto}
   .contract-print-area h1{text-align:center;font-size:16px;font-weight:bold;margin-bottom:24px;text-transform:uppercase}
   .contract-print-area p{margin-bottom:12px;text-align:justify}
@@ -1233,6 +1256,7 @@ const NAV_ITEMS = {
     {section:'expedientes',icon:'📁',label:'Expedientes'},
     {section:'traslados',icon:'🔄',label:'Traslados'},
     {section:'bajas',icon:'📤',label:'Bajas'},
+    {section:'plantilla',icon:'🗂️',label:'Plantilla de Personal'},
     {section:'salarios',icon:'💰',label:'Salarios Base',header:'ADMINISTRACIÓN'},
     {section:'gestion_plazas',icon:'🏷️',label:'Gestión de Plazas'},
     {section:'contratos',icon:'📄',label:'Contratos',header:'JURÍDICO'},
@@ -1251,6 +1275,7 @@ const NAV_ITEMS = {
     {section:'expedientes',icon:'📁',label:'Expedientes'},
     {section:'traslados',icon:'🔄',label:'Traslados'},
     {section:'bajas',icon:'📤',label:'Bajas'},
+    {section:'plantilla',icon:'🗂️',label:'Plantilla de Personal'},
     {section:'gestion_plazas',icon:'🏷️',label:'Gestión de Plazas',header:'CONFIGURACIÓN'}
   ],
   juridico:[
@@ -1266,6 +1291,7 @@ const NAV_ITEMS = {
   contabilidad:[
     {section:'dashboard',icon:'📈',label:'Dashboard'},
     {section:'empleados',icon:'👥',label:'Empleados',header:'CONSULTA'},
+    {section:'plantilla',icon:'🗂️',label:'Plantilla de Personal',header:'CONSULTA'},
     {section:'nomina',icon:'📋',label:'Nóminas',header:'CONTABILIDAD'},
     {section:'incidencias',icon:'🗓️',label:'Incidencias'},
     {section:'vacaciones',icon:'🌴',label:'Vacaciones'}
@@ -1308,11 +1334,11 @@ function navigateTo(section){
   closeSidebar();
   currentSection=section;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.section===section));
-  const titles={dashboard:'Dashboard',empleados:'Empleados',alta:'Alta de Empleado',expedientes:'Expedientes Laborales',traslados:'Traslados',bajas:'Bajas',salarios:'Salarios Base',gestion_plazas:'Gestión de Plazas',contratos:'Contratos',sanciones:'Sanciones',nomina:'Nóminas',incidencias:'Incidencias',vacaciones:'Submayor de Vacaciones',configuracion:'Configuración',auditoria:'Log de Auditoría',backup:'Copia de Seguridad'};
+  const titles={dashboard:'Dashboard',empleados:'Empleados',alta:'Alta de Empleado',expedientes:'Expedientes Laborales',traslados:'Traslados',bajas:'Bajas',plantilla:'Plantilla de Personal',salarios:'Salarios Base',gestion_plazas:'Gestión de Plazas',contratos:'Contratos',sanciones:'Sanciones',nomina:'Nóminas',incidencias:'Incidencias',vacaciones:'Submayor de Vacaciones',configuracion:'Configuración',auditoria:'Log de Auditoría',backup:'Copia de Seguridad'};
   document.getElementById('page-title').textContent=titles[section]||section;
   document.getElementById('topbar-actions').innerHTML='';
   const content=document.getElementById('app-content');
-  const renders={dashboard:renderDashboard,empleados:renderEmpleados,alta:renderAlta,expedientes:renderExpedientes,traslados:renderTraslados,bajas:renderBajas,salarios:renderSalarios,gestion_plazas:renderGestionPlazas,contratos:renderContratos,sanciones:renderSanciones,nomina:renderNomina,incidencias:renderIncidencias,vacaciones:renderVacaciones,configuracion:renderConfiguracion,auditoria:renderAuditoria,backup:renderBackup,asistencia:renderAsistencia,historial_asistencia:renderHistorialAsistencia,docs_legales:renderDocsLegales,preformas:renderPreformas};
+  const renders={dashboard:renderDashboard,empleados:renderEmpleados,alta:renderAlta,expedientes:renderExpedientes,traslados:renderTraslados,bajas:renderBajas,plantilla:renderPlantilla,salarios:renderSalarios,gestion_plazas:renderGestionPlazas,contratos:renderContratos,sanciones:renderSanciones,nomina:renderNomina,incidencias:renderIncidencias,vacaciones:renderVacaciones,configuracion:renderConfiguracion,auditoria:renderAuditoria,backup:renderBackup,asistencia:renderAsistencia,historial_asistencia:renderHistorialAsistencia,docs_legales:renderDocsLegales,preformas:renderPreformas};
   if(renders[section])renders[section](content);
   else content.innerHTML='<div class="empty-state"><div class="empty-icon">🚧</div><h4>En construcción</h4></div>';
 }
@@ -4821,6 +4847,132 @@ document.addEventListener('DOMContentLoaded',()=>{
     navigator.serviceWorker.register('/sw.js').catch(function(e){console.warn('SW registro fallido:',e);});
   }
 });
+
+// ══════════════════════════════════════════════════
+// PLANTILLA DE PERSONAL
+// ══════════════════════════════════════════════════
+function renderPlantilla(container){
+  const showEco=currentRole==='admin'||currentRole==='contabilidad';
+  const showCuenta=currentRole==='admin'||currentRole==='contabilidad';
+  const depts=[...new Set([...Object.keys(PLAZAS),...Object.values(STATE.plazas||{}).map(p=>p.departamento)])].filter(Boolean).sort();
+
+  document.getElementById('topbar-actions').innerHTML=`
+    <button class="btn btn-secondary btn-sm" onclick="imprimirPlantilla()">🖨️ Imprimir / PDF</button>`;
+
+  container.innerHTML=`<div class="card">
+    <div class="plantilla-controls">
+      <div class="filter-group" style="flex:1"><input type="text" class="search-input" id="pl-q" placeholder="🔍 Buscar empleado..." oninput="filtrarPlantilla()"></div>
+      <div class="filter-group"><label>Departamento</label>
+        <select id="pl-dept" onchange="filtrarPlantilla()">
+          <option value="">Todos</option>${depts.map(d=>`<option>${d}</option>`).join('')}
+        </select></div>
+      <div class="filter-group"><label>Estado</label>
+        <select id="pl-estado" onchange="filtrarPlantilla()">
+          <option value="activo">Activos</option>
+          <option value="todos">Todos</option>
+          <option value="baja">Bajas</option>
+        </select></div>
+    </div>
+    <div class="plantilla-table-wrap" id="plantilla-wrap">
+      ${_buildPlantillaTable(STATE.empleados.filter(e=>e.activo),showEco,showCuenta)}
+    </div>
+  </div>`;
+}
+
+function _buildPlantillaTable(emps,showEco,showCuenta){
+  if(!emps.length)return '<div class="empty-state"><div class="empty-icon">👥</div><h4>Sin empleados</h4></div>';
+  const sorted=emps.slice().sort((a,b)=>(a.departamento||'').localeCompare(b.departamento||'')||(a.apellidos||'').localeCompare(b.apellidos||''));
+  return `<table class="plantilla-table" id="plantilla-table">
+    <thead>
+      <tr class="pt-group">
+        <th colspan="3" class="pt-id">🪪 Identificación</th>
+        <th colspan="4" class="pt-lab">📋 Relación Laboral</th>
+        ${showEco?'<th colspan="1" class="pt-eco">💰 Datos Económicos</th>':''}
+        ${showCuenta?'<th colspan="2" class="pt-con">🏦 Contacto y Pago</th>':''}
+        <th colspan="1" class="pt-con">📞</th>
+        <th colspan="2" class="pt-ges">🏢 Gestión Interna</th>
+      </tr>
+      <tr class="pt-cols">
+        <th class="pt-id-cell">Apellidos y Nombre</th>
+        <th class="pt-id-cell">Expediente</th>
+        <th class="pt-id-cell">F. Nacimiento</th>
+        <th class="pt-lab-cell">F. Antigüedad</th>
+        <th class="pt-lab-cell">Puesto / Plaza</th>
+        <th class="pt-lab-cell">Tipo Contrato</th>
+        <th class="pt-lab-cell">Jornada</th>
+        ${showEco?'<th class="pt-eco-cell">Salario Base</th>':''}
+        ${showCuenta?'<th class="pt-con-cell">Banco</th><th class="pt-con-cell">N° Cuenta</th>':''}
+        <th class="pt-con-cell">Email / Teléfono</th>
+        <th class="pt-ges-cell">Departamento</th>
+        <th class="pt-ges-cell">Clasificación</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${sorted.map(e=>`<tr data-activo="${e.activo?'1':'0'}" data-dept="${e.departamento||''}" data-nombre="${(e.apellidos+' '+e.nombres).toLowerCase()}">
+        <td class="pt-id-cell" style="font-weight:600">${e.apellidos||''}, ${e.nombres||''}</td>
+        <td class="pt-id-cell"><code style="font-size:11px">${e.carnet||'—'}</code></td>
+        <td class="pt-id-cell">${fmtDate(e.fechaNacimiento)}</td>
+        <td class="pt-lab-cell">${fmtDate(e.fechaAlta)}</td>
+        <td class="pt-lab-cell">${e.plaza||'—'}</td>
+        <td class="pt-lab-cell">${e.tipoContrato||'—'}</td>
+        <td class="pt-lab-cell">${getLabelJornada(e.jornada)||e.jornada||'—'}</td>
+        ${showEco?`<td class="pt-eco-cell" style="text-align:right;font-weight:600">${e.salarioBase?fmtMoney(e.salarioBase):'—'}</td>`:''}
+        ${showCuenta?`<td class="pt-con-cell">${e.banco||'—'}</td><td class="pt-con-cell"><span style="font-family:monospace;font-size:11px">${e.cuenta?e.cuenta.replace(/(.{4})/g,'$1 ').trim():'—'}</span></td>`:''}
+        <td class="pt-con-cell"><div style="font-size:11px">${e.email||'—'}</div><div style="font-size:11px;color:#666">${e.telefono||''}</div></td>
+        <td class="pt-ges-cell">${e.departamento||'—'}</td>
+        <td class="pt-ges-cell"><span class="tag tag-${(e.clasificacion||'').toLowerCase()}">${e.clasificacion||'—'}</span></td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+function filtrarPlantilla(){
+  const q=(document.getElementById('pl-q')?.value||'').toLowerCase();
+  const dept=document.getElementById('pl-dept')?.value||'';
+  const estado=document.getElementById('pl-estado')?.value||'activo';
+  const showEco=currentRole==='admin'||currentRole==='contabilidad';
+  const showCuenta=currentRole==='admin'||currentRole==='contabilidad';
+  let emps=STATE.empleados;
+  if(estado==='activo')emps=emps.filter(e=>e.activo);
+  else if(estado==='baja')emps=emps.filter(e=>!e.activo);
+  if(dept)emps=emps.filter(e=>e.departamento===dept);
+  if(q)emps=emps.filter(e=>((e.apellidos||'')+(e.nombres||'')+(e.carnet||'')).toLowerCase().includes(q));
+  document.getElementById('plantilla-wrap').innerHTML=_buildPlantillaTable(emps,showEco,showCuenta);
+}
+
+function imprimirPlantilla(){
+  const showEco=currentRole==='admin'||currentRole==='contabilidad';
+  const showCuenta=currentRole==='admin'||currentRole==='contabilidad';
+  const dept=document.getElementById('pl-dept')?.value||'';
+  const estado=document.getElementById('pl-estado')?.value||'activo';
+  let emps=STATE.empleados;
+  if(estado==='activo')emps=emps.filter(e=>e.activo);
+  else if(estado==='baja')emps=emps.filter(e=>!e.activo);
+  if(dept)emps=emps.filter(e=>e.departamento===dept);
+  const titulo=dept?`Plantilla — ${dept}`:'Plantilla de Personal';
+  const fecha=new Date().toLocaleDateString('es-ES',{year:'numeric',month:'long',day:'numeric'});
+  const tableHtml=_buildPlantillaTable(emps,showEco,showCuenta);
+  const w=window.open('','_blank','width=1200,height=800');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${titulo}</title><style>
+    *{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:9px;color:#000;padding:12px}
+    h2{font-size:13px;margin:0 0 2px}p{font-size:9px;color:#555;margin:0 0 8px}
+    table{width:100%;border-collapse:collapse}
+    thead tr.pt-group th{font-size:8px;font-weight:700;text-transform:uppercase;padding:4px 5px;text-align:center;border:1px solid #999}
+    thead tr.pt-cols th{font-size:8px;color:#333;padding:3px 5px;border:1px solid #bbb;text-align:left;white-space:nowrap}
+    tbody td{padding:3px 5px;border:1px solid #ddd;vertical-align:middle;white-space:nowrap}
+    tbody tr:nth-child(even){background:#f9f9f9}
+    .pt-id{background:#eeeeee}.pt-lab{background:#d0e8f8}.pt-eco{background:#d0f0d0}.pt-con{background:#eeeeee}.pt-ges{background:#fff8cc}
+    .pt-id-cell{background:#f7f7f7}.pt-lab-cell{background:#edf6fd}.pt-eco-cell{background:#edfaed}.pt-con-cell{background:#f5f5f5}.pt-ges-cell{background:#fffde7}
+    code{font-family:monospace}.tag{border-radius:3px;padding:1px 4px;font-size:7px;font-weight:700}
+    .tag-directo{background:#d1fae5;color:#065f46}.tag-indirecto{background:#fde68a;color:#92400e}
+    @media print{@page{size:landscape;margin:8mm}body{padding:0}}
+  </style></head><body>
+    <h2>🗂️ ${titulo}</h2><p>Generado el ${fecha} · ${emps.length} empleado${emps.length!==1?'s':''}</p>
+    ${tableHtml}
+  </body></html>`);
+  w.document.close();
+  setTimeout(()=>w.print(),600);
+}
 </script>
 </body>
 </html>
