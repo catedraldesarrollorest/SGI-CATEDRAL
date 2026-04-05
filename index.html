@@ -1121,6 +1121,8 @@ async function sincronizarDesdeSheets() {
       }
     });
     saveState();
+    // Propagar salarios de plazas a empleados que los tengan vacíos (silencioso)
+    _propagarSalariosPlazas();
     DB_ONLINE = true; updateSyncBadge(true);
     showSyncIndicator('✅ Sincronizado', 'ok');
     if (currentRole && currentSection) navigateTo(currentSection);
@@ -1456,7 +1458,20 @@ function getCatalogoPlazas(){
   return base;
 }
 function getPlaza(departamento,nombre){
-  return getCatalogoPlazas()[departamento+'||'+nombre]||null;
+  if(!nombre)return null;
+  const cat=getCatalogoPlazas();
+  // 1. Exacto
+  if(cat[departamento+'||'+nombre])return cat[departamento+'||'+nombre];
+  // 2. Insensible a mayúsculas/espacios
+  const dN=(departamento||'').trim().toLowerCase();
+  const nN=(nombre||'').trim().toLowerCase();
+  const hit=Object.values(cat).find(p=>
+    (p.departamento||'').trim().toLowerCase()===dN &&
+    (p.nombre||'').trim().toLowerCase()===nN
+  );
+  if(hit)return hit;
+  // 3. Solo por nombre (ignora dept) como último recurso
+  return Object.values(cat).find(p=>(p.nombre||'').trim().toLowerCase()===nN)||null;
 }
 function aplicarSalarioPlazaATodos(departamento,nombre,nuevoSalario){
   const deptN=departamento.trim().toLowerCase();
@@ -1479,12 +1494,26 @@ function aplicarSalarioPlazaATodos(departamento,nombre,nuevoSalario){
   return afectados.length;
 }
 
+// Propagación silenciosa: rellena salarioBase en empleados cuya plaza tiene salario definido
+function _propagarSalariosPlazas(){
+  if(!STATE.empleados||!STATE.plazas)return;
+  let cambios=0;
+  STATE.empleados.filter(e=>e.activo&&!e.salarioBase).forEach(emp=>{
+    const pz=getPlaza(emp.departamento,emp.plaza);
+    if(!pz||!pz.salarioBase)return;
+    emp.salarioBase=pz.salarioBase;
+    pushToSheets('empleados','actualizar',emp,emp.id);
+    cambios++;
+  });
+  if(cambios>0)saveState();
+}
+
 function sincronizarSalariosDesidePlazas(){
   let actualizados=0;
   STATE.empleados.filter(e=>e.activo).forEach(emp=>{
     const pz=getPlaza(emp.departamento,emp.plaza);
     if(!pz||!pz.salarioBase)return;
-    if(emp.salarioBase===pz.salarioBase)return;
+    if(Number(emp.salarioBase)===Number(pz.salarioBase))return;
     const anterior=emp.salarioBase;
     const reg={id:'HS'+uid(),empleadoId:emp.id,fecha:new Date().toISOString(),anterior,nuevo:pz.salarioBase,motivo:'Sincronización de salario desde plaza '+emp.plaza};
     STATE.historialSalarial.push(reg);
