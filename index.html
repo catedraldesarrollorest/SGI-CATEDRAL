@@ -1459,7 +1459,13 @@ function getPlaza(departamento,nombre){
   return getCatalogoPlazas()[departamento+'||'+nombre]||null;
 }
 function aplicarSalarioPlazaATodos(departamento,nombre,nuevoSalario){
-  const afectados=STATE.empleados.filter(e=>e.departamento===departamento&&e.plaza===nombre&&e.activo);
+  const deptN=departamento.trim().toLowerCase();
+  const nomN=nombre.trim().toLowerCase();
+  const afectados=STATE.empleados.filter(e=>
+    (e.departamento||'').trim().toLowerCase()===deptN &&
+    (e.plaza||'').trim().toLowerCase()===nomN &&
+    e.activo
+  );
   afectados.forEach(emp=>{
     if(emp.salarioBase===nuevoSalario)return;
     const anterior=emp.salarioBase;
@@ -1471,6 +1477,25 @@ function aplicarSalarioPlazaATodos(departamento,nombre,nuevoSalario){
   });
   saveState();
   return afectados.length;
+}
+
+function sincronizarSalariosDesidePlazas(){
+  let actualizados=0;
+  STATE.empleados.filter(e=>e.activo).forEach(emp=>{
+    const pz=getPlaza(emp.departamento,emp.plaza);
+    if(!pz||!pz.salarioBase)return;
+    if(emp.salarioBase===pz.salarioBase)return;
+    const anterior=emp.salarioBase;
+    const reg={id:'HS'+uid(),empleadoId:emp.id,fecha:new Date().toISOString(),anterior,nuevo:pz.salarioBase,motivo:'Sincronización de salario desde plaza '+emp.plaza};
+    STATE.historialSalarial.push(reg);
+    emp.salarioBase=pz.salarioBase;
+    pushToSheets('historialSalarial','insertar',reg);
+    pushToSheets('empleados','actualizar',emp,emp.id);
+    actualizados++;
+  });
+  if(actualizados>0){saveState();showToast(`✅ ${actualizados} empleado(s) actualizados con salario de su plaza`,'success');}
+  else showToast('Los salarios ya están sincronizados','info');
+  return actualizados;
 }
 
 const PLAZAS={
@@ -3092,7 +3117,7 @@ function renderSalarios(container){
 function renderGestionPlazas(container){
   const canEdit=currentRole==='admin'||currentRole==='rrhh';
   if(!canEdit){container.innerHTML='<div class="empty-state"><div class="empty-icon">🔒</div><h4>Acceso restringido</h4></div>';return}
-  document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-primary btn-sm" onclick="abrirModalPlaza(null)">➕ Nueva Plaza</button>`;
+  document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-secondary btn-sm" onclick="sincronizarSalariosDesidePlazas()" title="Actualiza el salario de todos los empleados activos según su plaza">🔄 Sincronizar Salarios</button> <button class="btn btn-primary btn-sm" onclick="abrirModalPlaza(null)">➕ Nueva Plaza</button>`;
   const plazas=Object.values(STATE.plazas||{});
   const depts=[...new Set(plazas.map(p=>p.departamento))].sort();
   const showSal=currentRole==='admin';
@@ -5050,7 +5075,7 @@ function _buildPlantillaTable(emps,showEco,showCuenta){
         <td class="pt-lab-cell">${e.plaza||'—'}</td>
         <td class="pt-lab-cell">${e.tipoContrato||'—'}</td>
         <td class="pt-lab-cell">${getLabelJornada(e.jornada)||e.jornada||'—'}</td>
-        ${showEco?`<td class="pt-eco-cell" style="text-align:right;font-weight:600">${e.salarioBase?fmtMoney(e.salarioBase):'—'}</td>`:''}
+        ${showEco?`<td class="pt-eco-cell" style="text-align:right;font-weight:600">${(()=>{const sal=e.salarioBase||(getPlaza(e.departamento,e.plaza)||{}).salarioBase;return sal?fmtMoney(sal):'—';})()}</td>`:''}
         ${showCuenta?`<td class="pt-con-cell">${e.banco||'—'}</td><td class="pt-con-cell"><span style="font-family:monospace;font-size:11px">${e.cuenta?e.cuenta.replace(/(.{4})/g,'$1 ').trim():'—'}</span></td>`:''}
         <td class="pt-con-cell"><div style="font-size:11px">${e.email||'—'}</div><div style="font-size:11px;color:#666">${e.telefono||''}</div></td>
         <td class="pt-ges-cell">${e.departamento||'—'}</td>
