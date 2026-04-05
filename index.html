@@ -227,8 +227,6 @@
   #login-screen.hidden{display:none}
   #app.hidden{display:none}
   .tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
-  .tag-directo{background:rgba(45,106,79,0.12);color:var(--success)}
-  .tag-indirecto{background:rgba(181,100,42,0.12);color:var(--warning)}
 
   /* EXPEDIENTE TIMELINE */
   .timeline{position:relative;padding-left:28px}
@@ -762,7 +760,7 @@ const SUPABASE_TABLES = new Set(['empleados','plazas','traslados','bajas','sanci
 
 // Columnas permitidas por tabla (evita error por campos viejos/desconocidos)
 const EMPLEADOS_COLS = ['id','fechaAlta','nombres','apellidos','carnet','email','telefono',
-  'fechaNacimiento','direccion','tipoContrato','clasificacion','jornada','departamento','plaza',
+  'fechaNacimiento','direccion','tipoContrato','jornada','departamento','plaza',
   'salarioBase','activo','fechaBaja','certMedicoFecha','fotoEmpleadoId','fotoCarnetId',
   'carpetaExpId','contratoId','obligacionesId','contratoFechaFirma','contratoObs',
   'banco','cuenta','observaciones'];
@@ -770,7 +768,7 @@ const EMPLEADOS_COLS = ['id','fechaAlta','nombres','apellidos','carnet','email',
 const AUDITLOG_COLS = ['id','fecha','rol','tipo','detalle'];
 const PREFORMAS_COLS = ['id','grupo','disciplina','caracteristicas'];
 const CONFIG_COLS    = ['clave','valor'];
-const PLAZAS_COLS    = ['id','departamento','nombre','salarioBase','clasificacion','jornada','tipoContrato','descripcion','funcionesPdfId','funcionesPdfUrl'];
+const PLAZAS_COLS    = ['id','departamento','nombre','salarioBase','jornada','tipoContrato','descripcion','funcionesPdfId','funcionesPdfUrl'];
 
 function cleanForSB(tabla, obj) {
   if (!obj || typeof obj !== 'object') return obj;
@@ -1170,7 +1168,7 @@ if(STATE.plazasSalarios&&Object.keys(STATE.plazasSalarios).length){
   Object.entries(STATE.plazasSalarios).forEach(([nombre,sal])=>{
     const dept=Object.entries(PLAZAS).find(([,arr])=>arr.includes(nombre))?.[0]||'';
     const key=(dept||'?')+'||'+nombre;
-    if(!STATE.plazas[key])STATE.plazas[key]={id:key,departamento:dept,nombre,salarioBase:parseFloat(sal)||0,clasificacion:'Directo',jornada:'8x24',tipoContrato:'Indefinido',descripcion:'',funcionesPdfId:''};
+    if(!STATE.plazas[key])STATE.plazas[key]={id:key,departamento:dept,nombre,salarioBase:parseFloat(sal)||0,jornada:'8x24',tipoContrato:'Indefinido',descripcion:'',funcionesPdfId:''};
   });
   delete STATE.plazasSalarios;
 }
@@ -1451,7 +1449,7 @@ function getCatalogoPlazas(){
   Object.entries(PLAZAS).forEach(([dept,lista])=>{
     lista.forEach(nombre=>{
       const key=dept+'||'+nombre;
-      if(!base[key])base[key]={id:key,departamento:dept,nombre,salarioBase:0,clasificacion:'Directo',jornada:'8x24',tipoContrato:'Indefinido',descripcion:'',funcionesPdfId:'',funcionesPdfUrl:''};
+      if(!base[key])base[key]={id:key,departamento:dept,nombre,salarioBase:0,jornada:'8x24',tipoContrato:'Indefinido',descripcion:'',funcionesPdfId:'',funcionesPdfUrl:''};
     });
   });
   Object.values(STATE.plazas||{}).forEach(p=>{if(p.id)base[p.id]=p;});
@@ -1917,7 +1915,6 @@ function renderEmpleados(container){
       <div class="filter-group" style="flex:1"><input type="text" class="search-input" id="f-nombre" placeholder="🔍 Buscar por nombre..." oninput="applyFilters()"></div>
       <div class="filter-group"><label>Dpto</label><select id="f-dept" onchange="applyFilters()"><option value="">Todos</option>${[...new Set([...Object.keys(PLAZAS),...Object.values(STATE.plazas||{}).map(p=>p.departamento)])].filter(Boolean).sort().map(d=>`<option>${d}</option>`).join('')}</select></div>
       <div class="filter-group"><label>Estado</label><select id="f-estado" onchange="applyFilters()"><option value="">Todos</option><option>Activo</option><option>Baja</option></select></div>
-      <div class="filter-group"><label>Clasificación</label><select id="f-cls" onchange="applyFilters()"><option value="">Todos</option><option>Directo</option><option>Indirecto</option></select></div>
       <div class="filter-group"><label>Antigüedad</label><select id="f-ant" onchange="applyFilters()"><option value="">Todos</option><option value="0-4">0-4 años</option><option value="5-9">5-9 años</option><option value="10+">10+ años</option></select></div>
       <div class="filter-group"><label>Ordenar</label><select id="f-orden" onchange="applyFilters()"><option value="nombre">Nombre A-Z</option><option value="dept">Departamento</option><option value="alta_asc">Fecha Alta ↑</option><option value="alta_desc">Fecha Alta ↓</option><option value="salario_desc">Salario ↓</option></select></div>
     </div>
@@ -1928,7 +1925,6 @@ function renderEmpleados(container){
         <th class="col-hide-md">N° Expediente</th>
         <th class="col-hide-mobile">Departamento</th>
         <th class="col-hide-md">Plaza</th>
-        <th class="col-hide-md">Clasificación</th>
         <th class="col-hide-md">Antigüedad</th>
         <th>Estado</th><th>Acciones</th>
       </tr></thead>
@@ -1941,7 +1937,7 @@ function applyFilters(){
   const nom=(document.getElementById('f-nombre')||{}).value||'';
   const dept=(document.getElementById('f-dept')||{}).value||'';
   const est=(document.getElementById('f-estado')||{}).value||'';
-  const cls=(document.getElementById('f-cls')||{}).value||'';
+
   const ant=(document.getElementById('f-ant')||{}).value||'';
   const orden=(document.getElementById('f-orden')||{}).value||'nombre';
   const showSalary=currentRole==='admin'||currentRole==='contabilidad';
@@ -1951,7 +1947,7 @@ function applyFilters(){
     if(dept&&e.departamento!==dept)return false;
     if(est==='Activo'&&!e.activo)return false;
     if(est==='Baja'&&e.activo)return false;
-    if(cls&&e.clasificacion!==cls)return false;
+
     if(ant){const a=calcAntiguedad(e.fechaAlta);if(ant==='0-4'&&a>=5)return false;if(ant==='5-9'&&(a<5||a>=10))return false;if(ant==='10+'&&a<10)return false}
     return true;
   });
@@ -1977,7 +1973,6 @@ function applyFilters(){
     <td class="col-hide-md"><code style="font-size:12px">${e.carnet}</code></td>
     <td class="col-hide-mobile"><span class="chip">${e.departamento||'—'}</span></td>
     <td class="col-hide-md">${e.plaza||'—'}</td>
-    <td class="col-hide-md"><span class="tag tag-${(e.clasificacion||'').toLowerCase()}">${e.clasificacion||'—'}</span></td>
     <td class="col-hide-md">${a} año${a===1?'':'s'}</td>
     <td><span class="badge ${e.activo?'badge-active':'badge-inactive'}">${e.activo?'Activo':'Baja'}</span></td>
     <td style="white-space:nowrap" onclick="event.stopPropagation()">
@@ -2001,7 +1996,7 @@ function applyFilters(){
 }
 
 function exportEmpleados(){
-  const data=STATE.empleados.map(e=>({Nombre:`${e.nombres} ${e.apellidos}`,Carnet:e.carnet,Departamento:e.departamento,Plaza:e.plaza,'Salario Base':e.salarioBase||0,'Bonif.%':getBonificacionPct(e.fechaAlta)+'%',Clasificación:e.clasificacion,Jornada:getLabelJornada(e.jornada),Estado:e.activo?'Activo':'Baja','Fecha Alta':fmtDate(e.fechaAlta),'Años':calcAntiguedad(e.fechaAlta)}));
+  const data=STATE.empleados.map(e=>({Nombre:`${e.nombres} ${e.apellidos}`,Carnet:e.carnet,Departamento:e.departamento,Plaza:e.plaza,'Salario Base':e.salarioBase||0,Jornada:getLabelJornada(e.jornada),Estado:e.activo?'Activo':'Baja','Fecha Alta':fmtDate(e.fechaAlta),'Años':calcAntiguedad(e.fechaAlta)}));
   exportToExcel(data,'Empleados_LaCatedral_'+new Date().toISOString().slice(0,10));
   showToast('Exportado a Excel','success');
 }
@@ -2047,7 +2042,6 @@ function verFicha(id, tabInicial){
           <span class="ficha-chip ${e.activo?'chip-activo':'chip-baja'}">${e.activo?'● Activo':'● Baja'}</span>
           <span class="ficha-chip">${e.tipoContrato||'—'}</span>
           <span class="ficha-chip">${getLabelJornada(e.jornada)}</span>
-          <span class="ficha-chip">${e.clasificacion||'—'}</span>
           <span class="ficha-chip">${anos} año${anos===1?'':'s'} de antigüedad</span>
         </div>
       </div>
@@ -2083,7 +2077,6 @@ function verFicha(id, tabInicial){
         <div class="ficha-kv-item"><div class="ficha-kv-label">Plaza</div><div class="ficha-kv-val">${e.plaza||'—'}</div></div>
         <div class="ficha-kv-item"><div class="ficha-kv-label">Tipo de contrato</div><div class="ficha-kv-val">${e.tipoContrato||'—'}</div></div>
         <div class="ficha-kv-item"><div class="ficha-kv-label">Jornada</div><div class="ficha-kv-val">${getLabelJornada(e.jornada)}</div></div>
-        <div class="ficha-kv-item"><div class="ficha-kv-label">Clasificación</div><div class="ficha-kv-val"><span class="tag tag-${(e.clasificacion||'').toLowerCase()}">${e.clasificacion||'—'}</span></div></div>
         <div class="ficha-kv-item"><div class="ficha-kv-label">Estado</div><div class="ficha-kv-val"><span class="badge ${e.activo?'badge-active':'badge-inactive'}">${e.activo?'Activo':'Baja'}</span></div></div>
       </div>
     </div>`;
@@ -2366,8 +2359,7 @@ function renderAlta(container,editData=null){
       <div class="form-section-title">💼 Datos Laborales</div>
       <div class="form-group"><label class="field-label required">Tipo de Contrato</label>
         <select id="a-contrato">${['Indefinido','Temporal por obra','Temporal eventual','Formación','Prácticas','Relevo'].map(t=>`<option ${d.tipoContrato===t?'selected':''}>${t}</option>`).join('')}</select></div>
-      <div class="form-group"><label class="field-label required" data-tip="Directo: producción/servicio. Indirecto: apoyo/administración.">Clasificación</label>
-        <select id="a-clasificacion"><option ${d.clasificacion==='Directo'?'selected':''}>Directo</option><option ${d.clasificacion==='Indirecto'?'selected':''}>Indirecto</option></select></div>
+
       <div class="form-group"><label class="field-label required" data-tip="Jornada laboral contratada">Jornada de Trabajo</label>
         <select id="a-jornada" onchange="updateJornadaInfo()" required>
           <option value="8x24" ${(d.jornada==='8x24'||d.jornada==24||(!d.jornada))?'selected':''}>8h × 24 días (Jornada completa)</option>
@@ -2510,9 +2502,7 @@ function autoFillDesdePlaza(){
       :`<span style="color:var(--muted)">💰 Sin salario asignado para esta plaza</span>`;
   }
   if(!p)return;
-  // Auto-fill clasificación, jornada, tipo contrato
-  const clasEl=document.getElementById('a-clasificacion');
-  if(clasEl&&p.clasificacion){for(let o of clasEl.options){if(o.value===p.clasificacion||o.text===p.clasificacion){o.selected=true;break;}}}
+  // Auto-fill jornada, tipo contrato
   const jorEl=document.getElementById('a-jornada');
   if(jorEl&&p.jornada){for(let o of jorEl.options){if(o.value===p.jornada){o.selected=true;break;}}updateJornadaInfo();}
   const contEl=document.getElementById('a-contrato');
@@ -2559,7 +2549,6 @@ async function guardarAlta(){
     fechaNacimiento:val('a-fechaNacimiento'),
     direccion:val('a-direccion'),
     tipoContrato:val('a-contrato'),
-    clasificacion:val('a-clasificacion'),
     jornada:val('a-jornada')||'8x24',
     departamento:val('a-departamento'),
     plaza:val('a-plaza'),
@@ -2676,7 +2665,6 @@ async function guardarEdicionEmpleado(id){
     direccion:val('a-direccion')||emp.direccion,
     cuenta:canEditCuenta?(val('a-cuenta')||emp.cuenta):emp.cuenta,
     tipoContrato:val('a-contrato')||emp.tipoContrato,
-    clasificacion:val('a-clasificacion')||emp.clasificacion,
     jornada:val('a-jornada')||emp.jornada,
     departamento:val('a-departamento')||emp.departamento,
     plaza:val('a-plaza')||emp.plaza
@@ -2846,7 +2834,6 @@ function _verExpedienteLegacy(id){
         <div><b>Dpto/Plaza:</b> ${e.departamento}/${e.plaza}</div>
         <div><b>Alta:</b> ${fmtDate(e.fechaAlta)}</div>
         <div><b>Antigüedad:</b> ${calcAntiguedad(e.fechaAlta)} años</div>
-        <div><b>Clasificación:</b> ${e.clasificacion}</div>
         <div><b>Estado:</b> <span class="badge ${e.activo?'badge-active':'badge-inactive'}">${e.activo?'Activo':'Baja'}</span></div>
       </div>
     </div>
@@ -2899,14 +2886,13 @@ function renderTraslados(container){
   document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-primary btn-sm" onclick="openModalTraslado()">➕ Registrar Traslado</button>`;
   const lista=STATE.traslados.slice().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
   container.innerHTML=`<div class="card"><div class="table-wrap resp-table"><table>
-    <thead><tr><th>Empleado</th><th>Fecha</th><th>Dept.Anterior</th><th>Dept.Nuevo</th><th>Plaza Nueva</th><th>Clasificación</th><th>Motivo</th></tr></thead>
+    <thead><tr><th>Empleado</th><th>Fecha</th><th>Dept.Anterior</th><th>Dept.Nuevo</th><th>Plaza Nueva</th><th>Motivo</th></tr></thead>
     <tbody>${lista.length?lista.map(t=>{const e=STATE.empleados.find(x=>x.id===t.empleadoId);return`<tr>
       <td data-label="Empleado">${e?`${e.nombres} ${e.apellidos}`:'—'}</td>
       <td data-label="Fecha">${fmtDate(t.fecha)}</td>
       <td data-label="Dept. Anterior">${t.deptAnterior||'—'}</td>
       <td data-label="Dept. Nuevo">${t.deptNuevo}</td>
       <td data-label="Plaza Nueva">${t.plazaNueva}</td>
-      <td data-label="Clasificación">${t.clasificacionNueva||'—'}</td>
       <td data-label="Motivo">${t.motivo}</td></tr>`;}).join(''):`<tr><td colspan="7" class="text-center text-muted" style="padding:40px">Sin traslados</td></tr>`}
     </tbody>
   </table></div></div>`;
@@ -2923,7 +2909,7 @@ function openModalTraslado(){
       <div class="form-group"><label class="field-label required">Motivo</label><input type="text" id="tr-motivo" placeholder="Motivo del traslado"></div>
       <div class="form-group"><label class="field-label required">Nuevo Departamento</label><select id="tr-dept" onchange="updateTraslPlazas()">${depts.map(d=>`<option>${d}</option>`).join('')}</select></div>
       <div class="form-group"><label class="field-label required">Nueva Plaza</label><select id="tr-plaza"></select></div>
-      <div class="form-group"><label class="field-label">Nueva Clasificación</label><select id="tr-cls"><option value="">Sin cambio</option><option>Directo</option><option>Indirecto</option></select></div>
+
       <div class="form-group"><label class="field-label">Cambio de Jornada</label>
         <select id="tr-jornada">
           <option value="">Sin cambio de jornada</option>
@@ -2954,7 +2940,6 @@ function guardarTraslado(){
   const motivo=document.getElementById('tr-motivo').value.trim();
   const deptNuevo=document.getElementById('tr-dept').value;
   const plazaNueva=document.getElementById('tr-plaza').value;
-  const clsNueva=document.getElementById('tr-cls').value;
   const jornadaNueva=document.getElementById('tr-jornada').value;
   if(!empId||!fecha||!motivo){showToast('Complete los campos requeridos','warning');return;}
   const emp=STATE.empleados.find(function(e){return e.id===empId;});
@@ -2965,7 +2950,6 @@ function guardarTraslado(){
     id:'T'+uid(),empleadoId:empId,fecha,motivo,
     deptAnterior:emp.departamento,plazaAnterior:emp.plaza,
     deptNuevo,plazaNueva,
-    clasificacionNueva:clsNueva||emp.clasificacion,
     jornadaAnterior:jornadaAnterior,
     jornadaNueva:jornadaNueva||jornadaAnterior,
     cambioJornada:cambioJornada
@@ -2973,7 +2957,6 @@ function guardarTraslado(){
   STATE.traslados.push(traslado);
   emp.departamento=deptNuevo;
   emp.plaza=plazaNueva;
-  if(clsNueva)emp.clasificacion=clsNueva;
   if(cambioJornada)emp.jornada=jornadaNueva;
   // Auto-update salary from new plaza
   const pzTraslado=getPlaza(deptNuevo,plazaNueva);
@@ -3120,7 +3103,7 @@ function renderGestionPlazas(container){
   }
   html+=`<div class="filters-bar"><div class="filter-group" style="flex:1"><input type="text" id="plaza-q" placeholder="🔍 Buscar plaza..." oninput="filtrarPlazas()"></div>
     <div class="filter-group"><label>Departamento</label><select id="plaza-dept" onchange="filtrarPlazas()"><option value="">Todos</option>${depts.map(d=>`<option>${d}</option>`).join('')}</select></div></div>`;
-  html+=`<div class="table-wrap plaza-table-wrap"><table><thead><tr><th>Departamento</th><th>Plaza</th>${showSal?'<th>Salario Base</th>':''}<th>Clasificación</th><th>Jornada</th><th>Contrato</th><th>Empleados</th><th>Acciones</th></tr></thead><tbody id="plazas-tbody">`;
+  html+=`<div class="table-wrap plaza-table-wrap"><table><thead><tr><th>Departamento</th><th>Plaza</th>${showSal?'<th>Salario Base</th>':''}<th>Jornada</th><th>Contrato</th><th>Empleados</th><th>Acciones</th></tr></thead><tbody id="plazas-tbody">`;
   html+=renderPlazasRows(plazas);
   html+=`</tbody></table></div>`;
   html+=`<div class="plaza-cards-wrap" id="plazas-cards" style="padding:12px">${renderPlazasCards(plazas)}</div>`;
@@ -3139,7 +3122,6 @@ function renderPlazasRows(plazas){
       <td data-label="Departamento">${p.departamento}</td>
       <td data-label="Plaza"><b>${p.nombre}</b>${p.descripcion?`<br><small class="text-muted">${p.descripcion}</small>`:''}</td>
       ${showSal?`<td data-label="Salario">${p.salarioBase?`<span style="color:var(--burgundy);font-weight:600">${fmtMoney(p.salarioBase)}</span>`:'<span class="text-muted">Sin asignar</span>'}</td>`:''}
-      <td data-label="Clasificación">${p.clasificacion||'—'}</td>
       <td data-label="Jornada">${p.jornada||'—'}</td>
       <td data-label="Contrato">${p.tipoContrato||'—'}</td>
       <td data-label="Empleados">${count?`<span class="badge badge-active">${count}</span>`:'<span class="badge badge-inactive">0</span>'}</td>
@@ -3172,7 +3154,6 @@ function renderPlazasCards(plazas){
       </div>
       <div class="plaza-card-meta">
         ${showSal?`<span>Salario<b>${p.salarioBase?fmtMoney(p.salarioBase):'Sin asignar'}</b></span>`:''}
-        <span>Clasificación<b>${p.clasificacion||'—'}</b></span>
         <span>Jornada<b>${p.jornada||'—'}</b></span>
         <span>Contrato<b>${p.tipoContrato||'—'}</b></span>
       </div>
@@ -3229,8 +3210,6 @@ function abrirModalPlaza(plazaId){
         <div id="mp-sugerencias" style="margin-top:6px">${(PLAZAS[p?p.departamento:depts[0]]||[]).map(n=>`<span class="sug-chip" onclick="document.getElementById('mp-nombre').value='${n.replace(/'/g,'\\&apos;')}'" style="display:inline-block;padding:3px 10px;margin:3px;border-radius:20px;background:var(--gold-pale);border:1px solid var(--gold);cursor:pointer;font-size:12px">${n}</span>`).join('')}</div>
       </div>
       ${salField}
-      <div class="form-group"><label class="field-label">Clasificación</label>
-        <select id="mp-clasif"><option ${!p||p.clasificacion==='Directo'?'selected':''}>Directo</option><option ${p&&p.clasificacion==='Contratado'?'selected':''}>Contratado</option><option ${p&&p.clasificacion==='Eventual'?'selected':''}>Eventual</option></select></div>
       <div class="form-group"><label class="field-label">Jornada</label><select id="mp-jornada">${jorOpts}</select></div>
       <div class="form-group"><label class="field-label">Tipo Contrato</label>
         <select id="mp-contrato"><option ${!p||p.tipoContrato==='Indefinido'?'selected':''}>Indefinido</option><option ${p&&p.tipoContrato==='Determinado'?'selected':''}>Determinado</option></select></div>
@@ -3250,7 +3229,6 @@ function abrirModalPlaza(plazaId){
 async function guardarPlaza(plazaId){
   const nombre=document.getElementById('mp-nombre').value.trim();
   const dept=document.getElementById('mp-dept').value;
-  const clasif=document.getElementById('mp-clasif').value;
   const jornada=document.getElementById('mp-jornada').value;
   const contrato=document.getElementById('mp-contrato').value;
   const desc=document.getElementById('mp-desc').value.trim();
@@ -3258,7 +3236,7 @@ async function guardarPlaza(plazaId){
   const id=plazaId||(dept+'||'+nombre);
   const existing=(STATE.plazas||{})[id]||{};
   const salario=currentRole==='admin'?(parseFloat(document.getElementById('mp-salario')?.value)||0):(existing.salarioBase||0);
-  const plaza={...existing,id,departamento:dept,nombre,salarioBase:salario,clasificacion:clasif,jornada,tipoContrato:contrato,descripcion:desc,
+  const plaza={...existing,id,departamento:dept,nombre,salarioBase:salario,jornada,tipoContrato:contrato,descripcion:desc,
     funcionesPdfId:existing.funcionesPdfId||'',funcionesPdfUrl:existing.funcionesPdfUrl||''};
 
   // Subir PDF de funciones si se seleccionó
@@ -5061,7 +5039,6 @@ function _buildPlantillaTable(emps,showEco,showCuenta){
         ${showCuenta?'<th class="pt-con-cell">Banco</th><th class="pt-con-cell">N° Cuenta</th>':''}
         <th class="pt-con-cell">Email / Teléfono</th>
         <th class="pt-ges-cell">Departamento</th>
-        <th class="pt-ges-cell">Clasificación</th>
       </tr>
     </thead>
     <tbody>
@@ -5077,7 +5054,6 @@ function _buildPlantillaTable(emps,showEco,showCuenta){
         ${showCuenta?`<td class="pt-con-cell">${e.banco||'—'}</td><td class="pt-con-cell"><span style="font-family:monospace;font-size:11px">${e.cuenta?e.cuenta.replace(/(.{4})/g,'$1 ').trim():'—'}</span></td>`:''}
         <td class="pt-con-cell"><div style="font-size:11px">${e.email||'—'}</div><div style="font-size:11px;color:#666">${e.telefono||''}</div></td>
         <td class="pt-ges-cell">${e.departamento||'—'}</td>
-        <td class="pt-ges-cell"><span class="tag tag-${(e.clasificacion||'').toLowerCase()}">${e.clasificacion||'—'}</span></td>
       </tr>`).join('')}
     </tbody>
   </table>`;
@@ -5121,7 +5097,6 @@ function imprimirPlantilla(){
     .pt-id{background:#eeeeee}.pt-lab{background:#d0e8f8}.pt-eco{background:#d0f0d0}.pt-con{background:#eeeeee}.pt-ges{background:#fff8cc}
     .pt-id-cell{background:#f7f7f7}.pt-lab-cell{background:#edf6fd}.pt-eco-cell{background:#edfaed}.pt-con-cell{background:#f5f5f5}.pt-ges-cell{background:#fffde7}
     code{font-family:monospace}.tag{border-radius:3px;padding:1px 4px;font-size:7px;font-weight:700}
-    .tag-directo{background:#d1fae5;color:#065f46}.tag-indirecto{background:#fde68a;color:#92400e}
     @media print{@page{size:landscape;margin:8mm}body{padding:0}}
   </style></head><body>
     <h2>🗂️ ${titulo}</h2><p>Generado el ${fecha} · ${emps.length} empleado${emps.length!==1?'s':''}</p>
