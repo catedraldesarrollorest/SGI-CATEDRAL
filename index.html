@@ -3146,7 +3146,7 @@ function renderSalarios(container){
 function renderGestionPlazas(container){
   const canEdit=currentRole==='admin'||currentRole==='rrhh';
   if(!canEdit){container.innerHTML='<div class="empty-state"><div class="empty-icon">🔒</div><h4>Acceso restringido</h4></div>';return}
-  document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-secondary btn-sm" onclick="sincronizarSalariosDesidePlazas()" title="Actualiza el salario de todos los empleados activos según su plaza">🔄 Sincronizar Salarios</button> <button class="btn btn-primary btn-sm" onclick="abrirModalPlaza(null)">➕ Nueva Plaza</button>`;
+  document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-secondary btn-sm" onclick="sincronizarSalariosDesidePlazas()" title="Actualiza el salario de todos los empleados activos según su plaza">🔄 Sincronizar Salarios</button> <button class="btn btn-primary btn-sm" onclick="abrirModalPlaza(null)" style="font-weight:700;font-size:14px;padding:8px 18px">＋ Nueva Plaza</button>`;
   const plazas=Object.values(STATE.plazas||{});
   const depts=[...new Set(plazas.map(p=>p.departamento))].sort();
   const showSal=currentRole==='admin';
@@ -3172,22 +3172,17 @@ function renderPlazasRows(plazas){
   return plazas.map(p=>{
     const count=activos.filter(e=>e.departamento===p.departamento&&e.plaza===p.nombre).length;
     const idEsc=p.id.replace(/'/g,'\\&apos;');
-    return `<tr>
+    return `<tr onclick="abrirModalPlaza('${idEsc}')" style="cursor:pointer"
+      onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background=''">
       <td data-label="Departamento">${p.departamento}</td>
-      <td data-label="Plaza"><b>${p.nombre}</b>${p.descripcion?`<br><small class="text-muted">${p.descripcion}</small>`:''}</td>
+      <td data-label="Plaza"><b>${p.nombre}</b></td>
       ${showSal?`<td data-label="Salario">${p.salarioBase?`<span style="color:var(--burgundy);font-weight:600">${fmtMoney(p.salarioBase)}</span>`:'<span class="text-muted">Sin asignar</span>'}</td>`:''}
       <td data-label="Jornada">${p.jornada||'—'}</td>
       <td data-label="Contrato">${p.tipoContrato||'—'}</td>
       <td data-label="Empleados">${count?`<span class="badge badge-active">${count}</span>`:'<span class="badge badge-inactive">0</span>'}</td>
-      <td class="td-act"><div class="btn-wrap">
-        <button class="btn btn-primary btn-xs" onclick="abrirModalPlaza('${idEsc}')">✏️ Editar</button>
-        ${p.funcionesPdfUrl
-          ?`<a href="${p.funcionesPdfUrl}" target="_blank" class="btn btn-secondary btn-xs" title="Ver PDF">📄</a>
-             <a href="${p.funcionesPdfUrl.replace('/view','/preview')}" target="_blank" class="btn btn-secondary btn-xs" title="Imprimir">🖨️</a>
-             <a href="${p.funcionesPdfUrl}" target="_blank" class="btn btn-gold btn-xs" title="Compartir">📤</a>`
-          :''}
+      <td class="td-act" onclick="event.stopPropagation()">
         <button class="btn btn-danger btn-xs" onclick="eliminarPlaza('${idEsc}')">🗑️</button>
-      </div></td></tr>`;
+      </td></tr>`;
   }).join('');
 }
 
@@ -3240,10 +3235,24 @@ function updateModalPlazaNombres(){
   const dept=document.getElementById('mp-dept')?.value||'';
   const chips=document.getElementById('mp-sugerencias');
   if(!chips)return;
+  _renderPlazaChips(dept,chips);
+}
+function _renderPlazaChips(dept,chips){
   const sugs=PLAZAS[dept]||[];
   chips.innerHTML=sugs.length
-    ?sugs.map(n=>`<span class="sug-chip" onclick="document.getElementById('mp-nombre').value='${n.replace(/'/g,'\\&apos;')}'" style="display:inline-block;padding:3px 10px;margin:3px;border-radius:20px;background:var(--gold-pale);border:1px solid var(--gold);cursor:pointer;font-size:12px">${n}</span>`).join('')
+    ?sugs.map(n=>{
+      const esc=n.replace(/'/g,'\\&apos;');
+      return `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px 3px 10px;margin:3px;border-radius:20px;background:var(--gold-pale);border:1px solid var(--gold);font-size:12px">
+        <span style="cursor:pointer" onclick="document.getElementById('mp-nombre').value='${esc}'">${n}</span>
+        <span onclick="eliminarSugerenciaPlaza('${dept.replace(/'/g,'\\&apos;')}','${esc}')" style="cursor:pointer;font-size:10px;color:#999;padding:0 2px;border-radius:50%;line-height:1" title="Quitar sugerencia">✕</span>
+      </span>`;}).join('')
     :'<span style="font-size:12px;color:var(--muted)">Sin sugerencias para este departamento</span>';
+}
+function eliminarSugerenciaPlaza(dept,nombre){
+  if(!PLAZAS[dept])return;
+  PLAZAS[dept]=PLAZAS[dept].filter(n=>n!==nombre);
+  const chips=document.getElementById('mp-sugerencias');
+  if(chips)_renderPlazaChips(dept,chips);
 }
 
 function abrirModalPlaza(plazaId){
@@ -3254,26 +3263,40 @@ function abrirModalPlaza(plazaId){
   const salField=showSal?`<div class="form-group"><label class="field-label">Salario Base</label>
     <input type="number" id="mp-salario" value="${p?p.salarioBase||'':''}" min="0" step="0.01" placeholder="0.00"></div>`
     :`<div></div>`;
+  const deptIni=p?p.departamento:depts[0];
+  const chipsHtml=(PLAZAS[deptIni]||[]).map(n=>{
+    const esc=n.replace(/'/g,'\\&apos;');
+    return `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px 3px 10px;margin:3px;border-radius:20px;background:var(--gold-pale);border:1px solid var(--gold);font-size:12px">
+      <span style="cursor:pointer" onclick="document.getElementById('mp-nombre').value='${esc}'">${n}</span>
+      <span onclick="eliminarSugerenciaPlaza('${deptIni.replace(/'/g,'\\&apos;')}','${esc}')" style="cursor:pointer;font-size:10px;color:#999;padding:0 2px" title="Quitar">✕</span>
+    </span>`;}).join('');
+  const pdfBtnHtml=p&&p.funcionesPdfId
+    ?`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <a href="${p.funcionesPdfUrl||'#'}" target="_blank" class="btn btn-secondary" style="font-size:13px;padding:8px 16px">📄 Ver funciones actuales</a>
+        <label class="btn btn-primary" style="font-size:13px;padding:8px 16px;cursor:pointer;margin:0">📎 Reemplazar PDF<input type="file" id="mp-pdf" accept=".pdf" style="display:none"></label>
+        <span id="mp-pdf-name" style="font-size:12px;color:var(--muted)"></span>
+      </div>`
+    :`<label class="btn btn-primary" style="font-size:13px;padding:10px 20px;cursor:pointer;margin:0;display:inline-flex;align-items:center;gap:8px">
+        📎 Adjuntar PDF de Funciones<input type="file" id="mp-pdf" accept=".pdf" style="display:none" onchange="document.getElementById('mp-pdf-name').textContent=this.files[0]?.name||''">
+      </label>
+      <span id="mp-pdf-name" style="font-size:12px;color:var(--muted);margin-left:8px"></span>`;
   const body=`
     <div class="grid-2">
       <div class="form-group"><label class="field-label required">Departamento</label>
         <select id="mp-dept" onchange="updateModalPlazaNombres()">${depts.map(d=>`<option ${p&&p.departamento===d?'selected':''}>${d}</option>`).join('')}</select></div>
       <div class="form-group"><label class="field-label required">Nombre de Plaza</label>
         <input id="mp-nombre" value="${p?p.nombre:''}" placeholder="Escribe el nombre del puesto" autocomplete="off">
-        <small class="text-muted">Escribe libremente — puedes elegir una sugerencia o crear un nombre nuevo</small>
-        <div id="mp-sugerencias" style="margin-top:6px">${(PLAZAS[p?p.departamento:depts[0]]||[]).map(n=>`<span class="sug-chip" onclick="document.getElementById('mp-nombre').value='${n.replace(/'/g,'\\&apos;')}'" style="display:inline-block;padding:3px 10px;margin:3px;border-radius:20px;background:var(--gold-pale);border:1px solid var(--gold);cursor:pointer;font-size:12px">${n}</span>`).join('')}</div>
+        <small class="text-muted">Elige una sugerencia o escribe uno nuevo</small>
+        <div id="mp-sugerencias" style="margin-top:6px">${chipsHtml}</div>
       </div>
       ${salField}
       <div class="form-group"><label class="field-label">Jornada</label><select id="mp-jornada">${jorOpts}</select></div>
       <div class="form-group"><label class="field-label">Tipo Contrato</label>
         <select id="mp-contrato"><option ${!p||p.tipoContrato==='Indefinido'?'selected':''}>Indefinido</option><option ${p&&p.tipoContrato==='Determinado'?'selected':''}>Determinado</option></select></div>
     </div>
-    <div class="form-group full"><label class="field-label">Descripción breve</label>
-      <textarea id="mp-desc" placeholder="Resumen de funciones...">${p?p.descripcion||'':''}</textarea></div>
-    <div class="form-group full">
-      <label class="field-label">PDF de Funciones${p&&p.funcionesPdfId?` <a href="${p.funcionesPdfUrl||'#'}" target="_blank" style="font-size:12px;color:var(--burgundy);margin-left:8px;">📄 Ver actual</a>`:''}</label>
-      <input type="file" id="mp-pdf" accept=".pdf" style="padding:6px">
-      ${p&&p.funcionesPdfId?`<small class="text-muted">Selecciona un archivo para reemplazar el PDF actual</small>`:`<small class="text-muted">Sube el documento de funciones del puesto (PDF)</small>`}
+    <div class="form-group full" style="margin-top:8px">
+      <label class="field-label" style="margin-bottom:8px">Documento de Funciones</label>
+      ${pdfBtnHtml}
     </div>`;
   const footer=`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
     <button class="btn btn-primary" onclick="guardarPlaza('${plazaId?plazaId.replace(/'/g,'\\&apos;'):''}')">💾 Guardar Plaza</button>`;
@@ -3285,12 +3308,11 @@ async function guardarPlaza(plazaId){
   const dept=document.getElementById('mp-dept').value;
   const jornada=document.getElementById('mp-jornada').value;
   const contrato=document.getElementById('mp-contrato').value;
-  const desc=document.getElementById('mp-desc').value.trim();
   if(!nombre||!dept){showToast('Completa departamento y nombre','warning');return;}
   const id=plazaId||(dept+'||'+nombre);
   const existing=(STATE.plazas||{})[id]||{};
   const salario=currentRole==='admin'?(parseFloat(document.getElementById('mp-salario')?.value)||0):(existing.salarioBase||0);
-  const plaza={...existing,id,departamento:dept,nombre,salarioBase:salario,jornada,tipoContrato:contrato,descripcion:desc,
+  const plaza={...existing,id,departamento:dept,nombre,salarioBase:salario,jornada,tipoContrato:contrato,descripcion:existing.descripcion||'',
     funcionesPdfId:existing.funcionesPdfId||'',funcionesPdfUrl:existing.funcionesPdfUrl||''};
 
   // Subir PDF de funciones si se seleccionó
