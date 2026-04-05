@@ -2144,11 +2144,13 @@ function verFicha(id, tabInicial){
   const contratoEstado=doc.contratoFecha
     ?`<div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:10px"><span style="font-size:20px">✅</span><div><div style="font-weight:700;color:#155724">Contrato firmado</div><div style="font-size:12px;color:#155724">${fmtDate(doc.contratoFecha)}${e.contratoId?' · <a href="'+driveViewUrl(e.contratoId)+'" target="_blank" style="color:#0d5c1f">Ver en Drive</a>':' · Archivado en papel'}</div></div></div>`
     :`<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:10px"><span style="font-size:20px">⏳</span><div><div style="font-weight:700;color:#856404">Contrato pendiente de firma</div><div style="font-size:12px;color:#856404">Jurídico debe generar y registrar la firma</div></div>${canContract?`<button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="previewContrato('${id}')">📄 Generar</button>`:''}</div>`;
+  const plazaDoc=getPlaza(e.departamento,e.plaza)||{};
+  const oblUrl=plazaDoc.funcionesPdfUrl||(plazaDoc.funcionesPdfId?driveViewUrl(plazaDoc.funcionesPdfId):null);
   const tabDocumentos=`
     <div style="margin-bottom:16px">${contratoEstado}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
       ${e.fotoCarnetId?`<a href="${driveViewUrl(e.fotoCarnetId)}" target="_blank" class="doc-card"><div class="doc-card-icon">🪪</div><div class="doc-card-name">Carnet de Identidad</div><div class="doc-card-status ok">En Drive</div></a>`:'<div class="doc-card doc-card-missing"><div class="doc-card-icon">🪪</div><div class="doc-card-name">Carnet de Identidad</div><div class="doc-card-status miss">Sin adjuntar</div></div>'}
-      ${e.obligacionesId?`<a href="${driveViewUrl(e.obligacionesId)}" target="_blank" class="doc-card"><div class="doc-card-icon">📄</div><div class="doc-card-name">Obligaciones</div><div class="doc-card-status ok">En Drive</div></a>`:(doc.obligaciones?`<button class="doc-card" onclick="downloadBase64(STATE.documentos['${id}'].obligaciones,'Obligaciones.pdf')"><div class="doc-card-icon">📄</div><div class="doc-card-name">Obligaciones</div><div class="doc-card-status ok">Descargable</div></button>`:'<div class="doc-card doc-card-missing"><div class="doc-card-icon">📄</div><div class="doc-card-name">Obligaciones</div><div class="doc-card-status miss">Sin adjuntar</div></div>')}
+      ${oblUrl?`<a href="${oblUrl}" target="_blank" class="doc-card"><div class="doc-card-icon">📋</div><div class="doc-card-name">Funciones y Obligaciones</div><div class="doc-card-status ok">Ver plaza</div></a>`:'<div class="doc-card doc-card-missing"><div class="doc-card-icon">📋</div><div class="doc-card-name">Funciones y Obligaciones</div><div class="doc-card-status miss">Sin PDF en plaza</div></div>'}
       ${e.contratoId?`<a href="${driveViewUrl(e.contratoId)}" target="_blank" class="doc-card"><div class="doc-card-icon">📑</div><div class="doc-card-name">Contrato</div><div class="doc-card-status ok">En Drive</div></a>`:'<div class="doc-card doc-card-missing"><div class="doc-card-icon">📑</div><div class="doc-card-name">Contrato</div><div class="doc-card-status miss">Sin adjuntar</div></div>'}
     </div>`;
 
@@ -2392,14 +2394,6 @@ function renderAlta(container,editData=null){
         <div class="input-hint" style="margin-top:4px;">Suba el escaneo del carnet de identidad (ambas caras). No se usa la cámara.</div>
       </div>
 
-      <div class="form-group"><label class="field-label">PDF Obligaciones y Responsabilidades</label>
-        <div class="file-drop file-drop-sm" onclick="document.getElementById('a-pdf-obl').click()">
-          <div class="file-icon">📄</div>
-          <div><p style="margin:0">Adjuntar PDF de obligaciones del puesto</p><span id="a-pdf-obl-name" class="text-muted" style="font-size:12px">${doc.obligaciones?'✅ Archivo adjunto':'Sin archivo'}</span></div>
-          <input type="file" id="a-pdf-obl" accept="application/pdf" style="display:none" onchange="previewFile(this,'a-pdf-obl-name')">
-        </div></div>
-
-
     </div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="navigateTo('empleados')">Cancelar</button>
@@ -2602,18 +2596,7 @@ async function guardarAlta(){
     }
     tempFotoCarnet=null;
 
-    // 5. Subir PDF obligaciones si existe
-    const pdfObl=document.getElementById('a-pdf-obl');
-    if(pdfObl&&pdfObl.files[0]){
-      try{
-        const res=await subirArchivoDrive(pdfObl.files[0],id,emp.carpetaExpId||'','obligaciones');
-        emp.obligacionesId=res.fileId;
-        docData.obligacionesUrl=res.viewUrl;
-        await registrarDocumentoSheets(id,'obligaciones',res.fileId,res.viewUrl,res.nombre,res.tamaño);
-      }catch(e){console.warn('Error subiendo obligaciones:',e.message);}
-    }
-
-    // 6. Licencias
+    // 5. Licencias
     tempLicencias=[];
 
     // 7. Actualizar empleado en Sheets con los IDs de Drive
@@ -2737,18 +2720,6 @@ async function guardarEdicionEmpleado(id){
       delete docData.fotoCarnetThumb;
     }
     tempFotoCarnet=null;
-
-    // Subir PDF obligaciones nuevo si existe
-    const pdfObl=document.getElementById('a-pdf-obl');
-    if(pdfObl&&pdfObl.files[0]){
-      try{
-        if(emp.obligacionesId) await eliminarArchivoDrive(emp.obligacionesId);
-        const res=await subirArchivoDrive(pdfObl.files[0],id,emp.carpetaExpId||'','obligaciones');
-        emp.obligacionesId=res.fileId;
-        docData.obligacionesUrl=res.viewUrl;
-        await registrarDocumentoSheets(id,'obligaciones',res.fileId,res.viewUrl,res.nombre,res.tamaño);
-      }catch(e){console.warn('Error obligaciones:',e.message);}
-    }
 
     // Licencias nuevas
     if(tempLicencias.length){
