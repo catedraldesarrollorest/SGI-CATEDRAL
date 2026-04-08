@@ -2673,6 +2673,9 @@ async function guardarAlta(){
     // 7. Actualizar empleado en Sheets con los IDs de Drive
     await apiCall({accion:'actualizar',tabla:'empleados',id:emp.id,valores:emp});
 
+    // 8. Guardar en Supabase (primario)
+    await sbUpsert('empleados', emp);
+
     STATE.documentos[id]=docData;
     saveState();
     showSyncIndicator('✅ Guardado','ok');
@@ -2802,9 +2805,10 @@ async function guardarEdicionEmpleado(id){
     STATE.documentos[id]=docData;
     saveState();
 
-    // Actualizar en Sheets
+    // Actualizar en Sheets y Supabase
     await apiCall({accion:'actualizar',tabla:'empleados',id:emp.id,valores:emp});
-    showSyncIndicator('✅ Guardado en Sheets','ok');
+    await sbUpsert('empleados', emp);
+    showSyncIndicator('✅ Guardado','ok');
     DB_ONLINE=true; updateSyncBadge(true);
 
   } catch(e){
