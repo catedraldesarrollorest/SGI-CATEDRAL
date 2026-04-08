@@ -759,8 +759,8 @@ const SUPABASE_TABLES = new Set(['empleados','plazas','traslados','bajas','sanci
   'alertasJuridico','auditLog','config','preformas']);
 
 // Columnas permitidas por tabla (evita error por campos viejos/desconocidos)
-const EMPLEADOS_COLS = ['id','fechaAlta','nombres','apellidos','carnet','email','telefono',
-  'fechaNacimiento','direccion','tipoContrato','jornada','departamento','plaza',
+const EMPLEADOS_COLS = ['id','fechaAlta','nombres','apellidos','carnet','telefono',
+  'fechaNacimiento','direccion','provincia','municipio','tipoContrato','jornada','departamento','plaza',
   'salarioBase','activo','fechaBaja','certMedicoFecha','fotoEmpleadoId','fotoCarnetId',
   'carpetaExpId','contratoId','obligacionesId','contratoFechaFirma','contratoObs',
   'banco','cuenta','observaciones'];
@@ -1125,7 +1125,9 @@ async function sincronizarDesdeSheets() {
     _propagarSalariosPlazas();
     DB_ONLINE = true; updateSyncBadge(true);
     showSyncIndicator('✅ Sincronizado', 'ok');
-    if (currentRole && currentSection) navigateTo(currentSection);
+    // No re-renderizar si el usuario está en un formulario con datos en curso
+    const formsEnCurso=['alta','traslados','bajas','sanciones'];
+    if (currentRole && currentSection && !formsEnCurso.includes(currentSection)) navigateTo(currentSection);
   } catch(err) {
     DB_ONLINE = false; updateSyncBadge(false);
     showSyncIndicator('⚠️ Modo offline — usando datos locales', 'offline');
@@ -1524,6 +1526,33 @@ function sincronizarSalariosDesidePlazas(){
   if(actualizados>0){saveState();showToast(`✅ ${actualizados} empleado(s) actualizados con salario de su plaza`,'success');}
   else showToast('Los salarios ya están sincronizados','info');
   return actualizados;
+}
+
+const CUBA_PROVINCIAS={
+  'Artemisa':['Alquízar','Artemisa','Bauta','Caimito','Candelaria','Guanajay','Güira de Melena','Mariel','San Antonio de los Baños','San Cristóbal'],
+  'Camagüey':['Camagüey','Carlos Manuel de Céspedes','Esmeralda','Florida','Guáimaro','Jimaguayú','Minas','Najasa','Nuevitas','Santa Cruz del Sur','Sibanicú','Sierra de Cubitas','Vertientes'],
+  'Ciego de Ávila':['Baraguá','Bolivia','Chambas','Ciego de Ávila','Ciro Redondo','Florencia','Majagua','Morón','Primero de Enero','Venezuela'],
+  'Cienfuegos':['Abreus','Aguada de Pasajeros','Cienfuegos','Cruces','Cumanayagua','Lajas','Palmira','Rodas'],
+  'Granma':['Bartolomé Masó','Bayamo','Buey Arriba','Campechuela','Cauto Cristo','Guisa','Jiguaní','Manzanillo','Media Luna','Niquero','Pilón','Río Cauto','Yara'],
+  'Guantánamo':['Baracoa','Caimanera','El Salvador','Guantánamo','Imías','Maisí','Manuel Tames','Niceto Pérez','San Antonio del Sur','Yateras'],
+  'Holguín':['Antilla','Báguanos','Banes','Cacocum','Calixto García','Cueto','Frank País','Gibara','Holguín','Mayarí','Moa','Rafael Freyre','Sagua de Tánamo','Urbano Noris'],
+  'La Habana':['Arroyo Naranjo','Boyeros','Centro Habana','Cerro','Cotorro','Diez de Octubre','Guanabacoa','Habana del Este','Habana Vieja','La Lisa','Marianao','Playa','Plaza de la Revolución','Regla','San Miguel del Padrón'],
+  'Las Tunas':['Amancio','Colombia','Jesús Menéndez','Jobabo','Las Tunas','Majibacoa','Manatí','Puerto Padre'],
+  'Matanzas':['Calimete','Cárdenas','Ciénaga de Zapata','Colón','Jagüey Grande','Jovellanos','Limonar','Los Arabos','Martí','Matanzas','Pedro Betancourt','Perico','Unión de Reyes'],
+  'Mayabeque':['Batabanó','Bejucal','Güines','Jaruco','Madruga','Melena del Sur','Nueva Paz','Quivicán','San José de las Lajas','San Nicolás de Bari','Santa Cruz del Norte'],
+  'Pinar del Río':['Consolación del Sur','Guane','La Palma','Los Palacios','Mantua','Minas de Matahambre','Pinar del Río','San Juan y Martínez','San Luis','Sandino','Viñales'],
+  'Sancti Spíritus':['Cabaiguán','Fomento','Jatibonico','La Sierpe','Sancti Spíritus','Taguasco','Trinidad','Yaguajay'],
+  'Santiago de Cuba':['Contramaestre','Guamá','Mella','Palma Soriano','San Luis','Santiago de Cuba','Segundo Frente','Songo-La Maya','Tercer Frente'],
+  'Villa Clara':['Caibarién','Camajuaní','Cifuentes','Corralillo','Encrucijada','Manicaragua','Placetas','Quemado de Güines','Ranchuelo','Remedios','Sagua la Grande','Santa Clara','Santo Domingo']
+};
+function updateMunicipios(provId,munId){
+  const prov=document.getElementById(provId)?.value||'';
+  const sel=document.getElementById(munId);
+  if(!sel)return;
+  const muns=CUBA_PROVINCIAS[prov]||[];
+  sel.innerHTML=muns.length
+    ?muns.map(m=>`<option value="${m}">${m}</option>`).join('')
+    :'<option value="">Sin municipios</option>';
 }
 
 const PLAZAS={
@@ -2118,6 +2147,8 @@ function verFicha(id, tabInicial){
         <div class="ficha-kv-item"><div class="ficha-kv-label">Carnet / Expediente</div><div class="ficha-kv-val"><code>${e.carnet}</code></div></div>
         <div class="ficha-kv-item"><div class="ficha-kv-label">Fecha de nacimiento</div><div class="ficha-kv-val">${fmtDate(e.fechaNacimiento)}</div></div>
         <div class="ficha-kv-item"><div class="ficha-kv-label">Dirección</div><div class="ficha-kv-val">${e.direccion||'—'}</div></div>
+        ${e.provincia?`<div class="ficha-kv-item"><div class="ficha-kv-label">Provincia</div><div class="ficha-kv-val">${e.provincia}</div></div>`:''}
+        ${e.municipio?`<div class="ficha-kv-item"><div class="ficha-kv-label">Municipio</div><div class="ficha-kv-val">${e.municipio}</div></div>`:''}
       </div>
     </div>
     <div class="ficha-section ficha-lab">
@@ -2148,7 +2179,6 @@ function verFicha(id, tabInicial){
     <div class="ficha-section ficha-pago">
       <div class="ficha-section-title">🏦 Contacto y Pago</div>
       <div class="ficha-kv">
-        <div class="ficha-kv-item"><div class="ficha-kv-label">Correo electrónico</div><div class="ficha-kv-val">${e.email?`<a href="mailto:${e.email}" style="color:var(--burgundy)">${e.email}</a>`:'—'}</div></div>
         <div class="ficha-kv-item"><div class="ficha-kv-label">Teléfono</div><div class="ficha-kv-val">${e.telefono||'—'}</div></div>
         <div class="ficha-kv-item"><div class="ficha-kv-label">Banco</div><div class="ficha-kv-val">${e.banco||'—'}</div></div>
         <div class="ficha-kv-item"><div class="ficha-kv-label">N° de cuenta</div><div class="ficha-kv-val"><code>${e.cuenta?e.cuenta.replace(/(.{4})/g,'$1 ').trim():'—'}</code></div></div>
@@ -2371,11 +2401,11 @@ function imprimirContrato(){
   if(!content)return;
   const w=window.open('','_blank','width=900,height=700');
   w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Contrato — La Catedral</title>
-  <style>body{font-family:'Times New Roman',serif;font-size:13px;line-height:1.8;color:#000;padding:40px;max-width:800px;margin:0 auto}h1{text-align:center;font-size:16px;font-weight:bold;margin-bottom:24px;text-transform:uppercase}p{margin-bottom:12px;text-align:justify}.contract-section-title{font-weight:bold;margin:18px 0 8px;text-transform:uppercase}.sign-area{display:flex;justify-content:space-between;margin-top:60px}.sign-line{text-align:center;width:45%}.sign-line div{border-top:1px solid #000;padding-top:8px;margin-top:40px}ul{padding-left:24px;margin-bottom:12px}ul li{margin-bottom:6px}.contract-field{font-weight:bold;text-decoration:underline}@media print{@page{margin:2cm}}</style></head><body>`);
+  <style>body{font-family:'Times New Roman',serif;font-size:13px;line-height:1.8;color:#000;padding:40px;max-width:800px;margin:0 auto}h1{text-align:center;font-size:16px;font-weight:bold;margin-bottom:24px;text-transform:uppercase}p{margin-bottom:12px;text-align:justify}.contract-section-title{font-weight:bold;margin:18px 0 8px;text-transform:uppercase}.sign-area{display:flex;justify-content:space-between;margin-top:60px}.sign-line{text-align:center;width:45%}.sign-line div{border-top:1px solid #000;padding-top:8px;margin-top:40px}ul{padding-left:24px;margin-bottom:12px}ul li{margin-bottom:6px}.contract-field{font-weight:bold;text-decoration:underline}@media print{@page{margin:2cm}.no-print{display:none}}</style></head><body>`);
+  w.document.write('<div class="no-print" style="text-align:center;padding:12px;background:#f5f0e8;border-bottom:1px solid #ccc;margin-bottom:20px"><button onclick="window.print()" style="background:#6B1A1A;color:#fff;border:none;padding:8px 20px;border-radius:4px;font-size:14px;cursor:pointer;margin-right:10px">🖨️ Imprimir / Guardar PDF</button><button onclick="window.close()" style="background:#888;color:#fff;border:none;padding:8px 20px;border-radius:4px;font-size:14px;cursor:pointer">✕ Cerrar</button></div>');
   w.document.write(content.innerHTML);
-  w.document.write('<div class="sync-indicator" id="sync-indicator"></div></body></html>');
+  w.document.write('</body></html>');
   w.document.close();
-  setTimeout(()=>w.print(),600);
 }
 
 // ══════════════════════════════════════════════════
@@ -2399,9 +2429,18 @@ function renderAlta(container,editData=null){
       <div class="form-group"><label class="field-label required">Apellidos ${rrhhRestricted?'🔒':''}</label><input type="text" id="a-apellidos" value="${d.apellidos||''}" placeholder="Apellido(s)" ${rrhhRestricted?'readonly':''} required></div>
       <div class="form-group"><label class="field-label required" data-tip="Exactamente 11 cifras numéricas. Este número será el número de expediente laboral.">N° Carnet / N° Expediente (11 dígitos) ${rrhhRestricted?'🔒':''}</label><input type="text" id="a-carnet" maxlength="11" value="${d.carnet||''}" placeholder="12345678901" ${rrhhRestricted?'readonly':`oninput="this.value=this.value.split('').filter(c=>c>='0'&&c<='9').join('').slice(0,11);autoFillFechaNacimiento(this.value)"`}></div>
       <div class="form-group"><label class="field-label">Teléfono</label><input type="tel" id="a-telefono" value="${d.telefono||''}" required></div>
-      <div class="form-group"><label class="field-label required">Correo Electrónico</label><input type="email" id="a-email" value="${d.email||''}" placeholder="ejemplo@correo.com" required autocomplete="email"></div>
       <div class="form-group"><label class="field-label">Fecha de Nacimiento ${rrhhRestricted?'🔒':''}</label><input type="date" id="a-fechaNacimiento" value="${d.fechaNacimiento||''}" ${rrhhRestricted?'readonly':''} required></div>
-      <div class="form-group full"><label class="field-label">Dirección Particular</label><input type="text" id="a-direccion" value="${d.direccion||''}" placeholder="Calle, número, ciudad..." required></div>
+      <div class="form-group full"><label class="field-label">Dirección Particular</label><input type="text" id="a-direccion" value="${d.direccion||''}" placeholder="Calle, número..."></div>
+      <div class="form-group"><label class="field-label required">Provincia</label>
+        <select id="a-provincia" onchange="updateMunicipios('a-provincia','a-municipio')">
+          <option value="">Seleccione...</option>
+          ${Object.keys(CUBA_PROVINCIAS).map(p=>`<option value="${p}" ${d.provincia===p?'selected':''}>${p}</option>`).join('')}
+        </select></div>
+      <div class="form-group"><label class="field-label required">Municipio</label>
+        <select id="a-municipio">
+          <option value="">Seleccione provincia...</option>
+          ${d.provincia&&CUBA_PROVINCIAS[d.provincia]?CUBA_PROVINCIAS[d.provincia].map(m=>`<option value="${m}" ${d.municipio===m?'selected':''}>${m}</option>`).join(''):''}
+        </select></div>
 
       
       <div class="form-group"><label class="field-label" data-tip="El número de cuenta solo puede editarlo el departamento de Contabilidad o Administración. Exactamente 16 dígitos.">N° de Cuenta (16 dígitos) ${canEditCuenta?'':'🔒'}</label>
@@ -2578,10 +2617,6 @@ async function guardarAlta(){
   if(!/^\d{11}$/.test(carnet)){showToast('El carnet debe tener exactamente 11 dígitos','error');return}
   if(STATE.empleados.find(e=>e.carnet===carnet)){showToast('Ya existe un empleado con ese carnet','error');return}
   function val(id){const el=document.getElementById(id);return el?el.value.trim():'';}
-  const email=val('a-email');
-  if(!email){showToast('El correo electrónico es obligatorio','warning');return}
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)){showToast('El correo electrónico no es válido','error');return}
-  if(STATE.empleados.find(e=>e.email&&e.email.toLowerCase()===email.toLowerCase())){showToast('Ya existe un empleado con ese correo','error');return}
 
   // Validar edad mínima 18 años
   const fechaNacVal=document.getElementById('a-fechaNacimiento').value;
@@ -2596,10 +2631,11 @@ async function guardarAlta(){
   const id='E'+uid();
   const emp={
     id,fechaAlta,nombres,apellidos,carnet,
-    email,
     telefono:val('a-telefono'),
     fechaNacimiento:val('a-fechaNacimiento'),
     direccion:val('a-direccion'),
+    provincia:val('a-provincia'),
+    municipio:val('a-municipio'),
     tipoContrato:val('a-contrato'),
     jornada:val('a-jornada')||'8x24',
     departamento:val('a-departamento'),
@@ -2698,11 +2734,6 @@ async function guardarEdicionEmpleado(id){
     if(existing){showToast('Ya existe otro empleado con ese carnet','error');return}
   }
 
-  const emailEdit=val('a-email');
-  if(!emailEdit){showToast('El correo electrónico es obligatorio','warning');return}
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(emailEdit)){showToast('El correo electrónico no es válido','error');return}
-  const dupEmail=STATE.empleados.find(e=>e.email&&e.email.toLowerCase()===emailEdit.toLowerCase()&&e.id!==id);
-  if(dupEmail){showToast('Ya existe otro empleado con ese correo','error');return}
 
   const canEditCuenta=currentRole==='admin'||currentRole==='contabilidad'||currentRole==='rrhh';
   const plazaAnterior=emp.plaza;
@@ -2711,8 +2742,9 @@ async function guardarEdicionEmpleado(id){
     nombres:isRrhh?emp.nombres:(val('a-nombres')||emp.nombres),
     apellidos:isRrhh?emp.apellidos:(val('a-apellidos')||emp.apellidos),
     carnet:isRrhh?emp.carnet:(document.getElementById('a-carnet').value.trim()||emp.carnet),
-    email:emailEdit,
     telefono:val('a-telefono')||emp.telefono,
+    provincia:val('a-provincia')||emp.provincia,
+    municipio:val('a-municipio')||emp.municipio,
     fechaNacimiento:isRrhh?emp.fechaNacimiento:(val('a-fechaNacimiento')||emp.fechaNacimiento),
     direccion:val('a-direccion')||emp.direccion,
     cuenta:canEditCuenta?(val('a-cuenta')||emp.cuenta):emp.cuenta,
@@ -2830,13 +2862,14 @@ function renderExpedientes(container){
 
 function renderExpedientesRows(lista){
   if(!lista.length)return`<tr><td colspan="7" class="text-center text-muted" style="padding:40px">Sin expedientes</td></tr>`;
-  return lista.map(e=>`<tr>
+  return lista.map(e=>`<tr onclick="verExpediente('${e.id}')" style="cursor:pointer"
+    onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background=''">
     <td><code style="font-size:13px;font-weight:700;color:var(--burgundy)">${e.carnet}</code></td>
     <td><b>${e.nombres} ${e.apellidos}</b></td>
     <td>${e.departamento||'—'}</td><td>${e.plaza||'—'}</td>
     <td>${fmtDate(e.fechaAlta)}</td>
     <td><span class="badge ${e.activo?'badge-active':'badge-inactive'}">${e.activo?'Activo':'Baja'}</span></td>
-    <td><button class="btn btn-primary btn-xs" onclick="verExpediente('${e.id}')">📁 Abrir</button></td>
+    <td onclick="event.stopPropagation()"><button class="btn btn-primary btn-xs" onclick="verExpediente('${e.id}')">📁 Abrir</button></td>
   </tr>`).join('');
 }
 
@@ -3019,8 +3052,8 @@ function guardarTraslado(){
     pushToSheets('historialSalarial','insertar',regSalT);
   }
 
-  // Crear alerta para Jurídico SOLO si hay cambio de departamento o de jornada
-  const requiereNuevoContrato = deptNuevo !== traslado.deptAnterior || cambioJornada;
+  // Crear alerta para Jurídico si cambia departamento, plaza o jornada
+  const requiereNuevoContrato = deptNuevo !== traslado.deptAnterior || plazaNueva !== traslado.plazaAnterior || cambioJornada;
   if(requiereNuevoContrato){
     if(!STATE.alertasJuridico)STATE.alertasJuridico=[];
     STATE.alertasJuridico.push({
@@ -3029,9 +3062,10 @@ function guardarTraslado(){
       empleadoId:empId,
       empleadoNombre:emp.nombres+' '+emp.apellidos,
       fecha:fecha,
-      mensaje:'Traslado de '+traslado.deptAnterior+' → '+deptNuevo+' / '+plazaNueva
+      mensaje:(traslado.deptAnterior!==deptNuevo?'Dept: '+traslado.deptAnterior+' → '+deptNuevo+' | ':'')
+        +'Plaza: '+traslado.plazaAnterior+' → '+plazaNueva
         +(cambioJornada?' | Jornada: '+getLabelJornada(jornadaAnterior)+' → '+getLabelJornada(jornadaNueva):'')
-        +'. Requiere actualización de contrato.',
+        +'. Requiere nuevo contrato.',
       leida:false,
       traslado:traslado.id
     });
@@ -3403,21 +3437,17 @@ function renderContratos(container){
     const estadoBadge=doc.contratoFecha
       ?'<span class="badge badge-approved" style="font-size:11px;">✅ Firmado '+fmtDate(doc.contratoFecha)+'</span>'
       :'<span class="badge badge-draft" style="font-size:11px;">⏳ Pendiente</span>';
-    rowsHtml+='<tr>'
+    rowsHtml+='<tr onclick="previewContrato(\''+e.id+'\')" style="cursor:pointer" onmouseover="this.style.background=\'#f5f0e8\'" onmouseout="this.style.background=\'\'">'
       +'<td data-label="Empleado"><b>'+e.nombres+' '+e.apellidos+'</b> <span class="badge '+(e.activo?'badge-active':'badge-inactive')+'">'+(e.activo?'Activo':'Baja')+'</span></td>'
       +'<td data-label="Departamento">'+e.departamento+'</td>'
       +'<td data-label="Plaza">'+e.plaza+'</td>'
       +'<td data-label="Tipo Contrato">'+e.tipoContrato+'</td>'
       +'<td data-label="Fecha Alta">'+fmtDate(e.fechaAlta)+'</td>'
       +'<td data-label="Contrato">'+estadoBadge
-      +(e.contratoId
-        ?'<br><span style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px"><a href="'+driveViewUrl(e.contratoId)+'" target="_blank" class="btn btn-secondary btn-xs">📄 Ver</a>'
-        +' <a href="'+driveViewUrl(e.contratoId).replace('/view','/preview')+'" target="_blank" class="btn btn-secondary btn-xs">🖨️</a>'
-        +' <a href="'+driveViewUrl(e.contratoId)+'" target="_blank" class="btn btn-gold btn-xs" title="Compartir">📤</a></span>'
-        :'<br><small class="text-muted">📄 Archivado en papel</small>')
+      +(e.contratoId?'<br><small class="text-muted">📄 En Drive</small>':'<br><small class="text-muted">📄 Archivado en papel</small>')
       +'</td>'
-      +'<td class="td-act"><div class="btn-wrap"><button class="btn btn-primary btn-xs" onclick="previewContrato(\''+e.id+'\')">📄 Generar</button>'
-      +(canEdit?(' <button class="btn btn-gold btn-xs" onclick="openModalFechaContratoEmp(\''+e.id+'\')">✏️ Firma</button>'):'')
+      +'<td class="td-act" onclick="event.stopPropagation()"><div class="btn-wrap">'
+      +(canEdit?('<button class="btn btn-gold btn-xs" onclick="openModalFechaContratoEmp(\''+e.id+'\')">✏️ Firma</button>'):'')
       +'</div></td>'
       +'</tr>';
   });
@@ -3703,7 +3733,7 @@ function cargarNomina(){
     let diasPagados=l.diasTrabajados;
     incMes.filter(i=>i.tipo==='Vacaciones').forEach(v=>{diasPagados+=STATE.config.diasPagadosPeriodo-parseInt(v.diasAfectados||0)});
     const total=(salDiario*diasPagados)+bon+(l.horasExtras*valHE);l.totalDevengado=total;
-    html+=`<tr>
+    html+=`<tr onclick="verFicha('${e.id}')" style="cursor:pointer" onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background=''">
       <td><b>${e.nombres} ${e.apellidos}</b></td>
       <td><span class="chip">${e.departamento}</span></td>
       <td>${jornC}d</td><td>${fmtMoney(salBase)}</td><td>${fmtMoney(salDiario)}</td>
@@ -5126,7 +5156,7 @@ function _buildPlantillaTable(emps,showEco,showCuenta){
         <td class="pt-lab-cell">${getLabelJornada(e.jornada)||e.jornada||'—'}</td>
         ${showEco?`<td class="pt-eco-cell" style="text-align:right;font-weight:600">${(()=>{const sal=e.salarioBase||(getPlaza(e.departamento,e.plaza)||{}).salarioBase;return sal?fmtMoney(sal):'—';})()}</td>`:''}
         ${showCuenta?`<td class="pt-con-cell">${e.banco||'—'}</td><td class="pt-con-cell"><span style="font-family:monospace;font-size:11px">${e.cuenta?e.cuenta.replace(/(.{4})/g,'$1 ').trim():'—'}</span></td>`:''}
-        <td class="pt-con-cell"><div style="font-size:11px">${e.email||'—'}</div><div style="font-size:11px;color:#666">${e.telefono||''}</div></td>
+        <td class="pt-con-cell"><div style="font-size:11px">${e.telefono||'—'}</div></td>
         <td class="pt-ges-cell">${e.departamento||'—'}</td>
       </tr>`).join('')}
     </tbody>
