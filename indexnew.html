@@ -420,6 +420,7 @@ function updateSyncBadge(online) {
 async function apiCall(payload) {
   const res = await fetch(API_URL, {
     method: 'POST',
+    redirect: 'follow', // Necesario para Google Apps Script
     headers: { 'Content-Type': 'text/plain' },
     body: JSON.stringify(payload)
   });

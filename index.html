@@ -830,6 +830,7 @@ async function sbEliminarDB(tabla, id) {
 async function apiCall(payload) {
   const res = await fetch(API_URL, {
     method: 'POST',
+    redirect: 'follow', // Necesario para Google Apps Script
     headers: { 'Content-Type': 'text/plain' },
     body: JSON.stringify(payload)
   });
@@ -847,7 +848,7 @@ function backupToSheets(tabla, accion, valores, id) {
       else if (accion === 'actualizar') payload = { accion: 'actualizar', tabla, id, valores };
       else if (accion === 'eliminar')   payload = { accion: 'eliminar', tabla, id };
       else return;
-      await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) });
+      await fetch(API_URL, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) });
     } catch (e) { /* Sheets backup falla silenciosamente */ }
   })();
 }
