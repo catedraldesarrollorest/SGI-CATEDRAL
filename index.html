@@ -3740,7 +3740,7 @@ function cargarNomina(){
       <th data-tip="Horas fuera de jornada">H.Ext</th>
       <th data-tip="Total bruto devengado">Total Bruto</th>
       <th data-tip="Seguridad Social 5%">SS 5%</th>
-      <th data-tip="Impuesto sobre Ingresos Personales">IRPF</th>
+      <th data-tip="Impuesto sobre los Ingresos Personales (IIP)">IIP</th>
       <th data-tip="Salario neto a pagar">Neto</th>
     </tr></thead><tbody>`;
 
@@ -3755,7 +3755,7 @@ function cargarNomina(){
     const valHE=(salDiario/8)*recargo;
     const bruto=(salDiario*l.diasTrabajados)+bon+(l.horasExtras*valHE);
     const ss=Math.round(bruto*0.05*100)/100;
-    const irpf=Math.round(calcularIRPF(bruto)*100)/100;
+    const irpf=Math.round(calcularIIP(bruto)*100)/100;
     const neto=Math.round((bruto-ss-irpf)*100)/100;
     l.totalDevengado=bruto;l.deduccionSS=ss;l.deduccionIRPF=irpf;l.totalNeto=neto;
     totBruto+=bruto;totSS+=ss;totIRPF+=irpf;totNeto+=neto;
@@ -3834,7 +3834,7 @@ function updateNominaLine(nomId,empId){
   const bon=calcBonificacion(salBase,e.fechaAlta);const recargo=1+(STATE.config.recargoHorasExtras/100);const valHE=(salDiario/8)*recargo;
   const bruto=(salDiario*linea.diasTrabajados)+bon+(linea.horasExtras*valHE);
   const ss=Math.round(bruto*0.05*100)/100;
-  const irpf=Math.round(calcularIRPF(bruto)*100)/100;
+  const irpf=Math.round(calcularIIP(bruto)*100)/100;
   const neto=Math.round((bruto-ss-irpf)*100)/100;
   linea.totalDevengado=bruto;linea.deduccionSS=ss;linea.deduccionIRPF=irpf;linea.totalNeto=neto;
   saveState();
@@ -3914,7 +3914,7 @@ function verDetalleNomina(nomId){
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);
     const bruto=l.totalDevengado||0;
     const ss=l.deduccionSS!=null?l.deduccionSS:Math.round(bruto*0.05*100)/100;
-    const irpf=l.deduccionIRPF!=null?l.deduccionIRPF:Math.round(calcularIRPF(bruto)*100)/100;
+    const irpf=l.deduccionIRPF!=null?l.deduccionIRPF:Math.round(calcularIIP(bruto)*100)/100;
     const neto=l.totalNeto!=null?l.totalNeto:Math.round((bruto-ss-irpf)*100)/100;
     totBruto+=bruto;totNeto+=neto;
     return`<tr><td>${e?`${e.nombres} ${e.apellidos}`:'—'}</td><td>${e?e.plaza:'—'}</td><td style="text-align:center">${l.diasTrabajados}</td><td style="text-align:right">${fmtMoney(bruto)}</td><td style="text-align:right;color:#B45309">${fmtMoney(ss)}</td><td style="text-align:right;color:#991B1B">${irpf>0?fmtMoney(irpf):'—'}</td><td style="text-align:right;color:#2D6A4F;font-weight:700">${fmtMoney(neto)}</td></tr>`;
@@ -3925,7 +3925,7 @@ function verDetalleNomina(nomId){
       <span><b>Bruto:</b> <span style="color:var(--burgundy);font-weight:700">${fmtMoney(totBruto)}</span></span>
       <span><b>Neto:</b> <span style="color:#2D6A4F;font-weight:700">${fmtMoney(totNeto)}</span></span>
     </div>
-    <div class="table-wrap"><table><thead><tr><th>Empleado</th><th>Plaza</th><th>Días</th><th>Bruto</th><th>SS 5%</th><th>IRPF</th><th>Neto</th></tr></thead><tbody>
+    <div class="table-wrap"><table><thead><tr><th>Empleado</th><th>Plaza</th><th>Días</th><th>Bruto</th><th>SS 5%</th><th>IIP</th><th>Neto</th></tr></thead><tbody>
     ${rows}
     </tbody></table></div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
@@ -3939,9 +3939,9 @@ function exportNomina(nomId){
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);
     const bruto=l.totalDevengado||0;
     const ss=l.deduccionSS!=null?l.deduccionSS:Math.round(bruto*0.05*100)/100;
-    const irpf=l.deduccionIRPF!=null?l.deduccionIRPF:Math.round(calcularIRPF(bruto)*100)/100;
+    const irpf=l.deduccionIRPF!=null?l.deduccionIRPF:Math.round(calcularIIP(bruto)*100)/100;
     const neto=l.totalNeto!=null?l.totalNeto:Math.round((bruto-ss-irpf)*100)/100;
-    return{Empleado:e?`${e.nombres} ${e.apellidos}`:'—',CI:e?e.carnet:'—',Plaza:e?e.plaza:'—',Departamento:e?e.departamento:'—','Días Trabajados':l.diasTrabajados,'Horas Extras':l.horasExtras||0,'Total Bruto':bruto,'SS (5%)':ss,'IRPF':irpf,'Total Neto':neto};
+    return{Empleado:e?`${e.nombres} ${e.apellidos}`:'—',CI:e?e.carnet:'—',Plaza:e?e.plaza:'—',Departamento:e?e.departamento:'—','Días Trabajados':l.diasTrabajados,'Horas Extras':l.horasExtras||0,'Total Bruto':bruto,'SS (5%)':ss,'IIP':irpf,'Total Neto':neto};
   }),`Nomina_${n.mesNombre}_${n.ano}`);
   showToast('Exportado','success');
 }
@@ -3965,7 +3965,7 @@ function imprimirNominaCompleta(nomId){
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);if(!e)return'';
     const bruto=l.totalDevengado||0;
     const ss=l.deduccionSS!=null?l.deduccionSS:Math.round(bruto*0.05*100)/100;
-    const irpf=l.deduccionIRPF!=null?l.deduccionIRPF:Math.round(calcularIRPF(bruto)*100)/100;
+    const irpf=l.deduccionIRPF!=null?l.deduccionIRPF:Math.round(calcularIIP(bruto)*100)/100;
     const neto=l.totalNeto!=null?l.totalNeto:Math.round((bruto-ss-irpf)*100)/100;
     totBruto+=bruto;totSS+=ss;totIRPF+=irpf;totNeto+=neto;
     const fmt=v=>v>0?v.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
@@ -4031,7 +4031,7 @@ function imprimirNominaCompleta(nomId){
   <table>
     <thead><tr>
       <th>Nº</th><th style="text-align:left">Nombre y Apellidos</th><th>Carnet</th><th style="text-align:left">Plaza</th>
-      <th>Días</th><th>Total Bruto</th><th>SS (5%)</th><th>IRPF</th><th>NETO</th><th>Firma</th>
+      <th>Días</th><th>Total Bruto</th><th>SS (5%)</th><th>IIP</th><th>NETO</th><th>Firma</th>
     </tr></thead>
     <tbody>${rows}</tbody>
     <tfoot><tr class="tfoot-row">
@@ -4052,13 +4052,13 @@ function imprimirNominaCompleta(nomId){
       <tr><td class="lbl">Total deducciones SS empleados:</td><td class="val">${fmt(totSS)} CUP</td>
           <td></td>
           <td class="lbl">Costo total empresa:</td><td class="val">${fmt(totBruto+ssEmpleador)} CUP</td></tr>
-      <tr><td class="lbl">Total IRPF:</td><td class="val">${fmt(totIRPF)} CUP</td>
+      <tr><td class="lbl">Total IIP:</td><td class="val">${fmt(totIRPF)} CUP</td>
           <td></td><td></td><td></td></tr>
       <tr style="background:#E8F5E9"><td class="lbl"><b>TOTAL NETO A PAGAR:</b></td><td class="val" style="font-size:14px">${fmt(totNeto)} CUP</td>
           <td></td><td></td><td></td></tr>
     </tbody></table>
   </div>
-  <p class="nota">Deducciones calculadas según Ley 113/2012 (IRPF, escala progresiva) y legislación vigente de Seguridad Social (5% empleado, 14% empleador).</p>
+  <p class="nota">Deducciones calculadas según Ley 113/2012 (IIP — escala progresiva) y legislación vigente de Seguridad Social (5% empleado, 14% empleador).</p>
   <div class="firmas">
     <div class="firma-box">
       <div class="firma-line"></div>
@@ -5060,8 +5060,8 @@ function getDiasCalendarioMes(ano,mes){
   return new Date(ano,mes,0).getDate();
 }
 
-// IRPF Cuba — Ley 113/2012 — escala progresiva mensual
-function calcularIRPF(salario){
+// IIP Cuba — Impuesto sobre los Ingresos Personales — Ley 113/2012 — escala progresiva mensual
+function calcularIIP(salario){
   if(!salario||salario<=0) return 0;
   if(salario<=10000) return 0;
   if(salario<=20000) return (salario-10000)*0.05;
