@@ -1332,7 +1332,8 @@ const NAV_ITEMS = {
     {section:'dashboard',icon:'📈',label:'Dashboard'},
     {section:'empleados',icon:'👥',label:'Empleados',header:'CONSULTA'},
     {section:'plantilla',icon:'🗂️',label:'Plantilla de Personal',header:'CONSULTA'},
-    {section:'nomina',icon:'📋',label:'Nóminas',header:'CONTABILIDAD'},
+    {section:'historial_asistencia',icon:'📅',label:'Asistencia',header:'NÓMINA'},
+    {section:'nomina',icon:'📋',label:'Nóminas'},
     {section:'incidencias',icon:'🗓️',label:'Incidencias'},
     {section:'vacaciones',icon:'🌴',label:'Vacaciones'}
   ],
@@ -1377,7 +1378,7 @@ function navigateTo(section){
   closeSidebar();
   currentSection=section;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.section===section));
-  const titles={dashboard:'Dashboard',empleados:'Empleados',alta:'Alta de Empleado',expedientes:'Expedientes Laborales',traslados:'Traslados',bajas:'Bajas',plantilla:'Plantilla de Personal',salarios:'Salarios Base',gestion_plazas:'Gestión de Plazas',contratos:'Contratos',sanciones:'Sanciones',nomina:'Nóminas',incidencias:'Incidencias',vacaciones:'Submayor de Vacaciones',configuracion:'Configuración',auditoria:'Log de Auditoría',backup:'Copia de Seguridad'};
+  const titles={dashboard:'Dashboard',empleados:'Empleados',alta:'Alta de Empleado',expedientes:'Expedientes Laborales',traslados:'Traslados',bajas:'Bajas',plantilla:'Plantilla de Personal',salarios:'Salarios Base',gestion_plazas:'Gestión de Plazas',contratos:'Contratos',sanciones:'Sanciones',nomina:'Nóminas',incidencias:'Incidencias',vacaciones:'Submayor de Vacaciones',configuracion:'Configuración',auditoria:'Log de Auditoría',backup:'Copia de Seguridad',asistencia:'Tomar Asistencia',historial_asistencia:'Historial de Asistencia',docs_legales:'Documentos Legales',preformas:'Preformas de Contratos'};
   document.getElementById('page-title').textContent=titles[section]||section;
   document.getElementById('topbar-actions').innerHTML='';
   const content=document.getElementById('app-content');
@@ -3623,6 +3624,7 @@ function renderNomina(container){
   document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-secondary btn-sm" onclick="exportNominaActual()">⬇️ Exportar</button>`;
   container.innerHTML=`<div class="tabs">
     <div class="tab active" onclick="switchNominaTab('nueva',this)">📋 Nómina del Mes</div>
+    <div class="tab" onclick="switchNominaTab('asistencia',this)">📅 Revisar Asistencia</div>
     <div class="tab" onclick="switchNominaTab('historico',this)">📚 Histórico</div>
   </div>
   <div id="nomina-nueva">
@@ -3634,9 +3636,18 @@ function renderNomina(container){
     </div></div>
     <div id="nomina-content"></div>
   </div>
+  <div id="nomina-asistencia" style="display:none">
+    <div class="card" style="margin-bottom:16px"><div class="card-body" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+      <div class="form-group"><label class="field-label">Mes</label>
+        <select id="rev-mes">${[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}" ${m===mes?'selected':''}>${new Date(2000,m-1).toLocaleString('es-ES',{month:'long'})}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="field-label">Año</label><input type="number" id="rev-ano" value="${ano}" style="width:100px"></div>
+      <button class="btn btn-primary" onclick="renderRevisionAsistencia()">🔄 Cargar</button>
+    </div></div>
+    <div id="rev-asistencia-content"></div>
+  </div>
   <div id="nomina-historico" style="display:none">
     <div class="card"><div class="table-wrap"><table>
-      <thead><tr><th>Período</th><th>Estado</th><th>Total Devengado</th><th>Empleados</th><th>Acciones</th></tr></thead>
+      <thead><tr><th>Período</th><th>Estado</th><th>Total Neto</th><th>Empleados</th><th>Acciones</th></tr></thead>
       <tbody id="hist-tbody"></tbody>
     </table></div></div>
   </div>`;
@@ -3646,8 +3657,10 @@ function renderNomina(container){
 function switchNominaTab(tab,el){
   document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.remove('active'));el.classList.add('active');
   document.getElementById('nomina-nueva').style.display=tab==='nueva'?'block':'none';
+  document.getElementById('nomina-asistencia').style.display=tab==='asistencia'?'block':'none';
   document.getElementById('nomina-historico').style.display=tab==='historico'?'block':'none';
   if(tab==='historico')renderHistoricoNominas();
+  if(tab==='asistencia')renderRevisionAsistencia();
 }
 
 function renderHistoricoNominas(){
@@ -3656,9 +3669,10 @@ function renderHistoricoNominas(){
   tbody.innerHTML=STATE.nominas.slice().reverse().map(n=>`<tr>
     <td><b>${n.mesNombre} ${n.ano}</b></td>
     <td><span class="badge badge-${n.estado==='aprobada'?'approved':n.estado==='pendiente'?'pending':'draft'}">${n.estado}</span></td>
-    <td>${fmtMoney(n.totalDevengado)}</td><td>${n.lineas?n.lineas.length:0} empleados</td>
-    <td>
+    <td>${fmtMoney(n.totalNeto||n.totalDevengado)}</td><td>${n.lineas?n.lineas.length:0} empleados</td>
+    <td style="display:flex;gap:4px;flex-wrap:wrap">
       <button class="btn btn-secondary btn-xs" onclick="verDetalleNomina('${n.id}')">👁️ Ver</button>
+      <button class="btn btn-secondary btn-xs" onclick="imprimirNominaCompleta('${n.id}')">🖨️</button>
       ${currentRole==='admin'&&n.estado==='aprobada'?`<button class="btn btn-warning btn-xs" onclick="reabrirNomina('${n.id}')">🔓</button>`:''}
       ${currentRole==='admin'&&n.estado==='pendiente'?`<button class="btn btn-success btn-xs" onclick="aprobarNomina('${n.id}')">✅</button>`:''}
     </td>
@@ -3674,67 +3688,135 @@ function cargarNomina(){
   const canEdit=currentRole==='contabilidad'||currentRole==='admin';
   const isReadOnly=nomina&&nomina.estado==='aprobada'&&currentRole!=='admin';
   const activos=getEmpleadosActivos();
+
+  // Calcular días presentes desde asistencia (o 100% para admin)
+  const getDiasTrab=(e)=>{
+    if(esDeptoAdmin(e.departamento)) return getDiasJornada(e.jornada);
+    const presentes=getDiasPresentesMes(e.id,periodoKey);
+    return presentes>0?presentes:getDiasJornada(e.jornada); // fallback si aún no hay asistencia del mes
+  };
+
   if(!nomina){
-    nomina={id:'N'+uid(),periodo:periodoKey,mes,ano,mesNombre,estado:'borrador',lineas:[],totalDevengado:0};
-    activos.forEach(e=>nomina.lineas.push({empleadoId:e.id,nominaId:nomina.id,diasTrabajados:getDiasJornada(e.jornada),horasExtras:0}));
+    nomina={id:'N'+uid(),periodo:periodoKey,mes,ano,mesNombre,estado:'borrador',lineas:[],totalDevengado:0,totalNeto:0};
+    activos.forEach(e=>nomina.lineas.push({empleadoId:e.id,nominaId:nomina.id,diasTrabajados:getDiasTrab(e),horasExtras:0,fuenteDias:esDeptoAdmin(e.departamento)?'auto':'asistencia'}));
     STATE.nominas.push(nomina);saveState();
     const {lineas:_l,...nominaHeader}=nomina;
     pushToSheets('nominas','insertar',nominaHeader,null);
     nomina.lineas.forEach(l=>pushToSheets('nominaLineas','insertar',l,null));
   } else {
-    // Deduplicar lineas existentes por si hay duplicados en Sheets
     const seen=new Set();
     nomina.lineas=nomina.lineas.filter(l=>{if(seen.has(l.empleadoId))return false;seen.add(l.empleadoId);return true;});
-    // Añadir solo empleados activos que no están en la nómina
     const newlyAdded=[];
-    activos.forEach(e=>{if(!nomina.lineas.find(l=>l.empleadoId===e.id)){const nl={empleadoId:e.id,nominaId:nomina.id,diasTrabajados:getDiasJornada(e.jornada),horasExtras:0};nomina.lineas.push(nl);newlyAdded.push(nl);}});
+    activos.forEach(e=>{
+      if(!nomina.lineas.find(l=>l.empleadoId===e.id)){
+        const nl={empleadoId:e.id,nominaId:nomina.id,diasTrabajados:getDiasTrab(e),horasExtras:0,fuenteDias:esDeptoAdmin(e.departamento)?'auto':'asistencia'};
+        nomina.lineas.push(nl);newlyAdded.push(nl);
+      }
+    });
     saveState();
     if(newlyAdded.length) newlyAdded.forEach(l=>pushToSheets('nominaLineas','insertar',l,null));
   }
+
+  // Advertencia si hay días de asistencia en el período
+  const hayAsistencia=STATE.asistencia.some(a=>a.cerrado&&a.fecha.startsWith(periodoKey));
+  const advertencia=!hayAsistencia&&!isReadOnly
+    ?`<div style="background:#FFF3CD;border:1px solid #FBBF24;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400E;">
+      ⚠️ No hay registros de asistencia cerrados para este período. Los días mostrados son los de jornada base. Registra la asistencia diaria antes de generar la nómina.
+      </div>`:'';
+
   let html=`<div class="card">
-    <div class="card-header"><h3>Nómina: ${mesNombre} ${ano}</h3><span class="badge badge-${nomina.estado==='aprobada'?'approved':nomina.estado==='pendiente'?'pending':'draft'}">${nomina.estado}</span></div>
+    <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <h3>Nómina: ${mesNombre} ${ano}</h3>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span class="badge badge-${nomina.estado==='aprobada'?'approved':nomina.estado==='pendiente'?'pending':'draft'}">${nomina.estado}</span>
+        <button class="btn btn-secondary btn-sm" onclick="imprimirNominaCompleta('${nomina.id}')">🖨️ Imprimir</button>
+      </div>
+    </div>
+    ${advertencia}
     <div class="table-wrap"><table class="nomina-table"><thead><tr>
-      <th>Empleado</th><th>Dpto</th><th>Jornada</th>
+      <th>Nº</th><th>Empleado</th><th>CI</th><th>Plaza</th>
+      <th data-tip="Días trabajados este mes">Días</th>
       <th data-tip="Salario base mensual">Sal.Base</th>
-      <th data-tip="Salario Base ÷ Jornada">Sal.Diario</th>
-      <th data-tip="Bonificación por antigüedad">Bonif.</th>
-      <th data-tip="Días efectivamente trabajados">Días Trab.</th>
-      <th data-tip="Horas fuera de jornada">H.Extras</th>
-      <th data-tip="(Sal.Diario÷8)×1.5">Val.HE</th>
-      <th data-tip="Incidencias del mes">Incidencias</th>
-      <th data-tip="Total a pagar">Total</th>
+      <th data-tip="Horas fuera de jornada">H.Ext</th>
+      <th data-tip="Total bruto devengado">Total Bruto</th>
+      <th data-tip="Seguridad Social 5%">SS 5%</th>
+      <th data-tip="Impuesto sobre Ingresos Personales">IRPF</th>
+      <th data-tip="Salario neto a pagar">Neto</th>
     </tr></thead><tbody>`;
 
-  nomina.lineas.forEach(l=>{
+  let totBruto=0,totSS=0,totIRPF=0,totNeto=0;
+  nomina.lineas.forEach((l,idx)=>{
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);if(!e)return;
-    const salBase=e.salarioBase||0;const jornC=getDiasJornada(e.jornada);
-    const jornadaDias=getDiasJornada(e.jornada);const salDiario=salBase/jornadaDias;const bon=calcBonificacion(salBase,e.fechaAlta);const bPct=getBonificacionPct(e.fechaAlta);
-    const recargo=1+(STATE.config.recargoHorasExtras/100);const valHE=(salDiario/8)*recargo;
-    const incMes=STATE.incidencias.filter(i=>i.empleadoId===e.id&&i.periodo===periodoKey);
-    const incLabel=incMes.map(i=>i.tipo).join(', ')||'—';
-    const ausAsist=getAusenciasDelPeriodo(e.id,periodoKey);
-    const tardAsist=getTardanzasDelPeriodo(e.id,periodoKey);
-    let diasPagados=l.diasTrabajados;
-    incMes.filter(i=>i.tipo==='Vacaciones').forEach(v=>{diasPagados+=STATE.config.diasPagadosPeriodo-parseInt(v.diasAfectados||0)});
-    const total=(salDiario*diasPagados)+bon+(l.horasExtras*valHE);l.totalDevengado=total;
-    html+=`<tr onclick="verFicha('${e.id}')" style="cursor:pointer" onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background=''">
-      <td><b>${e.nombres} ${e.apellidos}</b></td>
-      <td><span class="chip">${e.departamento}</span></td>
-      <td>${jornC}d</td><td>${fmtMoney(salBase)}</td><td>${fmtMoney(salDiario)}</td>
-      <td>${bPct?fmtMoney(bon)+'<small>('+bPct+'%)</small>':'—'}</td>
-      <td>${!isReadOnly&&canEdit?`<input type="number" id="dt-${e.id}" value="${l.diasTrabajados}" min="0" max="${jornC}" onchange="updateNominaLine('${nomina.id}','${e.id}')">`:l.diasTrabajados}</td>
-      <td>${!isReadOnly&&canEdit?`<input type="number" id="he-${e.id}" value="${l.horasExtras||0}" min="0" onchange="updateNominaLine('${nomina.id}','${e.id}')">`:l.horasExtras||0}</td>
-      <td>${fmtMoney(valHE)}</td><td><small>${incLabel}${ausAsist?` ❌<b>${ausAsist}d</b>`:""}${tardAsist?` 🕐<b>${tardAsist}</b>`:""}</small></td>
-      <td id="tot-${e.id}"><b>${fmtMoney(total)}</b></td>
+    const salBase=e.salarioBase||0;
+    const jornadaDias=getDiasJornada(e.jornada);
+    const salDiario=jornadaDias>0?salBase/jornadaDias:0;
+    const bon=calcBonificacion(salBase,e.fechaAlta);
+    const recargo=1+(STATE.config.recargoHorasExtras/100);
+    const valHE=(salDiario/8)*recargo;
+    const bruto=(salDiario*l.diasTrabajados)+bon+(l.horasExtras*valHE);
+    const ss=Math.round(bruto*0.05*100)/100;
+    const irpf=Math.round(calcularIRPF(bruto)*100)/100;
+    const neto=Math.round((bruto-ss-irpf)*100)/100;
+    l.totalDevengado=bruto;l.deduccionSS=ss;l.deduccionIRPF=irpf;l.totalNeto=neto;
+    totBruto+=bruto;totSS+=ss;totIRPF+=irpf;totNeto+=neto;
+
+    // Fuente de días: asistencia real o jornada base
+    const fuenteTag=esDeptoAdmin(e.departamento)
+      ?'<span title="Administración - 100% automático" style="font-size:10px;color:#6B7280">⚙️</span>'
+      :(getDiasPresentesMes(e.id,periodoKey)>0
+        ?'<span title="Desde asistencia" style="font-size:10px;color:#2D9060">📋</span>'
+        :'<span title="Jornada base (sin asistencia)" style="font-size:10px;color:#F59E0B">⚠️</span>');
+
+    html+=`<tr onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background=''">
+      <td style="color:var(--text-mid)">${idx+1}</td>
+      <td><b>${e.nombres} ${e.apellidos}</b><br><small style="color:var(--text-mid)">${e.departamento}</small></td>
+      <td style="font-size:12px">${e.carnet||'—'}</td>
+      <td style="font-size:12px">${e.plaza||'—'}</td>
+      <td style="text-align:center">
+        ${!isReadOnly&&canEdit
+          ?`<input type="number" id="dt-${e.id}" value="${l.diasTrabajados}" min="0" max="${jornadaDias*2}" style="width:56px;text-align:center" onchange="updateNominaLine('${nomina.id}','${e.id}')">`
+          :`<b>${l.diasTrabajados}</b>`}
+        ${fuenteTag}
+      </td>
+      <td>${fmtMoney(salBase)}</td>
+      <td style="text-align:center">
+        ${!isReadOnly&&canEdit
+          ?`<input type="number" id="he-${e.id}" value="${l.horasExtras||0}" min="0" style="width:50px;text-align:center" onchange="updateNominaLine('${nomina.id}','${e.id}')">`
+          :(l.horasExtras||0)}
+      </td>
+      <td id="bruto-${e.id}"><b>${fmtMoney(bruto)}</b></td>
+      <td id="ss-${e.id}" style="color:#B45309">${fmtMoney(ss)}</td>
+      <td id="irpf-${e.id}" style="color:#991B1B">${irpf>0?fmtMoney(irpf):'—'}</td>
+      <td id="neto-${e.id}" style="color:#2D6A4F;font-weight:700">${fmtMoney(neto)}</td>
     </tr>`;
   });
 
-  const totalG=nomina.lineas.reduce((s,l)=>s+(l.totalDevengado||0),0);nomina.totalDevengado=totalG;saveState();
-  html+=`<tr class="nomina-total-row"><td colspan="10" class="text-right"><b>TOTAL GENERAL:</b></td><td id="nom-total-general"><b>${fmtMoney(totalG)}</b></td></tr>`;
-  html+=`</tbody></table></div>`;
+  nomina.totalDevengado=totBruto;nomina.totalNeto=totNeto;saveState();
+  const ssEmpleador=Math.round(totBruto*0.14*100)/100;
+  html+=`</tbody>
+    <tfoot>
+      <tr style="background:#F9F5F0;font-weight:700;border-top:2px solid var(--gold)">
+        <td colspan="7" class="text-right">TOTALES:</td>
+        <td id="nom-tot-bruto">${fmtMoney(totBruto)}</td>
+        <td id="nom-tot-ss" style="color:#B45309">${fmtMoney(totSS)}</td>
+        <td id="nom-tot-irpf" style="color:#991B1B">${fmtMoney(totIRPF)}</td>
+        <td id="nom-tot-neto" style="color:#2D6A4F">${fmtMoney(totNeto)}</td>
+      </tr>
+      <tr style="background:#EFF6FF;font-size:12px;color:#1D4ED8">
+        <td colspan="11" style="padding:8px 12px">
+          📊 <b>Contribución SS empleador (14%):</b> ${fmtMoney(ssEmpleador)} &nbsp;|&nbsp;
+          <b>Costo total empresa:</b> ${fmtMoney(totBruto+ssEmpleador)} &nbsp;|&nbsp;
+          <b>Total neto a pagar:</b> ${fmtMoney(totNeto)}
+        </td>
+      </tr>
+    </tfoot>
+  </table></div>`;
+
   if(canEdit&&!isReadOnly){
-    html+=`<div class="card-footer" style="display:flex;gap:10px;justify-content:flex-end">
-      ${nomina.estado==='borrador'?`<button class="btn btn-gold" onclick="calcularNomina('${nomina.id}')">🧮 Calcular</button><button class="btn btn-primary" onclick="solicitarAprobacion('${nomina.id}')">📤 Solicitar Aprobación</button>`:''}
+    html+=`<div class="card-footer" style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+      ${nomina.estado==='borrador'?`
+        <button class="btn btn-gold" onclick="calcularNomina('${nomina.id}')">🧮 Recalcular desde Asistencia</button>
+        <button class="btn btn-primary" onclick="solicitarAprobacion('${nomina.id}')">📤 Solicitar Aprobación</button>`:''}
       ${nomina.estado==='pendiente'&&currentRole==='admin'?`<button class="btn btn-success" onclick="aprobarNomina('${nomina.id}')">✅ Aprobar Nómina</button>`:''}
     </div>`;
   }
@@ -3746,29 +3828,50 @@ function updateNominaLine(nomId,empId){
   const nomina=STATE.nominas.find(n=>n.id===nomId);if(!nomina)return;
   const linea=nomina.lineas.find(l=>l.empleadoId===empId);const e=STATE.empleados.find(x=>x.id===empId);if(!linea||!e)return;
   const dtEl=document.getElementById('dt-'+empId);const heEl=document.getElementById('he-'+empId);
-  if(dtEl)linea.diasTrabajados=parseFloat(dtEl.value)||0;if(heEl)linea.horasExtras=parseFloat(heEl.value)||0;
-  const salBase=e.salarioBase||0;const jornC=getDiasJornada(e.jornada);const jornadaDias=getDiasJornada(e.jornada);const salDiario=salBase/jornadaDias;
+  if(dtEl)linea.diasTrabajados=parseFloat(dtEl.value)||0;
+  if(heEl)linea.horasExtras=parseFloat(heEl.value)||0;
+  const salBase=e.salarioBase||0;const jornadaDias=getDiasJornada(e.jornada);const salDiario=jornadaDias>0?salBase/jornadaDias:0;
   const bon=calcBonificacion(salBase,e.fechaAlta);const recargo=1+(STATE.config.recargoHorasExtras/100);const valHE=(salDiario/8)*recargo;
-  const incMes=STATE.incidencias.filter(i=>i.empleadoId===empId&&i.periodo===nomina.periodo);
-  let diasPagados=linea.diasTrabajados;
-  incMes.filter(i=>i.tipo==='Vacaciones').forEach(v=>{diasPagados+=STATE.config.diasPagadosPeriodo-parseInt(v.diasAfectados||0)});
-  // Descontar días ausentes registrados en asistencia
-  const ausenciasReg=getAusenciasDelPeriodo(empId,nomina.periodo);
-  const diasConDescuento=Math.max(0,diasPagados-ausenciasReg);
-  linea.totalDevengado=(salDiario*diasConDescuento)+bon+(linea.horasExtras*valHE);saveState();
-  const totEl=document.getElementById('tot-'+empId);if(totEl)totEl.innerHTML=`<b>${fmtMoney(linea.totalDevengado)}</b>`;
-  const tg=nomina.lineas.reduce((s,l)=>s+(l.totalDevengado||0),0);nomina.totalDevengado=tg;
-  const tgEl=document.getElementById('nom-total-general');if(tgEl)tgEl.innerHTML=`<b>${fmtMoney(tg)}</b>`;saveState();
+  const bruto=(salDiario*linea.diasTrabajados)+bon+(linea.horasExtras*valHE);
+  const ss=Math.round(bruto*0.05*100)/100;
+  const irpf=Math.round(calcularIRPF(bruto)*100)/100;
+  const neto=Math.round((bruto-ss-irpf)*100)/100;
+  linea.totalDevengado=bruto;linea.deduccionSS=ss;linea.deduccionIRPF=irpf;linea.totalNeto=neto;
+  saveState();
+  const brutoEl=document.getElementById('bruto-'+empId);if(brutoEl)brutoEl.innerHTML=`<b>${fmtMoney(bruto)}</b>`;
+  const ssEl=document.getElementById('ss-'+empId);if(ssEl)ssEl.innerHTML=fmtMoney(ss);
+  const irpfEl=document.getElementById('irpf-'+empId);if(irpfEl)irpfEl.innerHTML=irpf>0?fmtMoney(irpf):'—';
+  const netoEl=document.getElementById('neto-'+empId);if(netoEl)netoEl.innerHTML=fmtMoney(neto);
+  // Actualizar totales
+  const totBruto=nomina.lineas.reduce((s,l)=>s+(l.totalDevengado||0),0);
+  const totSS=nomina.lineas.reduce((s,l)=>s+(l.deduccionSS||0),0);
+  const totIRPF=nomina.lineas.reduce((s,l)=>s+(l.deduccionIRPF||0),0);
+  const totNeto=nomina.lineas.reduce((s,l)=>s+(l.totalNeto||0),0);
+  nomina.totalDevengado=totBruto;nomina.totalNeto=totNeto;
+  const ssEmpleador=Math.round(totBruto*0.14*100)/100;
+  const el=(id,v)=>{const el=document.getElementById(id);if(el)el.innerHTML=v;};
+  el('nom-tot-bruto',fmtMoney(totBruto));el('nom-tot-ss',fmtMoney(totSS));el('nom-tot-irpf',fmtMoney(totIRPF));el('nom-tot-neto',fmtMoney(totNeto));
+  saveState();
 }
 
 function calcularNomina(nomId){
   const nomina=STATE.nominas.find(n=>n.id===nomId);if(!nomina)return;
+  // Actualizar días desde asistencia antes de calcular
+  nomina.lineas.forEach(l=>{
+    const e=STATE.empleados.find(x=>x.id===l.empleadoId);if(!e)return;
+    if(!esDeptoAdmin(e.departamento)){
+      const presentes=getDiasPresentesMes(e.id,nomina.periodo);
+      if(presentes>0)l.diasTrabajados=presentes;
+    }
+    // Actualizar el input si está visible
+    const dtEl=document.getElementById('dt-'+e.id);if(dtEl)dtEl.value=l.diasTrabajados;
+  });
   nomina.lineas.forEach(l=>updateNominaLine(nomId,l.empleadoId));
   saveState();
   const {lineas:_l,...nominaHeader}=nomina;
   pushToSheets('nominas','actualizar',nominaHeader,nomina.id);
   nomina.lineas.forEach(l=>{const lineaData={...l,nominaId:nomina.id};pushToSheets('nominaLineas','actualizar',lineaData,lineaData.id||null);});
-  showToast('Nómina calculada','success');
+  showToast('Nómina recalculada desde asistencia ✅','success');
 }
 
 function solicitarAprobacion(nomId){
@@ -3806,18 +3909,40 @@ function confirmarReopenNomina(nomId){
 
 function verDetalleNomina(nomId){
   const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
+  let totBruto=0,totNeto=0;
+  const rows=n.lineas.map(l=>{
+    const e=STATE.empleados.find(x=>x.id===l.empleadoId);
+    const bruto=l.totalDevengado||0;
+    const ss=l.deduccionSS!=null?l.deduccionSS:Math.round(bruto*0.05*100)/100;
+    const irpf=l.deduccionIRPF!=null?l.deduccionIRPF:Math.round(calcularIRPF(bruto)*100)/100;
+    const neto=l.totalNeto!=null?l.totalNeto:Math.round((bruto-ss-irpf)*100)/100;
+    totBruto+=bruto;totNeto+=neto;
+    return`<tr><td>${e?`${e.nombres} ${e.apellidos}`:'—'}</td><td>${e?e.plaza:'—'}</td><td style="text-align:center">${l.diasTrabajados}</td><td style="text-align:right">${fmtMoney(bruto)}</td><td style="text-align:right;color:#B45309">${fmtMoney(ss)}</td><td style="text-align:right;color:#991B1B">${irpf>0?fmtMoney(irpf):'—'}</td><td style="text-align:right;color:#2D6A4F;font-weight:700">${fmtMoney(neto)}</td></tr>`;
+  }).join('');
   openModal(`Nómina: ${n.mesNombre} ${n.ano}`,
-    `<p><b>Estado:</b> <span class="badge badge-${n.estado}">${n.estado}</span> | <b>Total:</b> <span style="font-size:20px;color:var(--burgundy)">${fmtMoney(n.totalDevengado)}</span></p>
-    <div class="divider"></div>
-    <div class="table-wrap"><table><thead><tr><th>Empleado</th><th>Días</th><th>H.Ext</th><th>Total</th></tr></thead><tbody>
-    ${n.lineas.map(l=>{const e=STATE.empleados.find(x=>x.id===l.empleadoId);return`<tr><td>${e?`${e.nombres} ${e.apellidos}`:'—'}</td><td>${l.diasTrabajados}</td><td>${l.horasExtras||0}</td><td>${fmtMoney(l.totalDevengado)}</td></tr>`}).join('')}
+    `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+      <span><b>Estado:</b> <span class="badge badge-${n.estado==='aprobada'?'approved':n.estado==='pendiente'?'pending':'draft'}">${n.estado}</span></span>
+      <span><b>Bruto:</b> <span style="color:var(--burgundy);font-weight:700">${fmtMoney(totBruto)}</span></span>
+      <span><b>Neto:</b> <span style="color:#2D6A4F;font-weight:700">${fmtMoney(totNeto)}</span></span>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Empleado</th><th>Plaza</th><th>Días</th><th>Bruto</th><th>SS 5%</th><th>IRPF</th><th>Neto</th></tr></thead><tbody>
+    ${rows}
     </tbody></table></div>`,
-    `<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button><button class="btn btn-gold btn-sm" onclick="exportNomina('${nomId}')">⬇️ Excel</button>`,'lg');
+    `<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+     <button class="btn btn-secondary btn-sm" onclick="imprimirNominaCompleta('${nomId}')">🖨️ Imprimir</button>
+     <button class="btn btn-gold btn-sm" onclick="exportNomina('${nomId}')">⬇️ Excel</button>`,'lg');
 }
 
 function exportNomina(nomId){
   const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
-  exportToExcel(n.lineas.map(l=>{const e=STATE.empleados.find(x=>x.id===l.empleadoId);return{Empleado:e?`${e.nombres} ${e.apellidos}`:'—',Departamento:(e?e.departamento:'—'),'Días Trabajados':l.diasTrabajados,'Horas Extras':l.horasExtras||0,'Total Devengado':l.totalDevengado||0}}),`Nomina_${n.mesNombre}_${n.ano}`);
+  exportToExcel(n.lineas.map(l=>{
+    const e=STATE.empleados.find(x=>x.id===l.empleadoId);
+    const bruto=l.totalDevengado||0;
+    const ss=l.deduccionSS!=null?l.deduccionSS:Math.round(bruto*0.05*100)/100;
+    const irpf=l.deduccionIRPF!=null?l.deduccionIRPF:Math.round(calcularIRPF(bruto)*100)/100;
+    const neto=l.totalNeto!=null?l.totalNeto:Math.round((bruto-ss-irpf)*100)/100;
+    return{Empleado:e?`${e.nombres} ${e.apellidos}`:'—',CI:e?e.carnet:'—',Plaza:e?e.plaza:'—',Departamento:e?e.departamento:'—','Días Trabajados':l.diasTrabajados,'Horas Extras':l.horasExtras||0,'Total Bruto':bruto,'SS (5%)':ss,'IRPF':irpf,'Total Neto':neto};
+  }),`Nomina_${n.mesNombre}_${n.ano}`);
   showToast('Exportado','success');
 }
 
@@ -3826,6 +3951,221 @@ function exportNominaActual(){
   const ano=parseInt((document.getElementById('nom-ano')?document.getElementById('nom-ano').value:null)||new Date().getFullYear());
   const n=STATE.nominas.find(x=>x.periodo===`${ano}-${String(mes).padStart(2,'0')}`);
   if(n)exportNomina(n.id);else showToast('No hay nómina cargada','warning');
+}
+
+// ══════════════════════════════════════════════════
+// IMPRESIÓN DE NÓMINA
+// ══════════════════════════════════════════════════
+function imprimirNominaCompleta(nomId){
+  const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
+  const empresa=STATE.config.empresa||'La Catedral S.R.L.';
+  const fechaImpresion=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  let totBruto=0,totSS=0,totIRPF=0,totNeto=0;
+  const rows=n.lineas.map((l,i)=>{
+    const e=STATE.empleados.find(x=>x.id===l.empleadoId);if(!e)return'';
+    const bruto=l.totalDevengado||0;
+    const ss=l.deduccionSS!=null?l.deduccionSS:Math.round(bruto*0.05*100)/100;
+    const irpf=l.deduccionIRPF!=null?l.deduccionIRPF:Math.round(calcularIRPF(bruto)*100)/100;
+    const neto=l.totalNeto!=null?l.totalNeto:Math.round((bruto-ss-irpf)*100)/100;
+    totBruto+=bruto;totSS+=ss;totIRPF+=irpf;totNeto+=neto;
+    const fmt=v=>v>0?v.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
+    return`<tr>
+      <td style="text-align:center">${i+1}</td>
+      <td>${e.nombres} ${e.apellidos}</td>
+      <td style="text-align:center">${e.carnet||'—'}</td>
+      <td>${e.plaza||'—'}</td>
+      <td style="text-align:center">${l.diasTrabajados}</td>
+      <td style="text-align:right">${fmt(bruto)}</td>
+      <td style="text-align:right">${fmt(ss)}</td>
+      <td style="text-align:right">${irpf>0?fmt(irpf):'—'}</td>
+      <td style="text-align:right"><b>${fmt(neto)}</b></td>
+      <td style="width:80px;border-bottom:1px solid #999;"></td>
+    </tr>`;
+  }).join('');
+  const ssEmpleador=Math.round(totBruto*0.14*100)/100;
+  const fmt=v=>v.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  const w=window.open('','_blank','width=1000,height=750');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>Nómina ${n.mesNombre} ${n.ano} — ${empresa}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:'Times New Roman',serif;font-size:11px;color:#000;padding:20px 24px;}
+    h1{font-size:16px;text-align:center;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;}
+    .subtitle{text-align:center;font-size:11px;margin-bottom:4px;}
+    .header-block{text-align:center;margin-bottom:16px;border-bottom:2px solid #000;padding-bottom:10px;}
+    .meta{display:flex;justify-content:space-between;font-size:10px;margin-bottom:12px;}
+    table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:10px;}
+    th{background:#222;color:white;padding:5px 4px;text-align:center;font-size:9px;border:1px solid #333;}
+    td{padding:5px 4px;border:1px solid #ccc;vertical-align:middle;}
+    tr:nth-child(even){background:#F9F9F9;}
+    .tfoot-row td{background:#F0F0F0;font-weight:bold;border-top:2px solid #000;}
+    .totales-block{font-size:11px;border:1px solid #000;padding:10px 14px;margin-bottom:20px;border-radius:4px;}
+    .totales-block table{font-size:11px;margin:0;}
+    .totales-block td{border:none;padding:3px 8px;}
+    .totales-block .lbl{color:#333;}
+    .totales-block .val{font-weight:bold;text-align:right;}
+    .firmas{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:30px;}
+    .firma-box{text-align:center;}
+    .firma-line{border-top:1px solid #000;margin-bottom:4px;margin-top:40px;}
+    .firma-label{font-size:10px;}
+    .sello{border:2px dashed #999;height:60px;width:80px;margin:0 auto;display:flex;align-items:center;justify-content:center;font-size:9px;color:#999;border-radius:50%;}
+    .no-print{text-align:center;margin-bottom:16px;}
+    .no-print button{margin:0 6px;padding:8px 20px;font-size:13px;cursor:pointer;border:1px solid #333;border-radius:4px;background:white;}
+    .nota{font-size:9px;color:#555;margin-bottom:8px;font-style:italic;}
+    @media print{.no-print{display:none!important;} body{padding:10px 12px;} }
+  </style></head><body>
+  <div class="no-print">
+    <button onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
+    <button onclick="window.close()">✕ Cerrar</button>
+  </div>
+  <div class="header-block">
+    <h1>${empresa}</h1>
+    <div class="subtitle">NÓMINA DE SALARIOS — <b>${(n.mesNombre||'').toUpperCase()} ${n.ano}</b></div>
+    <div class="subtitle">Estado: ${n.estado.toUpperCase()} &nbsp;|&nbsp; ${n.lineas?n.lineas.length:0} trabajadores</div>
+  </div>
+  <div class="meta">
+    <span>Fecha de emisión: ${fechaImpresion}</span>
+    <span>Período: ${n.periodo}</span>
+  </div>
+  <table>
+    <thead><tr>
+      <th>Nº</th><th style="text-align:left">Nombre y Apellidos</th><th>Carnet</th><th style="text-align:left">Plaza</th>
+      <th>Días</th><th>Total Bruto</th><th>SS (5%)</th><th>IRPF</th><th>NETO</th><th>Firma</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr class="tfoot-row">
+      <td colspan="4" style="text-align:right">TOTALES:</td>
+      <td style="text-align:center">—</td>
+      <td style="text-align:right">${fmt(totBruto)}</td>
+      <td style="text-align:right">${fmt(totSS)}</td>
+      <td style="text-align:right">${fmt(totIRPF)}</td>
+      <td style="text-align:right"><b>${fmt(totNeto)}</b></td>
+      <td></td>
+    </tr></tfoot>
+  </table>
+  <div class="totales-block">
+    <table><tbody>
+      <tr><td class="lbl">Total bruto devengado:</td><td class="val">${fmt(totBruto)} CUP</td>
+          <td style="width:40px"></td>
+          <td class="lbl">Contribución SS Empleador (14%):</td><td class="val">${fmt(ssEmpleador)} CUP</td></tr>
+      <tr><td class="lbl">Total deducciones SS empleados:</td><td class="val">${fmt(totSS)} CUP</td>
+          <td></td>
+          <td class="lbl">Costo total empresa:</td><td class="val">${fmt(totBruto+ssEmpleador)} CUP</td></tr>
+      <tr><td class="lbl">Total IRPF:</td><td class="val">${fmt(totIRPF)} CUP</td>
+          <td></td><td></td><td></td></tr>
+      <tr style="background:#E8F5E9"><td class="lbl"><b>TOTAL NETO A PAGAR:</b></td><td class="val" style="font-size:14px">${fmt(totNeto)} CUP</td>
+          <td></td><td></td><td></td></tr>
+    </tbody></table>
+  </div>
+  <p class="nota">Deducciones calculadas según Ley 113/2012 (IRPF, escala progresiva) y legislación vigente de Seguridad Social (5% empleado, 14% empleador).</p>
+  <div class="firmas">
+    <div class="firma-box">
+      <div class="firma-line"></div>
+      <div class="firma-label">Director General</div>
+    </div>
+    <div class="firma-box">
+      <div class="firma-line"></div>
+      <div class="firma-label">Jefe de Recursos Humanos</div>
+    </div>
+  </div>
+  <div style="text-align:center;margin-top:20px"><div class="sello">SELLO</div></div>
+  </body></html>`);
+  w.document.close();
+}
+
+// ══════════════════════════════════════════════════
+// REVISIÓN DE ASISTENCIA (Contabilidad)
+// ══════════════════════════════════════════════════
+function renderRevisionAsistencia(){
+  const mesEl=document.getElementById('rev-mes');
+  const anoEl=document.getElementById('rev-ano');
+  if(!mesEl||!anoEl)return;
+  const mes=parseInt(mesEl.value);const ano=parseInt(anoEl.value);
+  const periodoKey=`${ano}-${String(mes).padStart(2,'0')}`;
+  const mesNombre=new Date(ano,mes-1).toLocaleString('es-ES',{month:'long'});
+  const activos=getEmpleadosActivos();
+  // Registros cerrados del mes
+  const regsDelMes=STATE.asistencia.filter(a=>a.cerrado&&a.fecha.startsWith(periodoKey));
+  const totalDias=regsDelMes.length;
+  const cont=document.getElementById('rev-asistencia-content');
+  if(!cont)return;
+
+  if(!totalDias){
+    cont.innerHTML=`<div class="card"><div class="card-body" style="text-align:center;padding:40px;color:var(--text-mid)">
+      <div style="font-size:40px;margin-bottom:12px">📅</div>
+      <h4>Sin registros de asistencia para ${mesNombre} ${ano}</h4>
+      <p>El jefe de turno aún no ha cerrado ningún turno de este período.</p>
+    </div></div>`;
+    return;
+  }
+
+  // Para admin: mostrar total días del mes
+  const diasCalendario=getDiasCalendarioMes(ano,mes);
+  // Tabla por empleado
+  const noAdmin=activos.filter(e=>!esDeptoAdmin(e.departamento));
+  const admin=activos.filter(e=>esDeptoAdmin(e.departamento));
+
+  const buildRow=(e,esAdmin)=>{
+    if(esAdmin){
+      const jornadaDias=getDiasJornada(e.jornada);
+      return`<tr>
+        <td><b>${e.nombres} ${e.apellidos}</b><br><small>${e.departamento}</small></td>
+        <td>${e.plaza||'—'}</td>
+        <td style="text-align:center"><span style="color:#2D6A4F;font-weight:700">${jornadaDias}</span></td>
+        <td style="text-align:center">—</td>
+        <td style="text-align:center">—</td>
+        <td><span style="background:#D8F3DC;color:#2D6A4F;padding:2px 8px;border-radius:10px;font-size:11px">⚙️ Admin (100%)</span></td>
+      </tr>`;
+    }
+    const presentes=getDiasPresentesMes(e.id,periodoKey);
+    const noReg=totalDias-presentes;
+    const incMes=STATE.incidencias.filter(i=>i.empleadoId===e.id&&i.periodo===periodoKey);
+    const incLabel=incMes.length?incMes.map(i=>`<span style="background:#EFF6FF;color:#1D4ED8;padding:1px 5px;border-radius:8px;font-size:10px;margin:1px">${i.tipo}</span>`).join(''):
+      (noReg>0?`<span style="background:#FFF3CD;color:#92400E;padding:1px 5px;border-radius:8px;font-size:10px;">⚠️ ${noReg}d sin asignar</span>`:'');
+    return`<tr>
+      <td><b>${e.nombres} ${e.apellidos}</b><br><small>${e.departamento}</small></td>
+      <td>${e.plaza||'—'}</td>
+      <td style="text-align:center;color:#2D6A4F;font-weight:700">✅ ${presentes}</td>
+      <td style="text-align:center;color:#6B7280">${noReg>0?noReg:'-'}</td>
+      <td style="text-align:center">${totalDias}</td>
+      <td>${incLabel}</td>
+    </tr>`;
+  };
+
+  cont.innerHTML=`
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-body" style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+        <div style="background:#D8F3DC;border-radius:10px;padding:10px 18px;text-align:center">
+          <div style="font-size:22px;font-weight:800;color:#2D6A4F">${totalDias}</div>
+          <div style="font-size:11px;color:#2D6A4F">Turnos cerrados</div>
+        </div>
+        <div style="background:#EFF6FF;border-radius:10px;padding:10px 18px;text-align:center">
+          <div style="font-size:22px;font-weight:800;color:#1D4ED8">${noAdmin.length}</div>
+          <div style="font-size:11px;color:#1D4ED8">En turno rotativo</div>
+        </div>
+        <div style="background:#F3F4F6;border-radius:10px;padding:10px 18px;text-align:center">
+          <div style="font-size:22px;font-weight:800;color:#374151">${admin.length}</div>
+          <div style="font-size:11px;color:#374151">Admin (100%)</div>
+        </div>
+        <div style="flex:1;font-size:12px;color:var(--text-mid)">
+          ℹ️ Los días <b>sin asignar</b> corresponden a turnos donde el empleado no fue marcado como presente. Registra incidencias (vacaciones, enfermedad, etc.) desde el módulo de <b>Incidencias</b> para completar el historial.
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>Resumen de Asistencia — ${mesNombre} ${ano}</h3></div>
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th>Empleado</th><th>Plaza</th>
+          <th>✅ Presentes</th><th>— Sin registrar</th><th>Turnos totales</th><th>Incidencias</th>
+        </tr></thead>
+        <tbody>
+          ${noAdmin.map(e=>buildRow(e,false)).join('')}
+          ${admin.map(e=>buildRow(e,true)).join('')}
+        </tbody>
+      </table></div>
+    </div>`;
 }
 
 // ══════════════════════════════════════════════════
@@ -4185,25 +4525,12 @@ function renderCardJT(){
       +dc.icon+' '+d+' '+(all?'✓':(dd+'/'+de.length))+'</div>';
   }).join('');
 
-  const estados=[
-    {id:'P',label:'Presente',icon:'✅',color:'#2D6A4F',bg:'#D8F3DC'},
-    {id:'T',label:'Tardanza',icon:'🕐',color:'#B45309',bg:'#FEF3C7'},
-    {id:'A',label:'Ausente', icon:'❌',color:'#991B1B',bg:'#FEE2E2'},
-  ];
   const ro=_jt_readonly;
-
-  const btnsSaltar=!estadoActual&&!ro
-    ? '<button onclick="nextCardJT()" class="btn btn-secondary" style="flex:2;opacity:0.6">Saltar →</button>'
-    : '';
-  const btnSig=estadoActual||ro
-    ? '<button onclick="nextCardJT()" class="btn btn-primary" style="flex:2">'
-      +(_jt_idx===total-1?'✅ Ver resumen':'Siguiente →')+'</button>'
-    : '';
 
   area.innerHTML=
     '<div style="margin-bottom:16px">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:13px;color:var(--text-mid)">'
-    +'<span><b>'+done+'</b> de <b>'+total+'</b> registrados</span>'
+    +'<span><b>'+done+'</b> de <b>'+total+'</b> marcados como presentes</span>'
     +'<span style="color:'+C.color+';font-weight:700;">'+dept+' '+C.icon+' — '+deptIdx+' / '+deptEmps.length+'</span></div>'
     +'<div style="background:#E5E7EB;border-radius:999px;height:8px;overflow:hidden">'
     +'<div style="background:'+C.color+';height:100%;width:'+pct+'%;transition:width 0.4s;border-radius:999px"></div></div></div>'
@@ -4215,38 +4542,51 @@ function renderCardJT(){
     +'<div style="font-size:26px;font-weight:800;color:var(--text-dark);line-height:1.2;margin-bottom:6px;font-family:\'Playfair Display\',serif">'+emp.nombres+' '+emp.apellidos+'</div>'
     +'<div style="font-size:14px;color:var(--text-mid)">'+emp.plaza+'</div></div>'
 
-    +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">'
-    +estados.map(es=>'<button '+(ro?'':('onclick="setEstadoJT(\''+emp.id+'\',\''+es.id+'\')"'))+' style="'
-      +'padding:18px 8px;border-radius:14px;border:3px solid '+(estadoActual===es.id?es.color:'#E5E7EB')+';'
-      +'background:'+(estadoActual===es.id?es.bg:'white')+';cursor:'+(ro?'default':'pointer')+';'
-      +'font-size:13px;font-weight:700;color:'+(estadoActual===es.id?es.color:'#6B7280')+';'
-      +'transition:all 0.15s;display:flex;flex-direction:column;align-items:center;gap:6px;'
-      +(estadoActual===es.id?'transform:scale(1.05);box-shadow:0 4px 16px '+es.color+'44;':'')
-      +(ro?'opacity:0.85;':'')
-      +'">'
-      +'<span style="font-size:28px">'+es.icon+'</span>'
-      +'<span>'+es.label+'</span></button>').join('')
-    +'</div>'
-
-    +'<div id="jt-motivo-wrap" style="'+(estadoActual&&estadoActual!=='P'?'':'display:none')+';margin-bottom:16px">'
-    +'<input type="text" id="jt-motivo" value="'+motivoActual+'" placeholder="Motivo (opcional)..." '
-    +(ro?'readonly':'')+' style="width:100%;padding:12px 16px;font-size:14px;border:2px solid #E5E7EB;'
-    +'border-radius:10px;box-sizing:border-box;'+(ro?'background:var(--cream);':'')
-    +'" oninput="if(_jt_estados[\''+emp.id+'\'])_jt_estados[\''+emp.id+'\'].motivo=this.value;autoGuardarTurnoJT()">'
-    +'</div>'
+    // Botón grande PRESENTE
+    +(ro
+      ? '<div style="text-align:center;margin-bottom:16px">'
+        +(estadoActual==='P'
+          ? '<div style="padding:20px;background:#D8F3DC;border-radius:14px;border:3px solid #2D6A4F;font-size:16px;font-weight:700;color:#2D6A4F;">✅ Presente</div>'
+          : '<div style="padding:20px;background:#F3F4F6;border-radius:14px;border:3px solid #D1D5DB;font-size:16px;font-weight:700;color:#6B7280;">— Sin registrar</div>'
+        )+'</div>'
+      : '<button onclick="setEstadoJT(\''+emp.id+'\',\'P\')" style="'
+        +'width:100%;padding:22px 8px;border-radius:14px;margin-bottom:12px;'
+        +'border:3px solid '+(estadoActual==='P'?'#2D6A4F':'#E5E7EB')+';'
+        +'background:'+(estadoActual==='P'?'#D8F3DC':'white')+';cursor:pointer;'
+        +'font-size:18px;font-weight:800;color:'+(estadoActual==='P'?'#2D6A4F':'#9CA3AF')+';'
+        +'transition:all 0.15s;display:flex;flex-direction:column;align-items:center;gap:8px;'
+        +(estadoActual==='P'?'transform:scale(1.02);box-shadow:0 4px 20px #2D6A4F44;':'')
+        +'">'
+        +'<span style="font-size:36px">✅</span>'
+        +'<span>PRESENTE</span>'
+        +(estadoActual==='P'?'<span style="font-size:12px;font-weight:400;opacity:0.7">Toca de nuevo para quitar</span>':'')
+        +'</button>'
+    )
 
     +'<div style="display:flex;gap:10px;align-items:center">'
     +'<button onclick="prevCardJT()" class="btn btn-secondary" style="flex:1" '+(_jt_idx===0?'disabled':'')+'>← Anterior</button>'
-    +btnsSaltar+btnSig
+    +(!ro
+      ? '<button onclick="nextCardJT()" class="btn btn-secondary" style="flex:2;color:var(--text-mid)">'
+        +(estadoActual==='P'?'Siguiente →':(_jt_idx===total-1?'Ver resumen →':'No vino → Siguiente'))+'</button>'
+      : '<button onclick="nextCardJT()" class="btn btn-primary" style="flex:2">'
+        +(_jt_idx===total-1?'✅ Ver resumen':'Siguiente →')+'</button>'
+    )
     +'</div>';
 }
 
 function setEstadoJT(empId,estado){
   if(_jt_readonly)return;
-  _jt_estados[empId]={estado,motivo:(_jt_estados[empId]||{}).motivo||''};
+  // Toggle: si ya está marcado con el mismo estado, quitar la marca
+  if((_jt_estados[empId]||{}).estado===estado){
+    delete _jt_estados[empId];
+    autoGuardarTurnoJT();
+    renderCardJT();
+    return;
+  }
+  _jt_estados[empId]={estado,motivo:''};
   autoGuardarTurnoJT();
   renderCardJT();
-  if(estado==='P') setTimeout(nextCardJT,500);
+  if(estado==='P') setTimeout(nextCardJT,400);
 }
 
 function nextCardJT(){
@@ -4263,11 +4603,14 @@ function prevCardJT(){
 
 function autoGuardarTurnoJT(){
   let reg=STATE.asistencia.find(a=>a.fecha===_jt_hoy);
-  const lineas=_jt_emps.map(e=>({
-    empleadoId:e.id,
-    estado:(_jt_estados[e.id]||{}).estado||'P',
-    motivo:(_jt_estados[e.id]||{}).motivo||''
-  }));
+  // Solo guardar empleados que fueron marcados explícitamente como Presente
+  const lineas=_jt_emps
+    .filter(e=>_jt_estados[e.id])
+    .map(e=>({
+      empleadoId:e.id,
+      estado:_jt_estados[e.id].estado,
+      motivo:_jt_estados[e.id].motivo||''
+    }));
   if(!reg){reg={id:'AS'+uid(),fecha:_jt_hoy,cerrado:false,registradoPor:getRoleName(currentRole),lineas};STATE.asistencia.push(reg);}
   else reg.lineas=lineas;
   saveState();
@@ -4279,8 +4622,7 @@ function renderSummaryJT(){
   const total=_jt_emps.length;
   const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
   const A=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='A').length;
-  const T=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='T').length;
-  const pendientes=total-P-A-T;
+  const sinRegistrar=total-P;
   const reg=STATE.asistencia.find(a=>a.fecha===_jt_hoy);
   const cerrado=reg&&reg.cerrado;
 
@@ -4289,13 +4631,12 @@ function renderSummaryJT(){
     if(!de.length)return'';
     const C=DEPT_COLORS_JT[dept]||{bg:'#F3F4F6',color:'#374151',icon:''};
     const rows=de.map(e=>{
-      const st=_jt_estados[e.id]||{estado:'P',motivo:''};
-      const icon={P:'✅',A:'❌',T:'🕐'}[st.estado]||'—';
-      const col={P:'#2D6A4F',A:'#991B1B',T:'#B45309'}[st.estado]||'#374151';
+      const st=_jt_estados[e.id];
+      const presente=st&&st.estado==='P';
       return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F5F5F5">'
         +'<div><div style="font-weight:600;font-size:14px">'+e.nombres+' '+e.apellidos+'</div>'
-        +'<div style="font-size:12px;color:var(--text-mid)">'+e.plaza+(st.motivo?' — '+st.motivo:'')+'</div></div>'
-        +'<span style="color:'+col+';font-size:22px;flex-shrink:0">'+icon+'</span></div>';
+        +'<div style="font-size:12px;color:var(--text-mid)">'+e.plaza+'</div></div>'
+        +'<span style="font-size:22px;flex-shrink:0">'+(presente?'<span style="color:#2D6A4F">✅</span>':'<span style="color:#D1D5DB">—</span>')+'</span></div>';
     }).join('');
     return '<div style="margin-bottom:16px">'
       +'<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:'+C.bg+';border-radius:10px;margin-bottom:6px">'
@@ -4306,15 +4647,15 @@ function renderSummaryJT(){
 
   area.innerHTML=
     '<div style="text-align:center;margin-bottom:24px">'
-    +'<div style="font-size:40px;margin-bottom:8px">'+(pendientes>0?'⚠️':'🎉')+'</div>'
-    +'<div style="font-size:20px;font-weight:700">'+(pendientes>0?pendientes+' sin registrar':'¡Todo registrado!')+'</div>'
+    +'<div style="font-size:40px;margin-bottom:8px">'+(sinRegistrar>0?'⚠️':'🎉')+'</div>'
+    +'<div style="font-size:20px;font-weight:700">'+(sinRegistrar>0?sinRegistrar+' sin registrar':'¡Todo registrado!')+'</div>'
     +'<div style="font-size:13px;color:var(--text-mid);margin-top:4px">Turno del '+new Date(_jt_hoy+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})+'</div></div>'
 
-    +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:24px">'
+    +'<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:24px">'
     +'<div style="background:#D8F3DC;border-radius:12px;padding:14px;text-align:center"><div style="font-size:32px;font-weight:800;color:#2D6A4F">'+P+'</div><div style="font-size:12px;color:#2D6A4F;font-weight:600">✅ Presentes</div></div>'
-    +'<div style="background:#FEE2E2;border-radius:12px;padding:14px;text-align:center"><div style="font-size:32px;font-weight:800;color:#991B1B">'+A+'</div><div style="font-size:12px;color:#991B1B;font-weight:600">❌ Ausentes</div></div>'
-    +'<div style="background:#FEF3C7;border-radius:12px;padding:14px;text-align:center"><div style="font-size:32px;font-weight:800;color:#B45309">'+T+'</div><div style="font-size:12px;color:#B45309;font-weight:600">🕐 Tardanzas</div></div>'
+    +'<div style="background:#F3F4F6;border-radius:12px;padding:14px;text-align:center"><div style="font-size:32px;font-weight:800;color:#6B7280">'+sinRegistrar+'</div><div style="font-size:12px;color:#6B7280;font-weight:600">— Sin registrar</div></div>'
     +'</div>'
+    +'<div style="background:#FFF3CD;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#856404">ℹ️ Los empleados sin registrar serán gestionados por Contabilidad (vacaciones, enfermedad, etc.) antes de generar la nómina.</div>'
 
     +'<div style="background:white;border-radius:14px;padding:16px;margin-bottom:20px;border:1px solid var(--border-light)">'+listaDepts+'</div>'
 
@@ -4329,17 +4670,22 @@ function renderSummaryJT(){
 function cerrarTurnoJT(){
   autoGuardarTurnoJT();
   const reg=STATE.asistencia.find(a=>a.fecha===_jt_hoy);
-  if(!reg)return;
-  const A=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='A').length;
-  const T=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='T').length;
+  if(!reg){
+    // Crear registro aunque no haya nadie marcado
+    const newReg={id:'AS'+uid(),fecha:_jt_hoy,cerrado:false,registradoPor:getRoleName(currentRole),lineas:[]};
+    STATE.asistencia.push(newReg);
+    saveState();
+    return cerrarTurnoJT();
+  }
   const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
-  confirmAction('¿Confirmar cierre del turno? '+A+' ausente(s), '+T+' tardanza(s). <b>No se podrá modificar.</b>',function(){
+  const sinReg=_jt_emps.length-P;
+  confirmAction('¿Confirmar cierre del turno? <b>'+P+' presentes</b>, '+sinReg+' sin registrar (Contabilidad asignará estados). <b>No se podrá modificar.</b>',function(){
     reg.cerrado=true;
     reg.horaCierre=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
     _jt_readonly=true;
     saveState();
     pushToSheets('asistencia','insertar',reg);
-    addAuditLog('ASISTENCIA','Turno '+_jt_hoy+' cerrado. P:'+P+' A:'+A+' T:'+T);
+    addAuditLog('ASISTENCIA','Turno '+_jt_hoy+' cerrado. Presentes:'+P+' Sin registrar:'+sinReg);
     showToast('Turno cerrado y guardado ✅','success',4000);
     document.getElementById('topbar-actions').innerHTML='<span class="badge badge-approved" style="padding:8px 16px;font-size:13px;">✅ Turno cerrado</span>';
     renderSummaryJT();
@@ -4697,6 +5043,36 @@ function getTardanzasDelPeriodo(empId, periodo){
     const linea = (reg.lineas||[]).find(l => l.empleadoId === empId);
     return linea && linea.estado === 'T';
   }).length;
+}
+
+// Días marcados como Presente en asistencia para un periodo (YYYY-MM)
+function getDiasPresentesMes(empId, periodo){
+  return STATE.asistencia.filter(reg=>{
+    if(!reg.cerrado) return false;
+    if(!reg.fecha.startsWith(periodo)) return false;
+    const linea=(reg.lineas||[]).find(l=>l.empleadoId===empId);
+    return linea&&linea.estado==='P';
+  }).length;
+}
+
+// Días calendario del mes
+function getDiasCalendarioMes(ano,mes){
+  return new Date(ano,mes,0).getDate();
+}
+
+// IRPF Cuba — Ley 113/2012 — escala progresiva mensual
+function calcularIRPF(salario){
+  if(!salario||salario<=0) return 0;
+  if(salario<=10000) return 0;
+  if(salario<=20000) return (salario-10000)*0.05;
+  if(salario<=30000) return 500+(salario-20000)*0.15;
+  if(salario<=50000) return 2000+(salario-30000)*0.20;
+  return 6000+(salario-50000)*0.30;
+}
+
+// Departamento de administración (no registrado por jefe de turno → 100% asistencia)
+function esDeptoAdmin(dept){
+  return DEPTS_EXCLUIDOS_JEFE_TURNO.includes(dept);
 }
 
 
