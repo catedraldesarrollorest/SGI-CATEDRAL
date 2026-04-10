@@ -1065,6 +1065,12 @@ async function sincronizarDesdeSheets() {
       } else if (tabla === 'preformas') {
         if(!STATE.preformas) STATE.preformas = {};
         data.forEach(r=>{ if(r.grupo) STATE.preformas[r.grupo]={disciplina:r.disciplina||'',caracteristicas:r.caracteristicas||''}; });
+      } else if (tabla === 'alertasJuridico') {
+        // Merge: conservar alertas locales no leídas que aún no llegaron a Supabase
+        if(!STATE.alertasJuridico) STATE.alertasJuridico=[];
+        const remoteIds=new Set(data.map(a=>a.id).filter(Boolean));
+        const soloLocales=STATE.alertasJuridico.filter(a=>a.id&&!remoteIds.has(a.id)&&!a.leida);
+        STATE.alertasJuridico=[...data,...soloLocales];
       } else {
         STATE[tabla] = data;
       }
@@ -1895,52 +1901,34 @@ function renderDashboard(container){
     const alertasTraslado = STATE.alertasJuridico.filter(function(a){return !a.leida&&a.tipo==='TRASLADO';});
     if(alertasNuevos.length){
       alertasHTML+='<div class="alert-semaforo semaforo-red" style="margin-bottom:16px;">'
-        +'<div class="alert-semaforo-header">🆕 '+alertasNuevos.length+' empleado(s) nuevo(s) sin contrato generado</div>'
+        +'<div class="alert-semaforo-header">🆕 '+alertasNuevos.length+' empleado(s) nuevo(s) — contrato pendiente de generar e imprimir</div>'
         +'<div class="alert-semaforo-body">';
       alertasNuevos.forEach(function(a){
-        alertasHTML+='<div class="alert-row" style="justify-content:space-between;">'
+        alertasHTML+='<div class="alert-row" style="justify-content:space-between;align-items:center;gap:8px">'
           +'<span>👤 <b>'+a.empleadoNombre+'</b> — '+a.mensaje+'</span>'
-          +'<button class="btn btn-secondary btn-xs" style="margin-left:12px;white-space:nowrap;" onclick="marcarAlertaJurLeida(&quot;'+a.id+'&quot;)">✅ Atendida</button>'
-          +'</div>';
+          +'<div style="display:flex;gap:6px;flex-shrink:0">'
+          +(a.empleadoId?'<button class="btn btn-primary btn-xs" onclick="generarEImprimirContrato(&quot;'+a.empleadoId+'&quot;,&quot;'+a.id+'&quot;)">📄 Generar e Imprimir</button>':'')
+          +'<button class="btn btn-secondary btn-xs" onclick="marcarAlertaJurLeida(&quot;'+a.id+'&quot;)">✅ Atendida</button>'
+          +'</div></div>';
       });
-      alertasHTML+='<div style="margin-top:8px;"><button class="btn btn-primary btn-xs" onclick="navigateTo(&quot;contratos&quot;)">📄 Ir a Contratos</button></div>'
-        +'</div></div>';
+      alertasHTML+='</div></div>';
     }
     if(alertasTraslado.length){
       alertasHTML+='<div class="alert-semaforo semaforo-yellow" style="margin-bottom:16px;">'
-        +'<div class="alert-semaforo-header">⚠️ '+alertasTraslado.length+' traslado(s) requieren actualización de contrato</div>'
+        +'<div class="alert-semaforo-header">⚠️ '+alertasTraslado.length+' traslado(s) — nuevo contrato pendiente de generar e imprimir</div>'
         +'<div class="alert-semaforo-body">';
       alertasTraslado.forEach(function(a){
-        alertasHTML+='<div class="alert-row" style="justify-content:space-between;">'
+        alertasHTML+='<div class="alert-row" style="justify-content:space-between;align-items:center;gap:8px">'
           +'<span>👤 <b>'+a.empleadoNombre+'</b> — '+a.mensaje+'</span>'
-          +'<button class="btn btn-secondary btn-xs" style="margin-left:12px;white-space:nowrap;" onclick="marcarAlertaJurLeida(&quot;'+a.id+'&quot;)">✅ Atendida</button>'
-          +'</div>';
+          +'<div style="display:flex;gap:6px;flex-shrink:0">'
+          +(a.empleadoId?'<button class="btn btn-primary btn-xs" onclick="generarEImprimirContrato(&quot;'+a.empleadoId+'&quot;,&quot;'+a.id+'&quot;)">📄 Generar e Imprimir</button>':'')
+          +'<button class="btn btn-secondary btn-xs" onclick="marcarAlertaJurLeida(&quot;'+a.id+'&quot;)">✅ Atendida</button>'
+          +'</div></div>';
       });
-      alertasHTML+='<div style="margin-top:8px;"><button class="btn btn-primary btn-xs" onclick="navigateTo(&quot;contratos&quot;)">📄 Ir a Contratos</button></div>'
-        +'</div></div>';
+      alertasHTML+='</div></div>';
     }
   }
 
-  // Alertas RRHH — traslados recientes con cambio de jornada (salario a revisar)
-  const trasladosJornada = STATE.traslados.filter(function(t){
-    return t.cambioJornada &&
-      (new Date() - new Date(t.fecha)) < (30*24*60*60*1000); // últimos 30 días
-  });
-  if((currentRole==='rrhh'||currentRole==='admin')&&trasladosJornada.length){
-    alertasHTML+='<div class="alert-semaforo semaforo-yellow" style="margin-bottom:16px;">'
-      +'<div class="alert-semaforo-header">💰 '+trasladosJornada.length+' traslado(s) recientes con cambio de jornada — revisar salario</div>'
-      +'<div class="alert-semaforo-body">';
-    trasladosJornada.forEach(function(t){
-      const emp=STATE.empleados.find(function(e){return e.id===t.empleadoId;});
-      alertasHTML+='<div class="alert-row" style="justify-content:space-between;">'
-        +'<span>👤 <b>'+(emp?emp.nombres+' '+emp.apellidos:'—')+'</b>'
-        +' — Jornada: '+getLabelJornada(t.jornadaAnterior)+' → <b>'+getLabelJornada(t.jornadaNueva)+'</b>'
-        +' | '+fmtDate(t.fecha)+'</span>'
-        +(emp?'<button class="btn btn-gold btn-xs" style="margin-left:12px;white-space:nowrap;" onclick="navigateTo(&quot;salarios&quot;)">💰 Ir a Salarios</button>':'')
-        +'</div>';
-    });
-    alertasHTML+='</div></div>';
-  }
 
   const hoy=new Date().toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'});
 
@@ -4856,9 +4844,19 @@ function exportDocsLegales(){
 function marcarAlertaJurLeida(id){
   if(!STATE.alertasJuridico) return;
   const a = STATE.alertasJuridico.find(function(x){return x.id===id;});
-  if(a){a.leida=true; saveState();}
+  if(a){
+    a.leida=true;
+    saveState();
+    pushToSheets('alertasJuridico','actualizar',a,a.id);
+  }
   renderDashboard(document.getElementById('app-content'));
   updateAlertaBadgeJur();
+}
+
+function generarEImprimirContrato(empleadoId, alertaId){
+  previewContrato(empleadoId);
+  // Marcar la alerta como leída al generar el contrato
+  marcarAlertaJurLeida(alertaId);
 }
 
 function updateAlertaBadgeJur(){
@@ -5114,9 +5112,33 @@ function renderPlantilla(container){
   </div>`;
 }
 
+const JERARQUIA_PLAZA={
+  // 1 — Alta dirección
+  'Socio Único':1,'Presidente':1,'Director General':1,'Gerente general':1,
+  // 2 — Dirección por áreas
+  'Gerente de RRHH':2,'Gerente jurídico':2,'Gerente financiero':2,
+  'Gerente de Marketing':2,'Gerente Juridico y RRHH':2,'Gerente de logística':2,
+  // 3 — Gerencia media / jefes de turno
+  'Jefe de turno':3,'Jefe de almacén':3,'Jefe de carnicería':3,
+  'Chef ejecutivo':3,'Jefe de partida':3,
+  // 4 — Supervisores / coordinadores / técnicos
+  'Cajero/a':4,'Salsero/Parrillero':4,'Lunchero':4,'Legumier':4,
+  'Repostero':4,'Inventarista':4,'Comercial':4,'Custodio':4,
+  'Carnicero':4,'Dependiente':4,'Chofer':4,
+  // 5 — Personal operativo
+};
+function _jerarquiaPlaza(plaza){
+  if(!plaza)return 5;
+  const k=Object.keys(JERARQUIA_PLAZA).find(p=>plaza.toLowerCase()===p.toLowerCase());
+  return k?JERARQUIA_PLAZA[k]:5;
+}
 function _buildPlantillaTable(emps,showEco,showCuenta){
   if(!emps.length)return '<div class="empty-state"><div class="empty-icon">👥</div><h4>Sin empleados</h4></div>';
-  const sorted=emps.slice().sort((a,b)=>(a.departamento||'').localeCompare(b.departamento||'')||(a.apellidos||'').localeCompare(b.apellidos||''));
+  const sorted=emps.slice().sort((a,b)=>{
+    const jA=_jerarquiaPlaza(a.plaza), jB=_jerarquiaPlaza(b.plaza);
+    if(jA!==jB)return jA-jB;
+    return (a.apellidos||'').localeCompare(b.apellidos||'');
+  });
   return `<table class="plantilla-table" id="plantilla-table">
     <thead>
       <tr class="pt-group">
@@ -5132,6 +5154,7 @@ function _buildPlantillaTable(emps,showEco,showCuenta){
         <th class="pt-id-cell">Expediente</th>
         <th class="pt-id-cell">F. Nacimiento</th>
         <th class="pt-lab-cell">F. Antigüedad</th>
+        <th class="pt-lab-cell">Nivel</th>
         <th class="pt-lab-cell">Puesto / Plaza</th>
         <th class="pt-lab-cell">Tipo Contrato</th>
         <th class="pt-lab-cell">Jornada</th>
@@ -5147,6 +5170,7 @@ function _buildPlantillaTable(emps,showEco,showCuenta){
         <td class="pt-id-cell"><code style="font-size:11px">${e.carnet||'—'}</code></td>
         <td class="pt-id-cell">${fmtDate(e.fechaNacimiento)}</td>
         <td class="pt-lab-cell">${fmtDate(e.fechaAlta)}</td>
+        <td class="pt-lab-cell" style="font-size:10px;color:#888">${['','Alta Dirección','Dirección','Gerencia','Supervisión','Operativo'][_jerarquiaPlaza(e.plaza)]}</td>
         <td class="pt-lab-cell">${e.plaza||'—'}</td>
         <td class="pt-lab-cell">${e.tipoContrato||'—'}</td>
         <td class="pt-lab-cell">${getLabelJornada(e.jornada)||e.jornada||'—'}</td>
