@@ -2644,50 +2644,54 @@ async function guardarAlta(){
   STATE.documentos[id]=docData;
   saveState();
 
-  showSyncIndicator('⏳ Guardando en Sheets...','syncing');
+  showSyncIndicator('⏳ Guardando...','syncing');
 
+  // 1. Supabase primero (primario)
   try {
-    // 1. Insertar en Sheets primero
-    await apiCall({accion:'insertar',tabla:'empleados',valores:emp});
-
-    // 2. Crear carpeta del empleado en Drive
-    try {
-      const carpetaId = await asegurarCarpetaEmpleado(emp);
-      emp.carpetaExpId = carpetaId;
-    } catch(e){ console.warn('Carpeta Drive no creada:',e.message); }
-
-    // 3. Subir escaneo carnet si existe
-    if(tempFotoCarnet && tempFotoCarnet!=='__clear__'){
-      try{
-        const carnetMime=tempFotoCarnet.match(/^data:([^;]+);/)?.[1]||'image/jpeg';
-        const res=await subirBase64ADrive(tempFotoCarnet,carnetMime,'foto_carnet',id,emp.carpetaExpId||'','foto_carnet');
-        emp.fotoCarnetId=res.fileId;
-        docData.fotoCarnetThumb=res.thumbnailUrl;
-        await registrarDocumentoSheets(id,'foto_carnet',res.fileId,res.viewUrl,res.nombre,res.tamaño);
-      }catch(e){console.warn('Error subiendo escaneo carnet:',e.message);}
-    }
-    tempFotoCarnet=null;
-
-    // 5. Licencias
-    tempLicencias=[];
-
-    // 7. Actualizar empleado en Sheets con los IDs de Drive
-    await apiCall({accion:'actualizar',tabla:'empleados',id:emp.id,valores:emp});
-
-    // 8. Guardar en Supabase (primario)
     await sbUpsert('empleados', emp);
-
-    STATE.documentos[id]=docData;
-    saveState();
-    showSyncIndicator('✅ Guardado','ok');
     DB_ONLINE=true; updateSyncBadge(true);
-
+    showSyncIndicator('✅ Guardado','ok');
   } catch(e){
-    console.error('Error guardando alta:',e);
-    DB_PENDING_OPS.push({tabla:'empleados',accion:'insertar',valores:emp,id:null});
-    showSyncIndicator('⚠️ Guardado local','offline');
+    console.error('Error Supabase alta:',e);
+    DB_PENDING_OPS.push({tabla:'empleados',accion:'insertar',valores:emp,id:emp.id});
     DB_ONLINE=false; updateSyncBadge(false);
+    showSyncIndicator('⚠️ Guardado local — se reintentará al sincronizar','offline');
   }
+
+  // 2. Drive y Sheets en segundo plano (no bloquean)
+  (async()=>{
+    try{
+      // Carpeta del empleado en Drive
+      try{
+        const carpetaId=await asegurarCarpetaEmpleado(emp);
+        emp.carpetaExpId=carpetaId;
+      }catch(e){console.warn('Carpeta Drive no creada:',e.message);}
+
+      // Subir escaneo carnet si existe
+      const docData=STATE.documentos[id]||{};
+      if(tempFotoCarnet&&tempFotoCarnet!=='__clear__'){
+        try{
+          const carnetMime=tempFotoCarnet.match(/^data:([^;]+);/)?.[1]||'image/jpeg';
+          const res=await subirBase64ADrive(tempFotoCarnet,carnetMime,'foto_carnet',id,emp.carpetaExpId||'','foto_carnet');
+          emp.fotoCarnetId=res.fileId;
+          docData.fotoCarnetThumb=res.thumbnailUrl;
+          await registrarDocumentoSheets(id,'foto_carnet',res.fileId,res.viewUrl,res.nombre,res.tamaño);
+        }catch(e){console.warn('Error escaneo carnet:',e.message);}
+      }
+      tempFotoCarnet=null;
+      tempLicencias=[];
+
+      // Backup a Sheets
+      await apiCall({accion:'insertar',tabla:'empleados',valores:emp}).catch(e=>console.warn('Sheets backup:',e.message));
+      await apiCall({accion:'actualizar',tabla:'empleados',id:emp.id,valores:emp}).catch(e=>console.warn('Sheets update:',e.message));
+
+      // Actualizar Supabase con IDs de Drive si se obtuvieron
+      if(emp.carpetaExpId||emp.fotoCarnetId) await sbUpsert('empleados',emp).catch(()=>{});
+
+      STATE.documentos[id]=docData;
+      saveState();
+    }catch(e){console.warn('Background alta:',e);}
+  })();
 
   addAuditLog('ALTA','Alta empleado: '+nombres+' '+apellidos+' ('+carnet+') — '+emp.departamento+'/'+emp.plaza);
 
@@ -2763,66 +2767,59 @@ async function guardarEdicionEmpleado(id){
   }
 
   const docData=STATE.documentos[id]||{};
-
   saveState();
   showSyncIndicator('⏳ Guardando...','syncing');
 
+  // Supabase primero (primario)
   try {
-    // Asegurar carpeta Drive del empleado
-    if(!emp.carpetaExpId){
-      try{ await asegurarCarpetaEmpleado(emp); }
-      catch(e){ console.warn('Carpeta no creada:',e.message); }
-    }
-
-    // Subir escaneo carnet nuevo si existe
-    if(tempFotoCarnet && tempFotoCarnet!=='__clear__'){
-      try{
-        if(emp.fotoCarnetId) await eliminarArchivoDrive(emp.fotoCarnetId);
-        const carnetMime=tempFotoCarnet.match(/^data:([^;]+);/)?.[1]||'image/jpeg';
-        const res=await subirBase64ADrive(tempFotoCarnet,carnetMime,'foto_carnet',id,emp.carpetaExpId||'','foto_carnet');
-        emp.fotoCarnetId=res.fileId;
-        docData.fotoCarnetThumb=res.thumbnailUrl;
-        await registrarDocumentoSheets(id,'foto_carnet',res.fileId,res.viewUrl,res.nombre,res.tamaño);
-      }catch(e){console.warn('Error escaneo carnet:',e.message);}
-    } else if(tempFotoCarnet==='__clear__'){
-      if(emp.fotoCarnetId) await eliminarArchivoDrive(emp.fotoCarnetId);
-      emp.fotoCarnetId='';
-      delete docData.fotoCarnetThumb;
-    }
-    tempFotoCarnet=null;
-
-    // Licencias nuevas
-    if(tempLicencias.length){
-      for(const lic of tempLicencias){
-        try{
-          const blob=dataURLtoFile(lic.data,lic.nombre);
-          const res=await subirArchivoDrive(blob,id,emp.carpetaExpId||'','licencia');
-          await registrarDocumentoSheets(id,'licencia',res.fileId,res.viewUrl,lic.nombre,res.tamaño);
-        }catch(e){console.warn('Error licencia:',e.message);}
-      }
-      tempLicencias=[];
-    }
-
-    STATE.documentos[id]=docData;
-    saveState();
-
-    // Actualizar en Sheets y Supabase
-    await apiCall({accion:'actualizar',tabla:'empleados',id:emp.id,valores:emp});
     await sbUpsert('empleados', emp);
-    showSyncIndicator('✅ Guardado','ok');
     DB_ONLINE=true; updateSyncBadge(true);
-
+    showSyncIndicator('✅ Guardado','ok');
   } catch(e){
-    console.error('Error guardando edición:',e);
+    console.error('Error Supabase edición:',e);
     DB_PENDING_OPS.push({tabla:'empleados',accion:'actualizar',valores:emp,id:emp.id});
     saveState();
-    showSyncIndicator('⚠️ Guardado local — se reintentará al sincronizar','offline');
     DB_ONLINE=false; updateSyncBadge(false);
-    addAuditLog('EDICION','Edición empleado (local): '+emp.nombres+' '+emp.apellidos+' por '+getRoleName(currentRole));
-    showToast('Cambios guardados localmente ⚠️ (sin conexión a Sheets)','warning');
-    navigateTo('empleados');
-    return;
+    showSyncIndicator('⚠️ Guardado local — se reintentará al sincronizar','offline');
   }
+
+  // Drive y Sheets en segundo plano
+  (async()=>{
+    try{
+      if(!emp.carpetaExpId){
+        try{ await asegurarCarpetaEmpleado(emp); }
+        catch(e){ console.warn('Carpeta no creada:',e.message); }
+      }
+      if(tempFotoCarnet&&tempFotoCarnet!=='__clear__'){
+        try{
+          if(emp.fotoCarnetId) await eliminarArchivoDrive(emp.fotoCarnetId);
+          const carnetMime=tempFotoCarnet.match(/^data:([^;]+);/)?.[1]||'image/jpeg';
+          const res=await subirBase64ADrive(tempFotoCarnet,carnetMime,'foto_carnet',id,emp.carpetaExpId||'','foto_carnet');
+          emp.fotoCarnetId=res.fileId;
+          docData.fotoCarnetThumb=res.thumbnailUrl;
+          await registrarDocumentoSheets(id,'foto_carnet',res.fileId,res.viewUrl,res.nombre,res.tamaño);
+        }catch(e){console.warn('Error escaneo carnet:',e.message);}
+      } else if(tempFotoCarnet==='__clear__'){
+        if(emp.fotoCarnetId) await eliminarArchivoDrive(emp.fotoCarnetId);
+        emp.fotoCarnetId=''; delete docData.fotoCarnetThumb;
+      }
+      tempFotoCarnet=null;
+      if(tempLicencias.length){
+        for(const lic of tempLicencias){
+          try{
+            const blob=dataURLtoFile(lic.data,lic.nombre);
+            const res=await subirArchivoDrive(blob,id,emp.carpetaExpId||'','licencia');
+            await registrarDocumentoSheets(id,'licencia',res.fileId,res.viewUrl,lic.nombre,res.tamaño);
+          }catch(e){console.warn('Error licencia:',e.message);}
+        }
+        tempLicencias=[];
+      }
+      await apiCall({accion:'actualizar',tabla:'empleados',id:emp.id,valores:emp}).catch(e=>console.warn('Sheets backup edición:',e.message));
+      if(emp.carpetaExpId||emp.fotoCarnetId) await sbUpsert('empleados',emp).catch(()=>{});
+      STATE.documentos[id]=docData;
+      saveState();
+    }catch(e){console.warn('Background edición:',e);}
+  })();
 
   addAuditLog('EDICION','Edición empleado: '+emp.nombres+' '+emp.apellidos+' por '+getRoleName(currentRole));
   showToast('Empleado actualizado ✅','success');
