@@ -4475,7 +4475,46 @@ const DEPT_COLORS_JT = {
   'ALMACÉN':   {bg:'#F3E8FF',color:'#7C3AED',light:'#FAF5FF',icon:'📦'},
   'CARNICERÍA':{bg:'#FCE7F3',color:'#BE185D',light:'#FDF2F8',icon:'🥩'},
 };
-let _jt_idx=0, _jt_emps=[], _jt_estados={}, _jt_hoy='', _jt_readonly=false;
+let _jt_idx=0, _jt_emps=[], _jt_estados={}, _jt_hoy='', _jt_readonly=false, _jt_nombre='';
+
+const _SVG_P=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 80" width="90" height="110"><circle cx="32" cy="12" r="11" fill="#22C55E"/><rect x="18" y="25" width="28" height="28" rx="7" fill="#22C55E"/><line x1="18" y1="32" x2="4" y2="46" stroke="#22C55E" stroke-width="7" stroke-linecap="round"/><line x1="46" y1="32" x2="60" y2="38" stroke="#22C55E" stroke-width="7" stroke-linecap="round"/><line x1="25" y1="53" x2="20" y2="76" stroke="#22C55E" stroke-width="7" stroke-linecap="round"/><line x1="39" y1="53" x2="44" y2="76" stroke="#22C55E" stroke-width="7" stroke-linecap="round"/><rect x="48" y="28" width="15" height="11" rx="3" fill="#16A34A"/><path d="M51 28 L51 24 L60 24 L60 28" stroke="#16A34A" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg>`;
+const _SVG_D=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 110 66" width="110" height="66"><rect x="0" y="42" width="78" height="20" rx="10" fill="#93C5FD"/><rect x="8" y="26" width="56" height="22" rx="11" fill="#60A5FA"/><circle cx="68" cy="32" r="14" fill="#60A5FA"/><text x="84" y="30" font-family="Arial,sans-serif" font-size="13" font-weight="bold" fill="#1E40AF">Z</text><text x="90" y="18" font-family="Arial,sans-serif" font-size="16" font-weight="bold" fill="#2563EB">Z</text><text x="97" y="6" font-family="Arial,sans-serif" font-size="19" font-weight="bold" fill="#3B82F6">Z</text></svg>`;
+const _SVG_N=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 80" width="90" height="110"><circle cx="32" cy="12" r="11" fill="#D1D5DB"/><rect x="18" y="25" width="28" height="28" rx="7" fill="#D1D5DB"/><line x1="18" y1="32" x2="4" y2="46" stroke="#D1D5DB" stroke-width="7" stroke-linecap="round"/><line x1="46" y1="32" x2="60" y2="46" stroke="#D1D5DB" stroke-width="7" stroke-linecap="round"/><line x1="25" y1="53" x2="20" y2="76" stroke="#D1D5DB" stroke-width="7" stroke-linecap="round"/><line x1="39" y1="53" x2="44" y2="76" stroke="#D1D5DB" stroke-width="7" stroke-linecap="round"/></svg>`;
+
+function renderSeleccionJefeTurno(container, hoy){
+  const fechaLabel=new Date(hoy+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  let jefes=getEmpleadosActivos().filter(e=>e.plaza&&e.plaza.toLowerCase().includes('jefe'));
+  if(!jefes.length) jefes=getEmpleadosActivos().slice(0,10);
+  const opciones=jefes.map(e=>
+    '<button onclick="seleccionarJefeTurno(\''+e.id+'\')" style="'
+    +'width:100%;text-align:left;padding:16px 20px;border-radius:14px;margin-bottom:10px;'
+    +'border:2px solid #E5E7EB;background:white;cursor:pointer;'
+    +'display:flex;align-items:center;gap:14px;transition:border-color 0.15s"'
+    +' onmouseover="this.style.borderColor=\'#2D6A4F\'" onmouseout="this.style.borderColor=\'#E5E7EB\'">'
+    +'<span style="font-size:34px;flex-shrink:0">👤</span>'
+    +'<div style="text-align:left"><div style="font-weight:700;font-size:15px;color:var(--text-dark)">'+e.nombres+' '+e.apellidos+'</div>'
+    +'<div style="font-size:12px;color:var(--text-mid)">'+e.plaza+'</div></div>'
+    +'</button>'
+  ).join('');
+  container.innerHTML=
+    '<div style="max-width:380px;margin:0 auto;padding:16px 0">'
+    +'<div style="text-align:center;margin-bottom:28px">'
+    +'<div style="font-size:52px;margin-bottom:10px">👋</div>'
+    +'<div style="font-size:20px;font-weight:800;color:var(--text-dark);margin-bottom:6px">¿Quién toma la asistencia?</div>'
+    +'<div style="font-size:13px;color:var(--text-mid)">'+fechaLabel+'</div></div>'
+    +opciones+'</div>';
+}
+
+function seleccionarJefeTurno(empId){
+  const emp=getEmpleadosActivos().find(e=>e.id===empId);
+  if(!emp)return;
+  _jt_nombre=emp.nombres+' '+emp.apellidos;
+  const container=document.getElementById('app-content');
+  const hoy=new Date().toISOString().slice(0,10);
+  const activos=getEmpleadosActivos().filter(e=>!DEPTS_EXCLUIDOS_JEFE_TURNO.includes(e.departamento));
+  const registroHoy=STATE.asistencia.find(a=>a.fecha===hoy);
+  renderAsistenciaJefeTurno(container,hoy,activos,registroHoy,false);
+}
 
 function renderAsistenciaJefeTurno(container, hoy, activos, registroHoy, yaGuardado){
   _jt_hoy=hoy; _jt_readonly=yaGuardado;
@@ -4501,92 +4540,85 @@ function renderCardJT(){
   const total=_jt_emps.length;
   if(_jt_idx>=total){renderSummaryJT();return;}
   const emp=_jt_emps[_jt_idx];
-  const dept=emp.departamento;
-  const C=DEPT_COLORS_JT[dept]||{bg:'#F3F4F6',color:'#374151',light:'#F9FAFB',icon:'👤'};
   const stObj=_jt_estados[emp.id]||{};
   const estadoActual=stObj.estado||'';
-  const motivoActual=(stObj.motivo||'').replace(/"/g,'&quot;');
   const done=_jt_emps.filter(e=>_jt_estados[e.id]).length;
-  const deptEmps=_jt_emps.filter(e=>e.departamento===dept);
-  const deptIdx=deptEmps.indexOf(emp)+1;
   const pct=Math.round((done/total)*100);
-
-  const tabsHtml=DEPT_ORDER_JT.map(d=>{
-    const de=_jt_emps.filter(e=>e.departamento===d);
-    if(!de.length)return'';
-    const dd=de.filter(e=>_jt_estados[e.id]).length;
-    const cur=d===dept;
-    const dc=DEPT_COLORS_JT[d]||{color:'#374151',bg:'#F3F4F6',icon:''};
-    const all=dd===de.length;
-    return '<div style="padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;'
-      +'background:'+(cur?dc.bg:all?'#D1FAE5':'#F3F4F6')+';'
-      +'color:'+(cur?dc.color:all?'#065F46':'#6B7280')+';'
-      +'border:2px solid '+(cur?dc.color:'transparent')+';white-space:nowrap;flex-shrink:0;">'
-      +dc.icon+' '+d+' '+(all?'✓':(dd+'/'+de.length))+'</div>';
-  }).join('');
-
+  const fechaLabel=new Date(_jt_hoy+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const avatarSvg=estadoActual==='P'?_SVG_P:estadoActual==='D'?_SVG_D:_SVG_N;
   const ro=_jt_readonly;
 
+  const borderColor=estadoActual==='P'?'#22C55E':estadoActual==='D'?'#3B82F6':'#E5E7EB';
+
   area.innerHTML=
-    '<div style="margin-bottom:16px">'
-    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:13px;color:var(--text-mid)">'
-    +'<span><b>'+done+'</b> de <b>'+total+'</b> marcados como presentes</span>'
-    +'<span style="color:'+C.color+';font-weight:700;">'+dept+' '+C.icon+' — '+deptIdx+' / '+deptEmps.length+'</span></div>'
+    // Cabecera con fecha
+    '<div style="text-align:center;background:linear-gradient(135deg,#1B4332,#2D6A4F);color:white;border-radius:16px;padding:14px 16px;margin-bottom:16px">'
+    +'<div style="font-size:11px;letter-spacing:2px;opacity:0.75;text-transform:uppercase">Tomando asistencia</div>'
+    +'<div style="font-size:16px;font-weight:700;margin-top:3px">'+fechaLabel+'</div>'
+    +'<div style="font-size:11px;opacity:0.65;margin-top:2px">'+_jt_nombre+'</div>'
+    +'</div>'
+
+    // Barra de progreso
+    +'<div style="margin-bottom:18px">'
+    +'<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-mid);margin-bottom:5px">'
+    +'<span><b>'+done+'</b> de <b>'+total+'</b> marcados</span>'
+    +'<span>'+emp.departamento+'</span></div>'
     +'<div style="background:#E5E7EB;border-radius:999px;height:8px;overflow:hidden">'
-    +'<div style="background:'+C.color+';height:100%;width:'+pct+'%;transition:width 0.4s;border-radius:999px"></div></div></div>'
+    +'<div style="background:#22C55E;height:100%;width:'+pct+'%;transition:width 0.4s;border-radius:999px"></div></div></div>'
 
-    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;overflow-x:auto;padding-bottom:4px">'+tabsHtml+'</div>'
+    // Tarjeta del empleado con avatar SVG
+    +'<div style="background:white;border-radius:20px;padding:28px 20px 22px;text-align:center;margin-bottom:18px;'
+    +'box-shadow:0 2px 16px rgba(0,0,0,0.08);border:3px solid '+borderColor+';transition:border-color 0.3s">'
+    +'<div style="display:flex;justify-content:center;margin-bottom:14px">'+avatarSvg+'</div>'
+    +'<div style="font-size:25px;font-weight:800;color:var(--text-dark);line-height:1.2;margin-bottom:5px;font-family:\'Playfair Display\',serif">'+emp.nombres+' '+emp.apellidos+'</div>'
+    +'<div style="font-size:13px;color:var(--text-mid)">'+emp.plaza+' · '+emp.departamento+'</div>'
+    +(estadoActual
+      ? '<div style="margin-top:12px;display:inline-block;padding:5px 16px;border-radius:20px;font-size:12px;font-weight:700;'
+        +'background:'+(estadoActual==='P'?'#DCFCE7':'#DBEAFE')+';color:'+(estadoActual==='P'?'#166534':'#1D4ED8')+'">'
+        +(estadoActual==='P'?'✅ PRESENTE':'😴 DESCANSANDO')+'</div>'
+      : '')
+    +'</div>'
 
-    +'<div style="background:'+C.light+';border:2px solid '+C.bg+';border-radius:16px;padding:28px 24px;text-align:center;margin-bottom:20px">'
-    +'<div style="display:inline-block;background:'+C.bg+';color:'+C.color+';border-radius:10px;padding:5px 16px;font-size:13px;font-weight:700;margin-bottom:12px;letter-spacing:1px;">'+dept+' '+C.icon+'</div>'
-    +'<div style="font-size:26px;font-weight:800;color:var(--text-dark);line-height:1.2;margin-bottom:6px;font-family:\'Playfair Display\',serif">'+emp.nombres+' '+emp.apellidos+'</div>'
-    +'<div style="font-size:14px;color:var(--text-mid)">'+emp.plaza+'</div></div>'
-
-    // Botón grande PRESENTE
+    // Botones PRESENTE / DESCANSANDO
     +(ro
-      ? '<div style="text-align:center;margin-bottom:16px">'
-        +(estadoActual==='P'
-          ? '<div style="padding:20px;background:#D8F3DC;border-radius:14px;border:3px solid #2D6A4F;font-size:16px;font-weight:700;color:#2D6A4F;">✅ Presente</div>'
-          : '<div style="padding:20px;background:#F3F4F6;border-radius:14px;border:3px solid #D1D5DB;font-size:16px;font-weight:700;color:#6B7280;">— Sin registrar</div>'
-        )+'</div>'
-      : '<button onclick="setEstadoJT(\''+emp.id+'\',\'P\')" style="'
-        +'width:100%;padding:22px 8px;border-radius:14px;margin-bottom:12px;'
-        +'border:3px solid '+(estadoActual==='P'?'#2D6A4F':'#E5E7EB')+';'
-        +'background:'+(estadoActual==='P'?'#D8F3DC':'white')+';cursor:pointer;'
-        +'font-size:18px;font-weight:800;color:'+(estadoActual==='P'?'#2D6A4F':'#9CA3AF')+';'
-        +'transition:all 0.15s;display:flex;flex-direction:column;align-items:center;gap:8px;'
-        +(estadoActual==='P'?'transform:scale(1.02);box-shadow:0 4px 20px #2D6A4F44;':'')
-        +'">'
-        +'<span style="font-size:36px">✅</span>'
-        +'<span>PRESENTE</span>'
-        +(estadoActual==='P'?'<span style="font-size:12px;font-weight:400;opacity:0.7">Toca de nuevo para quitar</span>':'')
-        +'</button>'
+      ? ''
+      : '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">'
+        +'<button onclick="setEstadoJT(\''+emp.id+'\',\'P\')" style="'
+        +'padding:20px 8px;border-radius:16px;'
+        +'border:3px solid '+(estadoActual==='P'?'#22C55E':'#BBF7D0')+';'
+        +'background:'+(estadoActual==='P'?'#22C55E':'#F0FDF4')+';cursor:pointer;'
+        +'font-size:14px;font-weight:800;color:'+(estadoActual==='P'?'white':'#166534')+';'
+        +'display:flex;flex-direction:column;align-items:center;gap:8px;'
+        +(estadoActual==='P'?'box-shadow:0 4px 18px #22C55E55;':'')+'transition:all 0.15s">'
+        +'<span>💪</span><span>PRESENTE</span></button>'
+        +'<button onclick="setEstadoJT(\''+emp.id+'\',\'D\')" style="'
+        +'padding:20px 8px;border-radius:16px;'
+        +'border:3px solid '+(estadoActual==='D'?'#3B82F6':'#BFDBFE')+';'
+        +'background:'+(estadoActual==='D'?'#3B82F6':'#EFF6FF')+';cursor:pointer;'
+        +'font-size:14px;font-weight:800;color:'+(estadoActual==='D'?'white':'#1D4ED8')+';'
+        +'display:flex;flex-direction:column;align-items:center;gap:8px;'
+        +(estadoActual==='D'?'box-shadow:0 4px 18px #3B82F655;':'')+'transition:all 0.15s">'
+        +'<span>😴</span><span>DESCANSANDO</span></button>'
+        +'</div>'
     )
 
+    // Navegación
     +'<div style="display:flex;gap:10px;align-items:center">'
-    +'<button onclick="prevCardJT()" class="btn btn-secondary" style="flex:1" '+(_jt_idx===0?'disabled':'')+'>← Anterior</button>'
-    +(!ro
-      ? '<button onclick="nextCardJT()" class="btn btn-secondary" style="flex:2;color:var(--text-mid)">'
-        +(estadoActual==='P'?'Siguiente →':(_jt_idx===total-1?'Ver resumen →':'No vino → Siguiente'))+'</button>'
-      : '<button onclick="nextCardJT()" class="btn btn-primary" style="flex:2">'
-        +(_jt_idx===total-1?'✅ Ver resumen':'Siguiente →')+'</button>'
+    +'<button onclick="prevCardJT()" class="btn btn-secondary" style="flex:1;font-size:20px;padding:12px" '+(_jt_idx===0?'disabled':'')+'>←</button>'
+    +(ro
+      ? '<button onclick="nextCardJT()" class="btn btn-primary" style="flex:3">'+(_jt_idx===total-1?'Ver resumen →':'Siguiente →')+'</button>'
+      : '<button onclick="nextCardJT()" class="btn btn-secondary" style="flex:3;color:var(--text-mid)">'+(_jt_idx===total-1?'Ver resumen →':'Saltar →')+'</button>'
     )
     +'</div>';
 }
 
 function setEstadoJT(empId,estado){
   if(_jt_readonly)return;
-  // Toggle: si ya está marcado con el mismo estado, quitar la marca
-  if((_jt_estados[empId]||{}).estado===estado){
-    delete _jt_estados[empId];
-    autoGuardarTurnoJT();
-    renderCardJT();
-    return;
-  }
   _jt_estados[empId]={estado,motivo:''};
   autoGuardarTurnoJT();
   renderCardJT();
-  if(estado==='P') setTimeout(nextCardJT,400);
+  // Auto-avanzar tanto para PRESENTE como para DESCANSANDO
+  setTimeout(nextCardJT,380);
 }
 
 function nextCardJT(){
@@ -4611,7 +4643,7 @@ function autoGuardarTurnoJT(){
       estado:_jt_estados[e.id].estado,
       motivo:_jt_estados[e.id].motivo||''
     }));
-  if(!reg){reg={id:'AS'+uid(),fecha:_jt_hoy,cerrado:false,registradoPor:getRoleName(currentRole),lineas};STATE.asistencia.push(reg);}
+  if(!reg){reg={id:'AS'+uid(),fecha:_jt_hoy,cerrado:false,registradoPor:_jt_nombre||getRoleName(currentRole),lineas};STATE.asistencia.push(reg);}
   else reg.lineas=lineas;
   saveState();
 }
@@ -4621,8 +4653,8 @@ function renderSummaryJT(){
   if(!area)return;
   const total=_jt_emps.length;
   const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
-  const A=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='A').length;
-  const sinRegistrar=total-P;
+  const D=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='D').length;
+  const sinAsignar=total-P-D;
   const reg=STATE.asistencia.find(a=>a.fecha===_jt_hoy);
   const cerrado=reg&&reg.cerrado;
 
@@ -4631,38 +4663,53 @@ function renderSummaryJT(){
     if(!de.length)return'';
     const C=DEPT_COLORS_JT[dept]||{bg:'#F3F4F6',color:'#374151',icon:''};
     const rows=de.map(e=>{
-      const st=_jt_estados[e.id];
-      const presente=st&&st.estado==='P';
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F5F5F5">'
+      const st=(_jt_estados[e.id]||{}).estado||'';
+      const icon=st==='P'?'<span style="color:#166534;font-size:18px">✅</span>'
+        :st==='D'?'<span style="color:#1D4ED8;font-size:18px">😴</span>'
+        :'<span style="color:#D1D5DB;font-size:18px">—</span>';
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #F5F5F5">'
         +'<div><div style="font-weight:600;font-size:14px">'+e.nombres+' '+e.apellidos+'</div>'
         +'<div style="font-size:12px;color:var(--text-mid)">'+e.plaza+'</div></div>'
-        +'<span style="font-size:22px;flex-shrink:0">'+(presente?'<span style="color:#2D6A4F">✅</span>':'<span style="color:#D1D5DB">—</span>')+'</span></div>';
+        +icon+'</div>';
     }).join('');
-    return '<div style="margin-bottom:16px">'
-      +'<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:'+C.bg+';border-radius:10px;margin-bottom:6px">'
+    return '<div style="margin-bottom:14px">'
+      +'<div style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:'+C.bg+';border-radius:10px;margin-bottom:5px">'
       +'<span style="font-weight:700;color:'+C.color+'">'+C.icon+' '+dept+'</span>'
       +'<span style="font-size:12px;color:'+C.color+'">'+de.length+' empleados</span></div>'
       +rows+'</div>';
   }).join('');
 
   area.innerHTML=
-    '<div style="text-align:center;margin-bottom:24px">'
-    +'<div style="font-size:40px;margin-bottom:8px">'+(sinRegistrar>0?'⚠️':'🎉')+'</div>'
-    +'<div style="font-size:20px;font-weight:700">'+(sinRegistrar>0?sinRegistrar+' sin registrar':'¡Todo registrado!')+'</div>'
-    +'<div style="font-size:13px;color:var(--text-mid);margin-top:4px">Turno del '+new Date(_jt_hoy+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})+'</div></div>'
+    // Mensaje de despedida si está cerrado
+    (cerrado
+      ? '<div style="background:linear-gradient(135deg,#1B4332,#2D6A4F);color:white;border-radius:18px;padding:28px 20px;text-align:center;margin-bottom:20px">'
+        +'<div style="font-size:48px;margin-bottom:10px">🎉</div>'
+        +'<div style="font-size:20px;font-weight:800;margin-bottom:6px">¡Hasta luego, '+(_jt_nombre.split(' ')[0]||'compañero')+'!</div>'
+        +'<div style="font-size:13px;opacity:0.8">Turno cerrado con éxito. Que descanses.</div>'
+        +'</div>'
+      : '<div style="text-align:center;margin-bottom:22px">'
+        +'<div style="font-size:36px;margin-bottom:8px">'+(sinAsignar>0?'⚠️':'✅')+'</div>'
+        +'<div style="font-size:19px;font-weight:700">'+(sinAsignar>0?sinAsignar+' sin asignar':'¡Todo registrado!')+'</div>'
+        +'<div style="font-size:13px;color:var(--text-mid);margin-top:4px">'+new Date(_jt_hoy+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})+'</div>'
+        +'</div>'
+    )
 
-    +'<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:24px">'
-    +'<div style="background:#D8F3DC;border-radius:12px;padding:14px;text-align:center"><div style="font-size:32px;font-weight:800;color:#2D6A4F">'+P+'</div><div style="font-size:12px;color:#2D6A4F;font-weight:600">✅ Presentes</div></div>'
-    +'<div style="background:#F3F4F6;border-radius:12px;padding:14px;text-align:center"><div style="font-size:32px;font-weight:800;color:#6B7280">'+sinRegistrar+'</div><div style="font-size:12px;color:#6B7280;font-weight:600">— Sin registrar</div></div>'
+    // Tres contadores
+    +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px">'
+    +'<div style="background:#DCFCE7;border-radius:12px;padding:12px 6px;text-align:center"><div style="font-size:28px;font-weight:800;color:#166534">'+P+'</div><div style="font-size:11px;color:#166534;font-weight:600">✅ Presentes</div></div>'
+    +'<div style="background:#DBEAFE;border-radius:12px;padding:12px 6px;text-align:center"><div style="font-size:28px;font-weight:800;color:#1D4ED8">'+D+'</div><div style="font-size:11px;color:#1D4ED8;font-weight:600">😴 Descansando</div></div>'
+    +'<div style="background:#F3F4F6;border-radius:12px;padding:12px 6px;text-align:center"><div style="font-size:28px;font-weight:800;color:#6B7280">'+sinAsignar+'</div><div style="font-size:11px;color:#6B7280;font-weight:600">— Sin asignar</div></div>'
     +'</div>'
-    +'<div style="background:#FFF3CD;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#856404">ℹ️ Los empleados sin registrar serán gestionados por Contabilidad (vacaciones, enfermedad, etc.) antes de generar la nómina.</div>'
 
-    +'<div style="background:white;border-radius:14px;padding:16px;margin-bottom:20px;border:1px solid var(--border-light)">'+listaDepts+'</div>'
+    +(sinAsignar>0&&!cerrado?'<div style="background:#FEF3C7;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#92400E">ℹ️ Los empleados sin asignar serán gestionados por Contabilidad antes de generar la nómina.</div>':'')
+
+    +'<div style="background:white;border-radius:14px;padding:16px;margin-bottom:20px;border:1px solid var(--border-light);max-height:340px;overflow-y:auto">'+listaDepts+'</div>'
 
     +'<div style="display:flex;gap:10px">'
-    +'<button onclick="_jt_idx=0;renderCardJT()" class="btn btn-secondary" style="flex:1">← Revisar</button>'
+    +(cerrado?''
+      :'<button onclick="_jt_idx=0;renderCardJT()" class="btn btn-secondary" style="flex:1">← Revisar</button>')
     +(cerrado
-      ?'<span class="badge badge-approved" style="flex:2;display:flex;align-items:center;justify-content:center;padding:12px;font-size:14px;">✅ Turno cerrado</span>'
+      ?'<span class="badge badge-approved" style="flex:1;display:flex;align-items:center;justify-content:center;padding:12px;font-size:14px;border-radius:10px;">✅ Turno cerrado</span>'
       :'<button onclick="cerrarTurnoJT()" class="btn btn-success" style="flex:2">🔒 Cerrar Turno</button>')
     +'</div>';
 }
@@ -4672,20 +4719,21 @@ function cerrarTurnoJT(){
   const reg=STATE.asistencia.find(a=>a.fecha===_jt_hoy);
   if(!reg){
     // Crear registro aunque no haya nadie marcado
-    const newReg={id:'AS'+uid(),fecha:_jt_hoy,cerrado:false,registradoPor:getRoleName(currentRole),lineas:[]};
+    const newReg={id:'AS'+uid(),fecha:_jt_hoy,cerrado:false,registradoPor:_jt_nombre||getRoleName(currentRole),lineas:[]};
     STATE.asistencia.push(newReg);
     saveState();
     return cerrarTurnoJT();
   }
   const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
-  const sinReg=_jt_emps.length-P;
-  confirmAction('¿Confirmar cierre del turno? <b>'+P+' presentes</b>, '+sinReg+' sin registrar (Contabilidad asignará estados). <b>No se podrá modificar.</b>',function(){
+  const D=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='D').length;
+  const sinAsignar=_jt_emps.length-P-D;
+  confirmAction('¿Confirmar cierre del turno? <b>'+P+' presentes</b>, <b>'+D+' descansando</b>, '+sinAsignar+' sin asignar (Contabilidad gestionará). <b>No se podrá modificar.</b>',function(){
     reg.cerrado=true;
     reg.horaCierre=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
     _jt_readonly=true;
     saveState();
     pushToSheets('asistencia','insertar',reg);
-    addAuditLog('ASISTENCIA','Turno '+_jt_hoy+' cerrado. Presentes:'+P+' Sin registrar:'+sinReg);
+    addAuditLog('ASISTENCIA','Turno '+_jt_hoy+' cerrado. Presentes:'+P+' Descansando:'+D+' Sin asignar:'+sinAsignar);
     showToast('Turno cerrado y guardado ✅','success',4000);
     document.getElementById('topbar-actions').innerHTML='<span class="badge badge-approved" style="padding:8px 16px;font-size:13px;">✅ Turno cerrado</span>';
     renderSummaryJT();
@@ -4710,7 +4758,11 @@ function renderAsistencia(container){
     document.getElementById('topbar-actions').innerHTML = yaGuardado
       ? '<span class="badge badge-approved" style="padding:8px 16px;font-size:13px;">✅ Turno cerrado</span>'
       : '';
-    renderAsistenciaJefeTurno(container, hoy, activos, registroHoy, yaGuardado);
+    if(!yaGuardado && (!_jt_nombre || _jt_hoy !== hoy)){
+      renderSeleccionJefeTurno(container, hoy);
+    } else {
+      renderAsistenciaJefeTurno(container, hoy, activos, registroHoy, yaGuardado);
+    }
     return;
   }
 
