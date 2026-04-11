@@ -1432,9 +1432,11 @@ function closeModal(){
   if(mh)mh.style.display='';
   if(mb)mb.style.padding='';
 }
+let _confirmCb=null;
 function confirmAction(msg,cb){
+  _confirmCb=cb;
   openModal('Confirmar acción',`<div class="confirm-box" style="text-align:center"><div style="font-size:48px;margin-bottom:12px">⚠️</div><p style="color:var(--text-mid);margin-bottom:20px">${msg}</p></div>`,
-    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-danger" onclick="closeModal();(${cb.toString()})()">Confirmar</button>`,'sm');
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-danger" onclick="closeModal();if(_confirmCb){const f=_confirmCb;_confirmCb=null;f();}">✅ Confirmar</button>`,'sm');
 }
 function fmtDate(d){if(!d)return'—';try{return new Date(d).toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'})}catch(e){return d}}
 function fmtMoney(n){if(n==null||isNaN(n))return'—';return new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(n)+' CUP';}
