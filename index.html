@@ -4485,7 +4485,8 @@ const _SVG_N=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 80" width=
 
 function renderSeleccionJefeTurno(container, hoy){
   const fechaLabel=new Date(hoy+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-  let jefes=getEmpleadosActivos().filter(e=>e.plaza&&e.plaza.toLowerCase().includes('jefe de turno'));
+  let jefes=getEmpleadosActivos().filter(e=>e.plaza&&e.plaza.toLowerCase().includes('jefe de turno')&&e.departamento==='SALA');
+  if(!jefes.length) jefes=getEmpleadosActivos().filter(e=>e.plaza&&e.plaza.toLowerCase().includes('jefe de turno'));
   if(!jefes.length) jefes=getEmpleadosActivos().filter(e=>e.plaza&&e.plaza.toLowerCase().includes('jefe'));
   if(!jefes.length) jefes=getEmpleadosActivos().slice(0,10);
   const opciones=jefes.map(e=>
@@ -4517,8 +4518,8 @@ function seleccionarJefeTurno(empId){
   const activos=getEmpleadosActivos().filter(e=>!DEPTS_EXCLUIDOS_JEFE_TURNO.includes(e.departamento));
   const registroHoy=STATE.asistencia.find(a=>a.fecha===hoy);
   renderAsistenciaJefeTurno(container,hoy,activos,registroHoy,false);
-  // El JT que toma la asistencia → PRESENTE automático; los demás JT → DESCANSANDO
-  const todosJT=_jt_emps.filter(e=>e.plaza&&e.plaza.toLowerCase().includes('jefe de turno'));
+  // El JT de SALA que toma la asistencia → PRESENTE automático; el otro JT de SALA → DESCANSANDO
+  const todosJT=_jt_emps.filter(e=>e.plaza&&e.plaza.toLowerCase().includes('jefe de turno')&&e.departamento==='SALA');
   todosJT.forEach(jt=>{
     _jt_estados[jt.id]={estado:jt.id===empId?'P':'D',motivo:''};
   });
