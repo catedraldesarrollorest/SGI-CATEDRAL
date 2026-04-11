@@ -3746,7 +3746,7 @@ function cargarNomina(){
     </div>
     ${advertencia}
     <div class="table-wrap"><table class="nomina-table"><thead><tr>
-      <th>Nº</th><th>Empleado</th><th>CI</th><th>Plaza</th>
+      <th>Nº</th><th>Empleado</th><th>Plaza</th>
       <th data-tip="Días trabajados este mes">Días</th>
       <th data-tip="Salario base mensual">Sal.Base</th>
       <th data-tip="Horas fuera de jornada">H.Ext</th>
@@ -3782,7 +3782,6 @@ function cargarNomina(){
     html+=`<tr onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background=''">
       <td style="color:var(--text-mid)">${idx+1}</td>
       <td><b>${e.nombres} ${e.apellidos}</b><br><small style="color:var(--text-mid)">${e.departamento}</small></td>
-      <td style="font-size:12px">${e.carnet||'—'}</td>
       <td style="font-size:12px">${e.plaza||'—'}</td>
       <td style="text-align:center">
         ${!isReadOnly&&canEdit
@@ -3984,7 +3983,6 @@ function imprimirNominaCompleta(nomId){
     return`<tr>
       <td style="text-align:center">${i+1}</td>
       <td>${e.nombres} ${e.apellidos}</td>
-      <td style="text-align:center">${e.carnet||'—'}</td>
       <td>${e.plaza||'—'}</td>
       <td style="text-align:center">${l.diasTrabajados}</td>
       <td style="text-align:right">${fmt(bruto)}</td>
@@ -4042,7 +4040,7 @@ function imprimirNominaCompleta(nomId){
   </div>
   <table>
     <thead><tr>
-      <th>Nº</th><th style="text-align:left">Nombre y Apellidos</th><th>Carnet</th><th style="text-align:left">Plaza</th>
+      <th>Nº</th><th style="text-align:left">Nombre y Apellidos</th><th style="text-align:left">Plaza</th>
       <th>Días</th><th>Total Bruto</th><th>SS (5%)</th><th>IIP</th><th>NETO</th><th>Firma</th>
     </tr></thead>
     <tbody>${rows}</tbody>
