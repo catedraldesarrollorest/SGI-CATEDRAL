@@ -4517,6 +4517,16 @@ function seleccionarJefeTurno(empId){
   const activos=getEmpleadosActivos().filter(e=>!DEPTS_EXCLUIDOS_JEFE_TURNO.includes(e.departamento));
   const registroHoy=STATE.asistencia.find(a=>a.fecha===hoy);
   renderAsistenciaJefeTurno(container,hoy,activos,registroHoy,false);
+  // El JT que toma la asistencia → PRESENTE automático; los demás JT → DESCANSANDO
+  const todosJT=_jt_emps.filter(e=>e.plaza&&e.plaza.toLowerCase().includes('jefe de turno'));
+  todosJT.forEach(jt=>{
+    _jt_estados[jt.id]={estado:jt.id===empId?'P':'D',motivo:''};
+  });
+  // Saltar al primer empleado sin marcar
+  const first=_jt_emps.findIndex(e=>!_jt_estados[e.id]);
+  _jt_idx=first>=0?first:_jt_emps.length;
+  autoGuardarTurnoJT();
+  renderCardJT();
 }
 
 function renderAsistenciaJefeTurno(container, hoy, activos, registroHoy, yaGuardado){
