@@ -3691,11 +3691,14 @@ function cargarNomina(){
   const isReadOnly=nomina&&nomina.estado==='aprobada'&&currentRole!=='admin';
   const activos=getEmpleadosActivos();
 
-  // Calcular días presentes desde asistencia (o 100% para admin)
+  // Verificar si hay asistencia registrada en el período
+  const hayAsistencia=STATE.asistencia.some(a=>a.cerrado&&a.fecha.startsWith(periodoKey));
+
+  // Días trabajados: para admin → jornada completa; para otros → presentes reales si hay asistencia, sino jornada como fallback global
   const getDiasTrab=(e)=>{
     if(esDeptoAdmin(e.departamento)) return getDiasJornada(e.jornada);
-    const presentes=getDiasPresentesMes(e.id,periodoKey);
-    return presentes>0?presentes:getDiasJornada(e.jornada); // fallback si aún no hay asistencia del mes
+    if(hayAsistencia) return getDiasPresentesMes(e.id,periodoKey);
+    return getDiasJornada(e.jornada); // fallback solo si no existe ningún registro del mes
   };
 
   if(!nomina){
@@ -3719,8 +3722,15 @@ function cargarNomina(){
     if(newlyAdded.length) newlyAdded.forEach(l=>pushToSheets('nominaLineas','insertar',l,null));
   }
 
-  // Advertencia si hay días de asistencia en el período
-  const hayAsistencia=STATE.asistencia.some(a=>a.cerrado&&a.fecha.startsWith(periodoKey));
+  // Si la nómina es borrador, siempre recalcular días desde asistencia actual (se congela solo al aprobar)
+  if(nomina.estado!=='aprobada'){
+    nomina.lineas.forEach(l=>{
+      const e=STATE.empleados.find(x=>x.id===l.empleadoId);
+      if(e) l.diasTrabajados=getDiasTrab(e);
+    });
+    saveState();
+  }
+
   const advertencia=!hayAsistencia&&!isReadOnly
     ?`<div style="background:#FFF3CD;border:1px solid #FBBF24;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400E;">
       ⚠️ No hay registros de asistencia cerrados para este período. Los días mostrados son los de jornada base. Registra la asistencia diaria antes de generar la nómina.
