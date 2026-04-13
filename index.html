@@ -1002,7 +1002,11 @@ async function sincronizarDesdeSheets() {
     const tablas = ['empleados','traslados','bajas','sanciones','nominas','nominaLineas','incidencias','vacacionesControl','historialSalarial','asistencia','plazas','alertasJuridico','auditLog','preformas'];
     const resultados = await Promise.all(tablas.map(t => sbLeer(t).catch(() => null)));
     tablas.forEach((tabla, i) => {
-      if (!resultados[i] || resultados[i].length === 0) return;
+      if (!Array.isArray(resultados[i])) return; // null = request falló, mantener local
+      if (resultados[i].length === 0) {
+        if (tabla === 'empleados') console.warn('[SGI] Supabase devolvió 0 empleados — se mantiene caché local');
+        return; // no sobrescribir con vacío
+      }
       const data = resultados[i];
       if (tabla === 'empleados') {
         STATE.empleados = data.map(r => {
@@ -1131,13 +1135,22 @@ async function sincronizarDesdeSheets() {
     // Propagar salarios de plazas a empleados que los tengan vacíos (silencioso)
     _propagarSalariosPlazas();
     DB_ONLINE = true; updateSyncBadge(true);
-    showSyncIndicator('✅ Sincronizado', 'ok');
+    const nEmp = STATE.empleados.length;
+    if (nEmp === 0) {
+      showSyncIndicator('⚠️ Sin empleados — verifica Supabase', 'offline');
+      showToast('⚠️ Supabase conectado pero no devolvió empleados. Verifica permisos de la tabla o intenta de nuevo.', 'error', 12000);
+    } else {
+      showSyncIndicator('✅ Sincronizado — ' + nEmp + ' empleados', 'ok');
+    }
     // No re-renderizar si el usuario está en un formulario con datos en curso
     const formsEnCurso=['alta','traslados','bajas','sanciones'];
     if (currentRole && currentSection && !formsEnCurso.includes(currentSection)) navigateTo(currentSection);
   } catch(err) {
     DB_ONLINE = false; updateSyncBadge(false);
-    showSyncIndicator('⚠️ Modo offline — usando datos locales', 'offline');
+    showSyncIndicator('⚠️ Sin conexión — datos locales (' + STATE.empleados.length + ' empl.)', 'offline');
+    if (STATE.empleados.length === 0) {
+      showToast('Sin conexión y sin datos locales. Conéctate a internet y pulsa Sincronizar.', 'error', 15000);
+    }
   }
 }
 let _syncTick = 0;
