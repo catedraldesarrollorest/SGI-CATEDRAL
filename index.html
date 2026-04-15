@@ -4498,11 +4498,13 @@ const DEPT_COLORS_JT = {
   'ALMACÉN':   {bg:'#F3E8FF',color:'#7C3AED',light:'#FAF5FF',icon:'📦'},
   'CARNICERÍA':{bg:'#FCE7F3',color:'#BE185D',light:'#FDF2F8',icon:'🥩'},
 };
-let _jt_idx=0, _jt_emps=[], _jt_estados={}, _jt_hoy='', _jt_readonly=false, _jt_nombre='';
+let _jt_emps=[], _jt_estados={}, _jt_hoy='', _jt_readonly=false, _jt_nombre='', _jt_tab='sala_tienda', _jt_autoCloseTimer=null;
 
-const _SVG_P=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 80" width="90" height="110"><circle cx="32" cy="12" r="11" fill="#22C55E"/><rect x="18" y="25" width="28" height="28" rx="7" fill="#22C55E"/><line x1="18" y1="32" x2="4" y2="46" stroke="#22C55E" stroke-width="7" stroke-linecap="round"/><line x1="46" y1="32" x2="60" y2="38" stroke="#22C55E" stroke-width="7" stroke-linecap="round"/><line x1="25" y1="53" x2="20" y2="76" stroke="#22C55E" stroke-width="7" stroke-linecap="round"/><line x1="39" y1="53" x2="44" y2="76" stroke="#22C55E" stroke-width="7" stroke-linecap="round"/><rect x="48" y="28" width="15" height="11" rx="3" fill="#16A34A"/><path d="M51 28 L51 24 L60 24 L60 28" stroke="#16A34A" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg>`;
-const _SVG_D=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 110 66" width="110" height="66"><rect x="0" y="42" width="78" height="20" rx="10" fill="#93C5FD"/><rect x="8" y="26" width="56" height="22" rx="11" fill="#60A5FA"/><circle cx="68" cy="32" r="14" fill="#60A5FA"/><text x="84" y="30" font-family="Arial,sans-serif" font-size="13" font-weight="bold" fill="#1E40AF">Z</text><text x="90" y="18" font-family="Arial,sans-serif" font-size="16" font-weight="bold" fill="#2563EB">Z</text><text x="97" y="6" font-family="Arial,sans-serif" font-size="19" font-weight="bold" fill="#3B82F6">Z</text></svg>`;
-const _SVG_N=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 80" width="90" height="110"><circle cx="32" cy="12" r="11" fill="#D1D5DB"/><rect x="18" y="25" width="28" height="28" rx="7" fill="#D1D5DB"/><line x1="18" y1="32" x2="4" y2="46" stroke="#D1D5DB" stroke-width="7" stroke-linecap="round"/><line x1="46" y1="32" x2="60" y2="46" stroke="#D1D5DB" stroke-width="7" stroke-linecap="round"/><line x1="25" y1="53" x2="20" y2="76" stroke="#D1D5DB" stroke-width="7" stroke-linecap="round"/><line x1="39" y1="53" x2="44" y2="76" stroke="#D1D5DB" stroke-width="7" stroke-linecap="round"/></svg>`;
+const JT_TABS=[
+  {id:'sala_tienda',       label:'Sala + Tienda',        depts:['SALA','TIENDA']},
+  {id:'cocina',            label:'Cocina',               depts:['COCINA']},
+  {id:'almacen_carniceria',label:'Almacén + Carnicería', depts:['ALMACÉN','CARNICERÍA']},
+];
 
 function renderSeleccionJefeTurno(container, hoy){
   const fechaLabel=new Date(hoy+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
@@ -4534,21 +4536,18 @@ function seleccionarJefeTurno(empId){
   const emp=getEmpleadosActivos().find(e=>e.id===empId);
   if(!emp)return;
   _jt_nombre=emp.nombres+' '+emp.apellidos;
+  _jt_tab='sala_tienda';
   const container=document.getElementById('app-content');
   const hoy=new Date().toISOString().slice(0,10);
   const activos=getEmpleadosActivos().filter(e=>!DEPTS_EXCLUIDOS_JEFE_TURNO.includes(e.departamento));
   const registroHoy=STATE.asistencia.find(a=>a.fecha===hoy);
   renderAsistenciaJefeTurno(container,hoy,activos,registroHoy,false);
-  // El JT de SALA que toma la asistencia → PRESENTE automático; el otro JT de SALA → DESCANSANDO
+  // JT de SALA que toma → TRABAJA; el otro JT de SALA → DESCANSA
   const todosJT=_jt_emps.filter(e=>e.plaza&&e.plaza.toLowerCase().includes('jefe de turno')&&e.departamento==='SALA');
-  todosJT.forEach(jt=>{
-    _jt_estados[jt.id]={estado:jt.id===empId?'P':'D',motivo:''};
-  });
-  // Saltar al primer empleado sin marcar
-  const first=_jt_emps.findIndex(e=>!_jt_estados[e.id]);
-  _jt_idx=first>=0?first:_jt_emps.length;
+  todosJT.forEach(jt=>{ _jt_estados[jt.id]={estado:jt.id===empId?'P':'D',motivo:''}; });
   autoGuardarTurnoJT();
-  renderCardJT();
+  renderListaJT(container);
+  iniciarAutoCloseJT(hoy);
 }
 
 function renderAsistenciaJefeTurno(container, hoy, activos, registroHoy, yaGuardado){
@@ -4561,217 +4560,222 @@ function renderAsistenciaJefeTurno(container, hoy, activos, registroHoy, yaGuard
   _jt_estados={};
   if(registroHoy&&registroHoy.lineas)
     registroHoy.lineas.forEach(l=>{ _jt_estados[l.empleadoId]={estado:l.estado,motivo:l.motivo||''}; });
-  if(!yaGuardado){
-    const first=_jt_emps.findIndex(e=>!_jt_estados[e.id]);
-    _jt_idx=first>=0?first:0;
-  } else { _jt_idx=0; }
-  container.innerHTML='<div id="jt-card-area"></div>';
-  renderCardJT();
+  renderListaJT(container);
+  if(!yaGuardado) iniciarAutoCloseJT(hoy);
 }
 
-function renderCardJT(){
-  const area=document.getElementById('jt-card-area');
-  if(!area)return;
-  const total=_jt_emps.length;
-  if(_jt_idx>=total){renderSummaryJT();return;}
-  const emp=_jt_emps[_jt_idx];
-  const stObj=_jt_estados[emp.id]||{};
-  const estadoActual=stObj.estado||'';
-  const done=_jt_emps.filter(e=>_jt_estados[e.id]).length;
-  const pct=Math.round((done/total)*100);
+function renderListaJT(container){
   const fechaLabel=new Date(_jt_hoy+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-  const avatarSvg=estadoActual==='P'?_SVG_P:estadoActual==='D'?_SVG_D:_SVG_N;
-  const ro=_jt_readonly;
+  const tab=JT_TABS.find(t=>t.id===_jt_tab)||JT_TABS[0];
+  const tabEmps=_jt_emps.filter(e=>tab.depts.includes(e.departamento));
+  const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
+  const D=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='D').length;
+  const sinAsignar=_jt_emps.length-P-D;
+  const cerrado=_jt_readonly;
 
-  const borderColor=estadoActual==='P'?'#22C55E':estadoActual==='D'?'#3B82F6':'#E5E7EB';
-
-  area.innerHTML=
-    // Cabecera con fecha
-    '<div style="text-align:center;background:linear-gradient(135deg,#1B4332,#2D6A4F);color:white;border-radius:16px;padding:14px 16px;margin-bottom:16px">'
-    +'<div style="font-size:11px;letter-spacing:2px;opacity:0.75;text-transform:uppercase">Tomando asistencia</div>'
-    +'<div style="font-size:16px;font-weight:700;margin-top:3px">'+fechaLabel+'</div>'
-    +'<div style="font-size:11px;opacity:0.65;margin-top:2px">'+_jt_nombre+'</div>'
-    +'</div>'
-
-    // Barra de progreso
-    +'<div style="margin-bottom:18px">'
-    +'<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-mid);margin-bottom:5px">'
-    +'<span><b>'+done+'</b> de <b>'+total+'</b> marcados</span>'
-    +'<span>'+emp.departamento+'</span></div>'
-    +'<div style="background:#E5E7EB;border-radius:999px;height:8px;overflow:hidden">'
-    +'<div style="background:#22C55E;height:100%;width:'+pct+'%;transition:width 0.4s;border-radius:999px"></div></div></div>'
-
-    // Tarjeta del empleado con avatar SVG
-    +'<div style="background:white;border-radius:20px;padding:28px 20px 22px;text-align:center;margin-bottom:18px;'
-    +'box-shadow:0 2px 16px rgba(0,0,0,0.08);border:3px solid '+borderColor+';transition:border-color 0.3s">'
-    +'<div style="display:flex;justify-content:center;margin-bottom:14px">'+avatarSvg+'</div>'
-    +'<div style="font-size:25px;font-weight:800;color:var(--text-dark);line-height:1.2;margin-bottom:5px;font-family:\'Playfair Display\',serif">'+emp.nombres+' '+emp.apellidos+'</div>'
-    +'<div style="font-size:13px;color:var(--text-mid)">'+emp.plaza+' · '+emp.departamento+'</div>'
-    +(estadoActual
-      ? '<div style="margin-top:12px;display:inline-block;padding:5px 16px;border-radius:20px;font-size:12px;font-weight:700;'
-        +'background:'+(estadoActual==='P'?'#DCFCE7':'#DBEAFE')+';color:'+(estadoActual==='P'?'#166534':'#1D4ED8')+'">'
-        +(estadoActual==='P'?'✅ PRESENTE':'😴 DESCANSANDO')+'</div>'
-      : '')
-    +'</div>'
-
-    // Botones PRESENTE / DESCANSANDO
-    +(ro
-      ? ''
-      : '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">'
-        +'<button onclick="setEstadoJT(\''+emp.id+'\',\'P\')" style="'
-        +'padding:20px 8px;border-radius:16px;'
-        +'border:3px solid '+(estadoActual==='P'?'#22C55E':'#BBF7D0')+';'
-        +'background:'+(estadoActual==='P'?'#22C55E':'#F0FDF4')+';cursor:pointer;'
-        +'font-size:14px;font-weight:800;color:'+(estadoActual==='P'?'white':'#166534')+';'
-        +'display:flex;flex-direction:column;align-items:center;gap:8px;'
-        +(estadoActual==='P'?'box-shadow:0 4px 18px #22C55E55;':'')+'transition:all 0.15s">'
-        +'<span>💪</span><span>PRESENTE</span></button>'
-        +'<button onclick="setEstadoJT(\''+emp.id+'\',\'D\')" style="'
-        +'padding:20px 8px;border-radius:16px;'
-        +'border:3px solid '+(estadoActual==='D'?'#3B82F6':'#BFDBFE')+';'
-        +'background:'+(estadoActual==='D'?'#3B82F6':'#EFF6FF')+';cursor:pointer;'
-        +'font-size:14px;font-weight:800;color:'+(estadoActual==='D'?'white':'#1D4ED8')+';'
-        +'display:flex;flex-direction:column;align-items:center;gap:8px;'
-        +(estadoActual==='D'?'box-shadow:0 4px 18px #3B82F655;':'')+'transition:all 0.15s">'
-        +'<span>😴</span><span>DESCANSANDO</span></button>'
-        +'</div>'
-    )
-
-    // Navegación
-    +'<div style="display:flex;gap:10px;align-items:center">'
-    +'<button onclick="prevCardJT()" class="btn btn-secondary" style="flex:1;font-size:20px;padding:12px" '+(_jt_idx===0?'disabled':'')+'>←</button>'
-    +(ro
-      ? '<button onclick="nextCardJT()" class="btn btn-primary" style="flex:3">'+(_jt_idx===total-1?'Ver resumen →':'Siguiente →')+'</button>'
-      : '<button onclick="nextCardJT()" class="btn btn-secondary" style="flex:3;color:var(--text-mid)">'+(_jt_idx===total-1?'Ver resumen →':'Saltar →')+'</button>'
-    )
+  // Cabecera fecha
+  let html='<div style="background:linear-gradient(135deg,#1B4332,#2D6A4F);color:white;border-radius:14px;padding:13px 16px;margin-bottom:12px;text-align:center">'
+    +'<div style="font-size:10px;letter-spacing:2px;opacity:0.7;text-transform:uppercase">Asistencia del día</div>'
+    +'<div style="font-size:16px;font-weight:800;margin-top:2px">'+fechaLabel+'</div>'
+    +'<div style="font-size:11px;opacity:0.6;margin-top:1px">'+_jt_nombre+(cerrado?' · <b>Turno cerrado</b>':'')+'</div>'
     +'</div>';
+
+  // Pestañas por grupo
+  html+='<div style="display:flex;gap:6px;margin-bottom:12px;overflow-x:auto;padding-bottom:2px">';
+  JT_TABS.forEach(t=>{
+    const te=_jt_emps.filter(e=>t.depts.includes(e.departamento));
+    const td=te.filter(e=>_jt_estados[e.id]).length;
+    const complete=te.length>0&&td===te.length;
+    const active=t.id===_jt_tab;
+    html+='<button id="jt-tab-'+t.id+'" onclick="switchTabJT(\''+t.id+'\')" style="'
+      +'padding:7px 13px;border-radius:20px;font-size:12px;font-weight:700;white-space:nowrap;flex-shrink:0;'
+      +'border:2px solid '+(active?'#2D6A4F':complete?'#22C55E':'#E5E7EB')+';'
+      +'background:'+(active?'#2D6A4F':complete?'#DCFCE7':'#F3F4F6')+';'
+      +'color:'+(active?'white':complete?'#166534':'#6B7280')+';cursor:pointer">'
+      +(complete?'✓ ':'')+t.label+'&nbsp;'+td+'/'+te.length+'</button>';
+  });
+  html+='</div>';
+
+  // Lista de empleados de la pestaña activa
+  html+='<div style="background:white;border-radius:14px;overflow:hidden;border:1px solid #E5E7EB;margin-bottom:12px">';
+  if(!tabEmps.length){
+    html+='<div style="padding:24px;text-align:center;color:var(--text-mid)">Sin empleados en este grupo</div>';
+  } else {
+    tabEmps.forEach((emp,i)=>{
+      const st=(_jt_estados[emp.id]||{}).estado||'';
+      const last=i===tabEmps.length-1;
+      html+='<div id="jt-row-'+emp.id+'" style="display:flex;align-items:center;padding:11px 14px;'
+        +(last?'':'border-bottom:1px solid #F3F4F6;')
+        +'background:'+(st==='P'?'#F0FDF4':st==='D'?'#EFF6FF':'white')+'">'
+        // Nombre
+        +'<div style="flex:1;min-width:0">'
+        +'<div style="font-weight:700;font-size:14px;color:var(--text-dark);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+emp.nombres+' '+emp.apellidos+'</div>'
+        +'<div style="font-size:11px;color:var(--text-mid)">'+emp.plaza+'</div>'
+        +'</div>'
+        // Botones o etiqueta
+        +'<div style="display:flex;gap:6px;flex-shrink:0;margin-left:8px">';
+      if(cerrado){
+        html+='<span style="padding:5px 11px;border-radius:16px;font-size:12px;font-weight:700;'
+          +'background:'+(st==='P'?'#DCFCE7':st==='D'?'#DBEAFE':'#F3F4F6')+';'
+          +'color:'+(st==='P'?'#166534':st==='D'?'#1D4ED8':'#9CA3AF')+'">'
+          +(st==='P'?'✓ TRABAJA':st==='D'?'✓ DESCANSA':'—')+'</span>';
+      } else {
+        html+='<button id="jt-p-'+emp.id+'" onclick="setEstadoJT(\''+emp.id+'\',\'P\')" style="'
+          +'padding:7px 11px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;transition:all 0.12s;'
+          +'border:2px solid '+(st==='P'?'#22C55E':'#BBF7D0')+';'
+          +'background:'+(st==='P'?'#22C55E':'#F0FDF4')+';'
+          +'color:'+(st==='P'?'white':'#166534')+'">'+( st==='P'?'✓ ':'')+'TRABAJA</button>'
+          +'<button id="jt-d-'+emp.id+'" onclick="setEstadoJT(\''+emp.id+'\',\'D\')" style="'
+          +'padding:7px 11px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;transition:all 0.12s;'
+          +'border:2px solid '+(st==='D'?'#3B82F6':'#BFDBFE')+';'
+          +'background:'+(st==='D'?'#3B82F6':'#EFF6FF')+';'
+          +'color:'+(st==='D'?'white':'#1D4ED8')+'">'+( st==='D'?'✓ ':'')+'DESCANSA</button>';
+      }
+      html+='</div></div>';
+    });
+  }
+  html+='</div>';
+
+  // Contadores globales
+  html+='<div id="jt-counters" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">'
+    +'<div style="background:#DCFCE7;border-radius:10px;padding:9px;text-align:center"><div style="font-size:22px;font-weight:800;color:#166534">'+P+'</div><div style="font-size:10px;color:#166534;font-weight:600">✅ Trabajan</div></div>'
+    +'<div style="background:#DBEAFE;border-radius:10px;padding:9px;text-align:center"><div style="font-size:22px;font-weight:800;color:#1D4ED8">'+D+'</div><div style="font-size:10px;color:#1D4ED8;font-weight:600">😴 Descansan</div></div>'
+    +'<div style="background:#F3F4F6;border-radius:10px;padding:9px;text-align:center"><div style="font-size:22px;font-weight:800;color:#6B7280">'+sinAsignar+'</div><div style="font-size:10px;color:#6B7280;font-weight:600">— Sin marcar</div></div>'
+    +'</div>';
+
+  // Botón cerrar o mensaje despedida
+  if(cerrado){
+    html+='<div style="background:linear-gradient(135deg,#1B4332,#2D6A4F);color:white;border-radius:14px;padding:20px;text-align:center">'
+      +'<div style="font-size:32px;margin-bottom:6px">🎉</div>'
+      +'<div style="font-size:17px;font-weight:800;margin-bottom:4px">¡Hasta luego, '+(_jt_nombre.split(' ')[0]||'compañero')+'!</div>'
+      +'<div style="font-size:12px;opacity:0.75">Turno cerrado. Que descanses.</div>'
+      +'</div>';
+  } else {
+    html+='<button onclick="cerrarTurnoJT()" class="btn btn-success" style="width:100%;padding:13px;font-size:15px">🔒 Cerrar Turno</button>';
+  }
+
+  container.innerHTML='<div id="jt-lista-area">'+html+'</div>';
+}
+
+function switchTabJT(tabId){
+  _jt_tab=tabId;
+  const c=document.getElementById('app-content');
+  if(c) renderListaJT(c);
 }
 
 function setEstadoJT(empId,estado){
   if(_jt_readonly)return;
-  _jt_estados[empId]={estado,motivo:''};
+  const cur=(_jt_estados[empId]||{}).estado||'';
+  if(cur===estado) delete _jt_estados[empId]; // toca el mismo → quitar marca
+  else _jt_estados[empId]={estado,motivo:''};
   autoGuardarTurnoJT();
-  renderCardJT();
-  // Auto-avanzar tanto para PRESENTE como para DESCANSANDO
-  setTimeout(nextCardJT,380);
+  _updateRowJT(empId);
+  _updateTabsJT();
+  _updateCountersJT();
 }
 
-function nextCardJT(){
-  if(_jt_idx<_jt_emps.length)_jt_idx++;
-  renderCardJT();
-  window.scrollTo(0,0);
+function _updateRowJT(empId){
+  const st=(_jt_estados[empId]||{}).estado||'';
+  const row=document.getElementById('jt-row-'+empId);
+  const btnP=document.getElementById('jt-p-'+empId);
+  const btnD=document.getElementById('jt-d-'+empId);
+  if(row) row.style.background=st==='P'?'#F0FDF4':st==='D'?'#EFF6FF':'white';
+  if(btnP){
+    btnP.style.background=st==='P'?'#22C55E':'#F0FDF4';
+    btnP.style.color=st==='P'?'white':'#166534';
+    btnP.style.borderColor=st==='P'?'#22C55E':'#BBF7D0';
+    btnP.textContent=(st==='P'?'✓ ':'')+'TRABAJA';
+  }
+  if(btnD){
+    btnD.style.background=st==='D'?'#3B82F6':'#EFF6FF';
+    btnD.style.color=st==='D'?'white':'#1D4ED8';
+    btnD.style.borderColor=st==='D'?'#3B82F6':'#BFDBFE';
+    btnD.textContent=(st==='D'?'✓ ':'')+'DESCANSA';
+  }
 }
 
-function prevCardJT(){
-  if(_jt_idx>0)_jt_idx--;
-  renderCardJT();
-  window.scrollTo(0,0);
+function _updateTabsJT(){
+  JT_TABS.forEach(t=>{
+    const el=document.getElementById('jt-tab-'+t.id);
+    if(!el)return;
+    const te=_jt_emps.filter(e=>t.depts.includes(e.departamento));
+    const td=te.filter(e=>_jt_estados[e.id]).length;
+    const complete=te.length>0&&td===te.length;
+    const active=t.id===_jt_tab;
+    el.textContent=(complete?'✓ ':'')+t.label+' '+td+'/'+te.length;
+    el.style.background=active?'#2D6A4F':complete?'#DCFCE7':'#F3F4F6';
+    el.style.color=active?'white':complete?'#166534':'#6B7280';
+    el.style.borderColor=active?'#2D6A4F':complete?'#22C55E':'#E5E7EB';
+  });
+}
+
+function _updateCountersJT(){
+  const el=document.getElementById('jt-counters');
+  if(!el)return;
+  const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
+  const D=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='D').length;
+  const S=_jt_emps.length-P-D;
+  el.innerHTML='<div style="background:#DCFCE7;border-radius:10px;padding:9px;text-align:center"><div style="font-size:22px;font-weight:800;color:#166534">'+P+'</div><div style="font-size:10px;color:#166534;font-weight:600">✅ Trabajan</div></div>'
+    +'<div style="background:#DBEAFE;border-radius:10px;padding:9px;text-align:center"><div style="font-size:22px;font-weight:800;color:#1D4ED8">'+D+'</div><div style="font-size:10px;color:#1D4ED8;font-weight:600">😴 Descansan</div></div>'
+    +'<div style="background:#F3F4F6;border-radius:10px;padding:9px;text-align:center"><div style="font-size:22px;font-weight:800;color:#6B7280">'+S+'</div><div style="font-size:10px;color:#6B7280;font-weight:600">— Sin marcar</div></div>';
 }
 
 function autoGuardarTurnoJT(){
   let reg=STATE.asistencia.find(a=>a.fecha===_jt_hoy);
-  // Solo guardar empleados que fueron marcados explícitamente como Presente
-  const lineas=_jt_emps
-    .filter(e=>_jt_estados[e.id])
-    .map(e=>({
-      empleadoId:e.id,
-      estado:_jt_estados[e.id].estado,
-      motivo:_jt_estados[e.id].motivo||''
-    }));
+  const lineas=_jt_emps.filter(e=>_jt_estados[e.id]).map(e=>({
+    empleadoId:e.id, estado:_jt_estados[e.id].estado, motivo:_jt_estados[e.id].motivo||''
+  }));
   if(!reg){reg={id:'AS'+uid(),fecha:_jt_hoy,cerrado:false,registradoPor:_jt_nombre||getRoleName(currentRole),lineas};STATE.asistencia.push(reg);}
   else reg.lineas=lineas;
   saveState();
 }
 
-function renderSummaryJT(){
-  const area=document.getElementById('jt-card-area');
-  if(!area)return;
-  const total=_jt_emps.length;
-  const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
-  const D=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='D').length;
-  const sinAsignar=total-P-D;
-  const reg=STATE.asistencia.find(a=>a.fecha===_jt_hoy);
-  const cerrado=reg&&reg.cerrado;
-
-  const listaDepts=DEPT_ORDER_JT.map(dept=>{
-    const de=_jt_emps.filter(e=>e.departamento===dept);
-    if(!de.length)return'';
-    const C=DEPT_COLORS_JT[dept]||{bg:'#F3F4F6',color:'#374151',icon:''};
-    const rows=de.map(e=>{
-      const st=(_jt_estados[e.id]||{}).estado||'';
-      const icon=st==='P'?'<span style="color:#166534;font-size:18px">✅</span>'
-        :st==='D'?'<span style="color:#1D4ED8;font-size:18px">😴</span>'
-        :'<span style="color:#D1D5DB;font-size:18px">—</span>';
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #F5F5F5">'
-        +'<div><div style="font-weight:600;font-size:14px">'+e.nombres+' '+e.apellidos+'</div>'
-        +'<div style="font-size:12px;color:var(--text-mid)">'+e.plaza+'</div></div>'
-        +icon+'</div>';
-    }).join('');
-    return '<div style="margin-bottom:14px">'
-      +'<div style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:'+C.bg+';border-radius:10px;margin-bottom:5px">'
-      +'<span style="font-weight:700;color:'+C.color+'">'+C.icon+' '+dept+'</span>'
-      +'<span style="font-size:12px;color:'+C.color+'">'+de.length+' empleados</span></div>'
-      +rows+'</div>';
-  }).join('');
-
-  area.innerHTML=
-    // Mensaje de despedida si está cerrado
-    (cerrado
-      ? '<div style="background:linear-gradient(135deg,#1B4332,#2D6A4F);color:white;border-radius:18px;padding:28px 20px;text-align:center;margin-bottom:20px">'
-        +'<div style="font-size:48px;margin-bottom:10px">🎉</div>'
-        +'<div style="font-size:20px;font-weight:800;margin-bottom:6px">¡Hasta luego, '+(_jt_nombre.split(' ')[0]||'compañero')+'!</div>'
-        +'<div style="font-size:13px;opacity:0.8">Turno cerrado con éxito. Que descanses.</div>'
-        +'</div>'
-      : '<div style="text-align:center;margin-bottom:22px">'
-        +'<div style="font-size:36px;margin-bottom:8px">'+(sinAsignar>0?'⚠️':'✅')+'</div>'
-        +'<div style="font-size:19px;font-weight:700">'+(sinAsignar>0?sinAsignar+' sin asignar':'¡Todo registrado!')+'</div>'
-        +'<div style="font-size:13px;color:var(--text-mid);margin-top:4px">'+new Date(_jt_hoy+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})+'</div>'
-        +'</div>'
-    )
-
-    // Tres contadores
-    +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px">'
-    +'<div style="background:#DCFCE7;border-radius:12px;padding:12px 6px;text-align:center"><div style="font-size:28px;font-weight:800;color:#166534">'+P+'</div><div style="font-size:11px;color:#166534;font-weight:600">✅ Presentes</div></div>'
-    +'<div style="background:#DBEAFE;border-radius:12px;padding:12px 6px;text-align:center"><div style="font-size:28px;font-weight:800;color:#1D4ED8">'+D+'</div><div style="font-size:11px;color:#1D4ED8;font-weight:600">😴 Descansando</div></div>'
-    +'<div style="background:#F3F4F6;border-radius:12px;padding:12px 6px;text-align:center"><div style="font-size:28px;font-weight:800;color:#6B7280">'+sinAsignar+'</div><div style="font-size:11px;color:#6B7280;font-weight:600">— Sin asignar</div></div>'
-    +'</div>'
-
-    +(sinAsignar>0&&!cerrado?'<div style="background:#FEF3C7;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#92400E">ℹ️ Los empleados sin asignar serán gestionados por Contabilidad antes de generar la nómina.</div>':'')
-
-    +'<div style="background:white;border-radius:14px;padding:16px;margin-bottom:20px;border:1px solid var(--border-light);max-height:340px;overflow-y:auto">'+listaDepts+'</div>'
-
-    +'<div style="display:flex;gap:10px">'
-    +(cerrado?''
-      :'<button onclick="_jt_idx=0;renderCardJT()" class="btn btn-secondary" style="flex:1">← Revisar</button>')
-    +(cerrado
-      ?'<span class="badge badge-approved" style="flex:1;display:flex;align-items:center;justify-content:center;padding:12px;font-size:14px;border-radius:10px;">✅ Turno cerrado</span>'
-      :'<button onclick="cerrarTurnoJT()" class="btn btn-success" style="flex:2">🔒 Cerrar Turno</button>')
-    +'</div>';
+function iniciarAutoCloseJT(hoy){
+  if(_jt_autoCloseTimer) clearInterval(_jt_autoCloseTimer);
+  _jt_autoCloseTimer=setInterval(()=>{
+    const now=new Date();
+    if(now.getHours()>=20 && _jt_hoy===hoy && !_jt_readonly){
+      clearInterval(_jt_autoCloseTimer); _jt_autoCloseTimer=null;
+      autoGuardarTurnoJT();
+      const reg=STATE.asistencia.find(a=>a.fecha===_jt_hoy);
+      if(reg&&!reg.cerrado){
+        const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
+        const D=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='D').length;
+        reg.cerrado=true; reg.horaCierre='20:00'; reg.cierreAutomatico=true;
+        _jt_readonly=true; saveState();
+        pushToSheets('asistencia','insertar',reg);
+        addAuditLog('ASISTENCIA','Turno '+hoy+' cerrado automáticamente a las 20:00. P:'+P+' D:'+D);
+        showToast('Turno cerrado automáticamente a las 20:00 ✅','success',6000);
+        const tb=document.getElementById('topbar-actions');
+        if(tb) tb.innerHTML='<span class="badge badge-approved" style="padding:8px 16px;font-size:13px;">✅ Turno cerrado</span>';
+        const c=document.getElementById('app-content');
+        if(c&&currentRole==='jefe_turno') renderListaJT(c);
+      }
+    }
+  },30000); // revisa cada 30 segundos
 }
 
 function cerrarTurnoJT(){
   autoGuardarTurnoJT();
   const reg=STATE.asistencia.find(a=>a.fecha===_jt_hoy);
   if(!reg){
-    // Crear registro aunque no haya nadie marcado
     const newReg={id:'AS'+uid(),fecha:_jt_hoy,cerrado:false,registradoPor:_jt_nombre||getRoleName(currentRole),lineas:[]};
-    STATE.asistencia.push(newReg);
-    saveState();
-    return cerrarTurnoJT();
+    STATE.asistencia.push(newReg); saveState(); return cerrarTurnoJT();
   }
   const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
   const D=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='D').length;
   const sinAsignar=_jt_emps.length-P-D;
-  confirmAction('¿Confirmar cierre del turno? <b>'+P+' presentes</b>, <b>'+D+' descansando</b>, '+sinAsignar+' sin asignar (Contabilidad gestionará). <b>No se podrá modificar.</b>',function(){
+  confirmAction('¿Confirmar cierre del turno? <b>'+P+' trabajan</b>, <b>'+D+' descansan</b>, '+sinAsignar+' sin marcar (Contabilidad gestionará). <b>No se podrá modificar.</b>',function(){
+    if(_jt_autoCloseTimer){clearInterval(_jt_autoCloseTimer);_jt_autoCloseTimer=null;}
     reg.cerrado=true;
     reg.horaCierre=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
-    _jt_readonly=true;
-    saveState();
+    _jt_readonly=true; saveState();
     pushToSheets('asistencia','insertar',reg);
-    addAuditLog('ASISTENCIA','Turno '+_jt_hoy+' cerrado. Presentes:'+P+' Descansando:'+D+' Sin asignar:'+sinAsignar);
+    addAuditLog('ASISTENCIA','Turno '+_jt_hoy+' cerrado. P:'+P+' D:'+D+' Sin:'+sinAsignar);
     showToast('Turno cerrado y guardado ✅','success',4000);
     document.getElementById('topbar-actions').innerHTML='<span class="badge badge-approved" style="padding:8px 16px;font-size:13px;">✅ Turno cerrado</span>';
-    renderSummaryJT();
+    const c=document.getElementById('app-content');
+    if(c) renderListaJT(c);
   });
 }
 
