@@ -2448,7 +2448,7 @@ function renderAlta(container,editData=null){
 
       <div class="form-section-title">💼 Datos Laborales</div>
       <div class="form-group"><label class="field-label required">Tipo de Contrato</label>
-        <select id="a-contrato">${['Indefinido','Temporal por obra','Temporal eventual','Formación','Prácticas','Relevo'].map(t=>`<option ${d.tipoContrato===t?'selected':''}>${t}</option>`).join('')}</select></div>
+        <select id="a-contrato">${['Indefinido','Determinado','Socio','Temporal por obra','Temporal eventual','Formación','Prácticas','Relevo'].map(t=>`<option ${d.tipoContrato===t?'selected':''}>${t}</option>`).join('')}</select></div>
 
       <div class="form-group"><label class="field-label required" data-tip="Jornada laboral contratada">Jornada de Trabajo</label>
         <select id="a-jornada" onchange="updateJornadaInfo()" required>
@@ -3764,12 +3764,12 @@ function cargarNomina(){
       <th data-tip="Salario base mensual">Sal.Base</th>
       <th data-tip="Horas fuera de jornada">H.Ext</th>
       <th data-tip="Total bruto devengado">Total Bruto</th>
-      <th data-tip="Seguridad Social 5%">SS 5%</th>
-      <th data-tip="Impuesto sobre los Ingresos Personales (IIP)">IIP</th>
+      <th data-tip="Contribución Especial Seguridad Social trabajador (5% hasta 15k / 10% sobre 15k)">AES</th>
+      <th data-tip="Impuesto sobre los Ingresos Personales (IIP) — escala progresiva">IIP</th>
       <th data-tip="Salario neto a pagar">Neto</th>
     </tr></thead><tbody>`;
 
-  let totBruto=0,totSS=0,totIRPF=0,totNeto=0;
+  let totBruto=0,totAES=0,totIRPF=0,totNeto=0;
   nomina.lineas.forEach((l,idx)=>{
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);if(!e)return;
     const salBase=e.salarioBase||0;
@@ -3779,11 +3779,11 @@ function cargarNomina(){
     const recargo=1+(STATE.config.recargoHorasExtras/100);
     const valHE=(salDiario/8)*recargo;
     const bruto=(salDiario*l.diasTrabajados)+bon+(l.horasExtras*valHE);
-    const ss=Math.round(bruto*0.05*100)/100;
+    const aes=calcularAES(bruto,esEmpleadoSocio(e));
     const irpf=Math.round(calcularIIP(bruto)*100)/100;
-    const neto=Math.round((bruto-ss-irpf)*100)/100;
-    l.totalDevengado=bruto;l.deduccionSS=ss;l.deduccionIRPF=irpf;l.totalNeto=neto;
-    totBruto+=bruto;totSS+=ss;totIRPF+=irpf;totNeto+=neto;
+    const neto=Math.round((bruto-aes-irpf)*100)/100;
+    l.totalDevengado=bruto;l.deduccionSS=aes;l.deduccionIRPF=irpf;l.totalNeto=neto;
+    totBruto+=bruto;totAES+=aes;totIRPF+=irpf;totNeto+=neto;
 
     // Fuente de días: asistencia real o jornada base
     const fuenteTag=esDeptoAdmin(e.departamento)
@@ -3809,32 +3809,41 @@ function cargarNomina(){
           :(l.horasExtras||0)}
       </td>
       <td id="bruto-${e.id}"><b>${fmtMoney(bruto)}</b></td>
-      <td id="ss-${e.id}" style="color:#B45309">${fmtMoney(ss)}</td>
+      <td id="ss-${e.id}" style="color:#B45309">${aes>0?fmtMoney(aes):'—'}</td>
       <td id="irpf-${e.id}" style="color:#991B1B">${irpf>0?fmtMoney(irpf):'—'}</td>
       <td id="neto-${e.id}" style="color:#2D6A4F;font-weight:700">${fmtMoney(neto)}</td>
     </tr>`;
   });
 
   nomina.totalDevengado=totBruto;nomina.totalNeto=totNeto;saveState();
-  const ssEmpleador=Math.round(totBruto*0.14*100)/100;
+  // Desglose IIP por tramo — suma de todos los empleados
+  const iipTramos={IP3:0,IP5:0,R1:0,R2:0,R3:0,R4:0};
+  nomina.lineas.forEach(l=>{
+    calcularIIPDetalle(l.totalDevengado||0).forEach(t=>{ iipTramos[t.label]=(iipTramos[t.label]||0)+t.importe; });
+  });
+  const iipDetHtml=Object.entries(iipTramos).filter(([,v])=>v>0)
+    .map(([k,v])=>`<tr><td style="padding:3px 8px 3px 24px;color:#7F1D1D;font-size:12px">↳ ${k}</td><td style="text-align:right;padding:3px 8px;color:#7F1D1D;font-size:12px">${fmtMoney(v)}</td></tr>`).join('');
   html+=`</tbody>
     <tfoot>
       <tr style="background:#F9F5F0;font-weight:700;border-top:2px solid var(--gold)">
-        <td colspan="7" class="text-right">TOTALES:</td>
+        <td colspan="6" class="text-right">TOTALES:</td>
         <td id="nom-tot-bruto">${fmtMoney(totBruto)}</td>
-        <td id="nom-tot-ss" style="color:#B45309">${fmtMoney(totSS)}</td>
+        <td id="nom-tot-ss" style="color:#B45309">${fmtMoney(totAES)}</td>
         <td id="nom-tot-irpf" style="color:#991B1B">${fmtMoney(totIRPF)}</td>
         <td id="nom-tot-neto" style="color:#2D6A4F">${fmtMoney(totNeto)}</td>
       </tr>
-      <tr style="background:#EFF6FF;font-size:12px;color:#1D4ED8">
-        <td colspan="11" style="padding:8px 12px">
-          📊 <b>Contribución SS empleador (14%):</b> ${fmtMoney(ssEmpleador)} &nbsp;|&nbsp;
-          <b>Costo total empresa:</b> ${fmtMoney(totBruto+ssEmpleador)} &nbsp;|&nbsp;
-          <b>Total neto a pagar:</b> ${fmtMoney(totNeto)}
-        </td>
-      </tr>
     </tfoot>
-  </table></div>`;
+  </table></div>
+  <div style="border:1px solid #B45309;border-radius:8px;padding:14px 16px;margin-top:12px;background:#FFFBF5">
+    <div style="font-weight:700;font-size:13px;margin-bottom:10px;color:#92400E">📊 Cuadro Resumen para Contabilidad</div>
+    <table style="width:280px;font-size:13px;border-collapse:collapse">
+      <tr><td style="padding:4px 8px">Salario Devengado Total</td><td style="text-align:right;padding:4px 8px;font-weight:700">${fmtMoney(totBruto)}</td></tr>
+      <tr style="background:#FFF7ED"><td style="padding:4px 8px;color:#B45309">AES — Contrib. SS Trabajadores</td><td style="text-align:right;padding:4px 8px;color:#B45309">(${fmtMoney(totAES)})</td></tr>
+      <tr style="background:#FFF1F2"><td style="padding:4px 8px;color:#991B1B">IIP — Impuesto Ingresos Personales</td><td style="text-align:right;padding:4px 8px;color:#991B1B">(${fmtMoney(totIRPF)})</td></tr>
+      ${iipDetHtml}
+      <tr style="border-top:2px solid #B45309"><td style="padding:6px 8px;font-weight:700">TOTAL NETO A PAGAR</td><td style="text-align:right;padding:6px 8px;font-weight:700;font-size:15px;color:#2D6A4F">${fmtMoney(totNeto)}</td></tr>
+    </table>
+  </div>`;
 
   if(canEdit&&!isReadOnly){
     html+=`<div class="card-footer" style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
@@ -3857,24 +3866,23 @@ function updateNominaLine(nomId,empId){
   const salBase=e.salarioBase||0;const jornadaDias=getDiasJornada(e.jornada);const salDiario=jornadaDias>0?salBase/jornadaDias:0;
   const bon=calcBonificacion(salBase,e.fechaAlta);const recargo=1+(STATE.config.recargoHorasExtras/100);const valHE=(salDiario/8)*recargo;
   const bruto=(salDiario*linea.diasTrabajados)+bon+(linea.horasExtras*valHE);
-  const ss=Math.round(bruto*0.05*100)/100;
+  const aes=calcularAES(bruto,esEmpleadoSocio(e));
   const irpf=Math.round(calcularIIP(bruto)*100)/100;
-  const neto=Math.round((bruto-ss-irpf)*100)/100;
-  linea.totalDevengado=bruto;linea.deduccionSS=ss;linea.deduccionIRPF=irpf;linea.totalNeto=neto;
+  const neto=Math.round((bruto-aes-irpf)*100)/100;
+  linea.totalDevengado=bruto;linea.deduccionSS=aes;linea.deduccionIRPF=irpf;linea.totalNeto=neto;
   saveState();
   const brutoEl=document.getElementById('bruto-'+empId);if(brutoEl)brutoEl.innerHTML=`<b>${fmtMoney(bruto)}</b>`;
-  const ssEl=document.getElementById('ss-'+empId);if(ssEl)ssEl.innerHTML=fmtMoney(ss);
+  const ssEl=document.getElementById('ss-'+empId);if(ssEl)ssEl.innerHTML=aes>0?fmtMoney(aes):'—';
   const irpfEl=document.getElementById('irpf-'+empId);if(irpfEl)irpfEl.innerHTML=irpf>0?fmtMoney(irpf):'—';
   const netoEl=document.getElementById('neto-'+empId);if(netoEl)netoEl.innerHTML=fmtMoney(neto);
   // Actualizar totales
   const totBruto=nomina.lineas.reduce((s,l)=>s+(l.totalDevengado||0),0);
-  const totSS=nomina.lineas.reduce((s,l)=>s+(l.deduccionSS||0),0);
+  const totAES=nomina.lineas.reduce((s,l)=>s+(l.deduccionSS||0),0);
   const totIRPF=nomina.lineas.reduce((s,l)=>s+(l.deduccionIRPF||0),0);
   const totNeto=nomina.lineas.reduce((s,l)=>s+(l.totalNeto||0),0);
   nomina.totalDevengado=totBruto;nomina.totalNeto=totNeto;
-  const ssEmpleador=Math.round(totBruto*0.14*100)/100;
   const el=(id,v)=>{const el=document.getElementById(id);if(el)el.innerHTML=v;};
-  el('nom-tot-bruto',fmtMoney(totBruto));el('nom-tot-ss',fmtMoney(totSS));el('nom-tot-irpf',fmtMoney(totIRPF));el('nom-tot-neto',fmtMoney(totNeto));
+  el('nom-tot-bruto',fmtMoney(totBruto));el('nom-tot-ss',fmtMoney(totAES));el('nom-tot-irpf',fmtMoney(totIRPF));el('nom-tot-neto',fmtMoney(totNeto));
   saveState();
 }
 
@@ -3962,10 +3970,10 @@ function exportNomina(nomId){
   exportToExcel(n.lineas.map(l=>{
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);
     const bruto=l.totalDevengado||0;
-    const ss=l.deduccionSS!=null?l.deduccionSS:Math.round(bruto*0.05*100)/100;
+    const aes=l.deduccionSS!=null?l.deduccionSS:calcularAES(bruto,e?esEmpleadoSocio(e):false);
     const irpf=l.deduccionIRPF!=null?l.deduccionIRPF:Math.round(calcularIIP(bruto)*100)/100;
-    const neto=l.totalNeto!=null?l.totalNeto:Math.round((bruto-ss-irpf)*100)/100;
-    return{Empleado:e?`${e.nombres} ${e.apellidos}`:'—',CI:e?e.carnet:'—',Plaza:e?e.plaza:'—',Departamento:e?e.departamento:'—','Días Trabajados':l.diasTrabajados,'Horas Extras':l.horasExtras||0,'Total Bruto':bruto,'SS (5%)':ss,'IIP':irpf,'Total Neto':neto};
+    const neto=l.totalNeto!=null?l.totalNeto:Math.round((bruto-aes-irpf)*100)/100;
+    return{Empleado:e?`${e.nombres} ${e.apellidos}`:'—',CI:e?e.carnet:'—',Plaza:e?e.plaza:'—',Departamento:e?e.departamento:'—','Días Trabajados':l.diasTrabajados,'Horas Extras':l.horasExtras||0,'Total Bruto':bruto,'AES':aes,'IIP':irpf,'Total Neto':neto};
   }),`Nomina_${n.mesNombre}_${n.ano}`);
   showToast('Exportado','success');
 }
@@ -3984,14 +3992,16 @@ function imprimirNominaCompleta(nomId){
   const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
   const empresa=STATE.config.empresa||'La Catedral S.R.L.';
   const fechaImpresion=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
-  let totBruto=0,totSS=0,totIRPF=0,totNeto=0;
+  let totBruto=0,totAES=0,totIRPF=0,totNeto=0;
+  const iipTramos={IP3:0,IP5:0,R1:0,R2:0,R3:0,R4:0};
   const rows=n.lineas.map((l,i)=>{
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);if(!e)return'';
     const bruto=l.totalDevengado||0;
-    const ss=l.deduccionSS!=null?l.deduccionSS:Math.round(bruto*0.05*100)/100;
+    const aes=l.deduccionSS!=null?l.deduccionSS:calcularAES(bruto,esEmpleadoSocio(e));
     const irpf=l.deduccionIRPF!=null?l.deduccionIRPF:Math.round(calcularIIP(bruto)*100)/100;
-    const neto=l.totalNeto!=null?l.totalNeto:Math.round((bruto-ss-irpf)*100)/100;
-    totBruto+=bruto;totSS+=ss;totIRPF+=irpf;totNeto+=neto;
+    const neto=l.totalNeto!=null?l.totalNeto:Math.round((bruto-aes-irpf)*100)/100;
+    totBruto+=bruto;totAES+=aes;totIRPF+=irpf;totNeto+=neto;
+    calcularIIPDetalle(bruto).forEach(t=>{ iipTramos[t.label]=(iipTramos[t.label]||0)+t.importe; });
     const fmt=v=>v>0?v.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
     return`<tr>
       <td style="text-align:center">${i+1}</td>
@@ -3999,13 +4009,12 @@ function imprimirNominaCompleta(nomId){
       <td>${e.plaza||'—'}</td>
       <td style="text-align:center">${l.diasTrabajados}</td>
       <td style="text-align:right">${fmt(bruto)}</td>
-      <td style="text-align:right">${fmt(ss)}</td>
+      <td style="text-align:right">${aes>0?fmt(aes):'—'}</td>
       <td style="text-align:right">${irpf>0?fmt(irpf):'—'}</td>
       <td style="text-align:right"><b>${fmt(neto)}</b></td>
       <td style="width:80px;border-bottom:1px solid #999;"></td>
     </tr>`;
   }).join('');
-  const ssEmpleador=Math.round(totBruto*0.14*100)/100;
   const fmt=v=>v.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2});
 
   const w=window.open('','_blank','width=1000,height=750');
@@ -4054,34 +4063,29 @@ function imprimirNominaCompleta(nomId){
   <table>
     <thead><tr>
       <th>Nº</th><th style="text-align:left">Nombre y Apellidos</th><th style="text-align:left">Plaza</th>
-      <th>Días</th><th>Total Bruto</th><th>SS (5%)</th><th>IIP</th><th>NETO</th><th>Firma</th>
+      <th>Días</th><th>Total Bruto</th><th>AES</th><th>IIP</th><th>NETO</th><th>Firma</th>
     </tr></thead>
     <tbody>${rows}</tbody>
     <tfoot><tr class="tfoot-row">
       <td colspan="4" style="text-align:right">TOTALES:</td>
-      <td style="text-align:center">—</td>
       <td style="text-align:right">${fmt(totBruto)}</td>
-      <td style="text-align:right">${fmt(totSS)}</td>
+      <td style="text-align:right">${fmt(totAES)}</td>
       <td style="text-align:right">${fmt(totIRPF)}</td>
       <td style="text-align:right"><b>${fmt(totNeto)}</b></td>
       <td></td>
     </tr></tfoot>
   </table>
   <div class="totales-block">
+    <b style="display:block;margin-bottom:8px;font-size:12px">CUADRO RESUMEN PARA CONTABILIDAD</b>
     <table><tbody>
-      <tr><td class="lbl">Total bruto devengado:</td><td class="val">${fmt(totBruto)} CUP</td>
-          <td style="width:40px"></td>
-          <td class="lbl">Contribución SS Empleador (14%):</td><td class="val">${fmt(ssEmpleador)} CUP</td></tr>
-      <tr><td class="lbl">Total deducciones SS empleados:</td><td class="val">${fmt(totSS)} CUP</td>
-          <td></td>
-          <td class="lbl">Costo total empresa:</td><td class="val">${fmt(totBruto+ssEmpleador)} CUP</td></tr>
-      <tr><td class="lbl">Total IIP:</td><td class="val">${fmt(totIRPF)} CUP</td>
-          <td></td><td></td><td></td></tr>
-      <tr style="background:#E8F5E9"><td class="lbl"><b>TOTAL NETO A PAGAR:</b></td><td class="val" style="font-size:14px">${fmt(totNeto)} CUP</td>
-          <td></td><td></td><td></td></tr>
+      <tr><td class="lbl">Salario Devengado Total:</td><td class="val">${fmt(totBruto)} CUP</td></tr>
+      <tr><td class="lbl">AES — Contrib. SS Trabajadores:</td><td class="val" style="color:#7a3e00">(${fmt(totAES)}) CUP</td></tr>
+      <tr><td class="lbl" style="padding-left:16px;color:#555;font-size:10px">IIP — Impuesto Ingresos Personales:</td><td class="val" style="color:#7f0000">(${fmt(totIRPF)}) CUP</td></tr>
+      ${Object.entries(iipTramos).filter(([,v])=>v>0).map(([k,v])=>`<tr><td class="lbl" style="padding-left:28px;color:#888;font-size:10px">↳ ${k}:</td><td class="val" style="color:#888;font-size:10px">${fmt(v)} CUP</td></tr>`).join('')}
+      <tr style="background:#E8F5E9;border-top:1px solid #999"><td class="lbl"><b>TOTAL NETO A PAGAR:</b></td><td class="val" style="font-size:14px">${fmt(totNeto)} CUP</td></tr>
     </tbody></table>
   </div>
-  <p class="nota">Deducciones calculadas según Ley 113/2012 (IIP — escala progresiva) y legislación vigente de Seguridad Social (5% empleado, 14% empleador).</p>
+  <p class="nota">AES: Contribución Especial SS Trabajadores (5% hasta 15,000 CUP / 10% sobre exceso). Socios exentos de AES. IIP: escala progresiva 6 tramos (3%–20%).</p>
   <div class="firmas">
     <div class="firma-box">
       <div class="firma-line"></div>
@@ -5151,15 +5155,45 @@ function getDiasCalendarioMes(ano,mes){
   return new Date(ano,mes,0).getDate();
 }
 
-// IIP Cuba — Impuesto sobre los Ingresos Personales — Ley 113/2012 — escala progresiva mensual
+// IIP Cuba — Impuesto sobre los Ingresos Personales — escala progresiva mensual
 function calcularIIP(salario){
   if(!salario||salario<=0) return 0;
-  if(salario<=10000) return 0;
-  if(salario<=20000) return (salario-10000)*0.05;
-  if(salario<=30000) return 500+(salario-20000)*0.15;
-  if(salario<=50000) return 2000+(salario-30000)*0.20;
-  return 6000+(salario-50000)*0.30;
+  let iip=0;
+  if(salario>3260)  iip+=Math.min(salario-3260,  6250)*0.03;   // IP3: 3,260–9,510   (máx 187.50)
+  if(salario>9510)  iip+=Math.min(salario-9510,  5490)*0.05;   // IP5: 9,510–15,000  (máx 274.50)
+  if(salario>15000) iip+=Math.min(salario-15000, 5000)*0.075;  // R1:  15,000–20,000 (máx 375.00)
+  if(salario>20000) iip+=Math.min(salario-20000, 5000)*0.10;   // R2:  20,000–25,000 (máx 500.00)
+  if(salario>25000) iip+=Math.min(salario-25000, 5000)*0.15;   // R3:  25,000–30,000 (máx 750.00)
+  if(salario>30000) iip+=(salario-30000)*0.20;                  // R4:  >30,000 (variable)
+  return Math.round(iip*100)/100;
 }
+// AES — Contribución Especial de Seguridad Social del Trabajador (progresiva)
+// Socio (tipoContrato='Socio') no paga AES — cotiza por cuenta propia
+function calcularAES(salario,socio){
+  if(socio||!salario||salario<=0) return 0;
+  if(salario<=15000) return Math.round(salario*0.05*100)/100;
+  return Math.round((750+(salario-15000)*0.10)*100)/100;
+}
+// Desglose IIP por tramo — para cuadro resumen del contador
+function calcularIIPDetalle(salario){
+  const tramos=[
+    {label:'IP3',desde:3260, hasta:9510, rate:0.03},
+    {label:'IP5',desde:9510, hasta:15000,rate:0.05},
+    {label:'R1', desde:15000,hasta:20000,rate:0.075},
+    {label:'R2', desde:20000,hasta:25000,rate:0.10},
+    {label:'R3', desde:25000,hasta:30000,rate:0.15},
+    {label:'R4', desde:30000,hasta:null, rate:0.20},
+  ];
+  return tramos.reduce((acc,t)=>{
+    if(salario<=t.desde) return acc;
+    const base=t.hasta?Math.min(salario-t.desde,t.hasta-t.desde):salario-t.desde;
+    const imp=Math.round(base*t.rate*100)/100;
+    if(imp>0) acc.push({label:t.label,importe:imp});
+    return acc;
+  },[]);
+}
+// Identifica si el empleado es socio (no paga AES)
+function esEmpleadoSocio(e){ return (e.tipoContrato||'')==='Socio'; }
 
 // Departamento de administración (no registrado por jefe de turno → 100% asistencia)
 function esDeptoAdmin(dept){
