@@ -4012,7 +4012,6 @@ function imprimirNominaCompleta(nomId){
       <td style="text-align:right">${aes>0?fmt(aes):'—'}</td>
       <td style="text-align:right">${irpf>0?fmt(irpf):'—'}</td>
       <td style="text-align:right"><b>${fmt(neto)}</b></td>
-      <td style="width:80px;border-bottom:1px solid #999;"></td>
     </tr>`;
   }).join('');
   const fmt=v=>v.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -4063,7 +4062,7 @@ function imprimirNominaCompleta(nomId){
   <table>
     <thead><tr>
       <th>Nº</th><th style="text-align:left">Nombre y Apellidos</th><th style="text-align:left">Plaza</th>
-      <th>Días</th><th>Total Bruto</th><th>AES</th><th>IIP</th><th>NETO</th><th>Firma</th>
+      <th>Días</th><th>Total Bruto</th><th>AES</th><th>IIP</th><th>NETO</th>
     </tr></thead>
     <tbody>${rows}</tbody>
     <tfoot><tr class="tfoot-row">
