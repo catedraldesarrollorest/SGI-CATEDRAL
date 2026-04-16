@@ -2006,10 +2006,23 @@ function renderDashboard(container){
 
     <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:#aaa;margin-bottom:12px;padding-left:2px">Resumen</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:24px;">
+    ${currentRole==='jefe_turno'?(()=>{
+      const hoyISO=new Date().toISOString().slice(0,10);
+      const regHoy=STATE.asistencia.find(a=>a.fecha===hoyISO);
+      const lineas=regHoy?(regHoy.lineas||[]).filter(l=>{const e=STATE.empleados.find(x=>x.id===l.empleadoId);return e&&!DEPTS_EXCLUIDOS_JEFE_TURNO.includes(e.departamento);}):[];
+      const P=lineas.filter(l=>l.estado==='P').length;
+      const A=lineas.filter(l=>l.estado==='A').length;
+      const T=lineas.filter(l=>l.estado==='T').length;
+      const estadoBadge=!regHoy?'Sin registro':(regHoy.cerrado?'✅ Cerrado':'🔄 En curso');
+      return`<div class="stat-card" style="border-top:3px solid ${pal.g2}"><span class="stat-icon">📋</span><div class="stat-value" style="font-size:14px">${estadoBadge}</div><div class="stat-label">Turno de Hoy</div></div>
+      <div class="stat-card" style="border-top:3px solid #2D9060"><span class="stat-icon">✅</span><div class="stat-value">${P}</div><div class="stat-label">Presentes</div></div>
+      <div class="stat-card" style="border-top:3px solid #C0392B"><span class="stat-icon">❌</span><div class="stat-value">${A}</div><div class="stat-label">Ausentes</div></div>
+      <div class="stat-card" style="border-top:3px solid #C97A2A"><span class="stat-icon">🕐</span><div class="stat-value">${T}</div><div class="stat-label">Tardanzas</div></div>`;
+    })():`
       <div class="stat-card" style="border-top:3px solid ${pal.g2}"><span class="stat-icon">👥</span><div class="stat-value">${activos.length}</div><div class="stat-label">Empleados Activos</div></div>
       <div class="stat-card" style="border-top:3px solid #C0392B"><span class="stat-icon">📤</span><div class="stat-value">${STATE.bajas.length}</div><div class="stat-label">Bajas Registradas</div></div>
       <div class="stat-card" style="border-top:3px solid #2D9060"><span class="stat-icon">📋</span><div class="stat-value">${STATE.nominas.filter(n=>n.estado==='aprobada').length}</div><div class="stat-label">Pre-Nóminas Aprobadas</div></div>
-      <div class="stat-card" style="border-top:3px solid #C97A2A"><span class="stat-icon">⚠️</span><div class="stat-value">${STATE.sanciones.length}</div><div class="stat-label">Sanciones Totales</div></div>
+      <div class="stat-card" style="border-top:3px solid #C97A2A"><span class="stat-icon">⚠️</span><div class="stat-value">${STATE.sanciones.length}</div><div class="stat-label">Sanciones Totales</div></div>`}
     </div>
     ${(()=>{
       const pendientes=STATE.nominas.filter(n=>n.estado==='pendiente');
