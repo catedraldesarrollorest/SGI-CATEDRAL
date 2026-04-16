@@ -3762,7 +3762,6 @@ function cargarNomina(){
       <th>Nº</th><th>Empleado</th><th>Plaza</th>
       <th data-tip="Días trabajados este mes">Días</th>
       <th data-tip="Salario base mensual">Sal.Base</th>
-      <th data-tip="Horas fuera de jornada">H.Ext</th>
       <th data-tip="Total bruto devengado">Total Bruto</th>
       <th data-tip="Contribución Especial Seguridad Social trabajador (5% hasta 15k / 10% sobre 15k)">AES</th>
       <th data-tip="Impuesto sobre los Ingresos Personales (IIP) — escala progresiva">IIP</th>
@@ -3776,9 +3775,7 @@ function cargarNomina(){
     const jornadaDias=getDiasJornada(e.jornada);
     const salDiario=jornadaDias>0?salBase/jornadaDias:0;
     const bon=calcBonificacion(salBase,e.fechaAlta);
-    const recargo=1+(STATE.config.recargoHorasExtras/100);
-    const valHE=(salDiario/8)*recargo;
-    const bruto=(salDiario*l.diasTrabajados)+bon+(l.horasExtras*valHE);
+    const bruto=Math.round(((salDiario*l.diasTrabajados)+bon)*100)/100;
     const aes=calcularAES(bruto,esEmpleadoSocio(e));
     const irpf=Math.round(calcularIIP(bruto)*100)/100;
     const neto=Math.round((bruto-aes-irpf)*100)/100;
@@ -3803,11 +3800,6 @@ function cargarNomina(){
         ${fuenteTag}
       </td>
       <td>${fmtMoney(salBase)}</td>
-      <td style="text-align:center">
-        ${!isReadOnly&&canEdit
-          ?`<input type="number" id="he-${e.id}" value="${l.horasExtras||0}" min="0" style="width:50px;text-align:center" onchange="updateNominaLine('${nomina.id}','${e.id}')">`
-          :(l.horasExtras||0)}
-      </td>
       <td id="bruto-${e.id}"><b>${fmtMoney(bruto)}</b></td>
       <td id="ss-${e.id}" style="color:#B45309">${aes>0?fmtMoney(aes):'—'}</td>
       <td id="irpf-${e.id}" style="color:#991B1B">${irpf>0?fmtMoney(irpf):'—'}</td>
@@ -3826,7 +3818,7 @@ function cargarNomina(){
   html+=`</tbody>
     <tfoot>
       <tr style="background:#F9F5F0;font-weight:700;border-top:2px solid var(--gold)">
-        <td colspan="6" class="text-right">TOTALES:</td>
+        <td colspan="5" class="text-right">TOTALES:</td>
         <td id="nom-tot-bruto">${fmtMoney(totBruto)}</td>
         <td id="nom-tot-ss" style="color:#B45309">${fmtMoney(totAES)}</td>
         <td id="nom-tot-irpf" style="color:#991B1B">${fmtMoney(totIRPF)}</td>
@@ -3860,12 +3852,11 @@ function cargarNomina(){
 function updateNominaLine(nomId,empId){
   const nomina=STATE.nominas.find(n=>n.id===nomId);if(!nomina)return;
   const linea=nomina.lineas.find(l=>l.empleadoId===empId);const e=STATE.empleados.find(x=>x.id===empId);if(!linea||!e)return;
-  const dtEl=document.getElementById('dt-'+empId);const heEl=document.getElementById('he-'+empId);
+  const dtEl=document.getElementById('dt-'+empId);
   if(dtEl)linea.diasTrabajados=parseFloat(dtEl.value)||0;
-  if(heEl)linea.horasExtras=parseFloat(heEl.value)||0;
   const salBase=e.salarioBase||0;const jornadaDias=getDiasJornada(e.jornada);const salDiario=jornadaDias>0?salBase/jornadaDias:0;
-  const bon=calcBonificacion(salBase,e.fechaAlta);const recargo=1+(STATE.config.recargoHorasExtras/100);const valHE=(salDiario/8)*recargo;
-  const bruto=(salDiario*linea.diasTrabajados)+bon+(linea.horasExtras*valHE);
+  const bon=calcBonificacion(salBase,e.fechaAlta);
+  const bruto=Math.round(((salDiario*linea.diasTrabajados)+bon)*100)/100;
   const aes=calcularAES(bruto,esEmpleadoSocio(e));
   const irpf=Math.round(calcularIIP(bruto)*100)/100;
   const neto=Math.round((bruto-aes-irpf)*100)/100;
@@ -3973,7 +3964,7 @@ function exportNomina(nomId){
     const aes=l.deduccionSS!=null?l.deduccionSS:calcularAES(bruto,e?esEmpleadoSocio(e):false);
     const irpf=l.deduccionIRPF!=null?l.deduccionIRPF:Math.round(calcularIIP(bruto)*100)/100;
     const neto=l.totalNeto!=null?l.totalNeto:Math.round((bruto-aes-irpf)*100)/100;
-    return{Empleado:e?`${e.nombres} ${e.apellidos}`:'—',CI:e?e.carnet:'—',Plaza:e?e.plaza:'—',Departamento:e?e.departamento:'—','Días Trabajados':l.diasTrabajados,'Horas Extras':l.horasExtras||0,'Total Bruto':bruto,'AES':aes,'IIP':irpf,'Total Neto':neto};
+    return{Empleado:e?`${e.nombres} ${e.apellidos}`:'—',CI:e?e.carnet:'—',Plaza:e?e.plaza:'—',Departamento:e?e.departamento:'—','Días Trabajados':l.diasTrabajados,'Total Bruto':bruto,'AES':aes,'IIP':irpf,'Total Neto':neto};
   }),`Nomina_${n.mesNombre}_${n.ano}`);
   showToast('Exportado','success');
 }
