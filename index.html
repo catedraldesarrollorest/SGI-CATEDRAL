@@ -630,6 +630,7 @@ function _applyRealtimeChange({ eventType, table, new: rec, old: oldRec }) {
         else if (k==='pinJuridico')  STATE.config.pins.juridico = v;
         else if (k==='pinContabilidad') STATE.config.pins.contabilidad = v;
         else if (k==='pinJefeTurno') STATE.config.pins.jefe_turno = v;
+        else if (k==='pinAdmin')     STATE.config.adminPin = v;
         else if (k==='bonAnios1')    STATE.config.bonificacion.anios1 = parseInt(v)||5;
         else if (k==='bonNivel1')    STATE.config.bonificacion.nivel1 = parseInt(v)||5;
         else if (k==='bonAnios2')    STATE.config.bonificacion.anios2 = parseInt(v)||10;
@@ -1088,6 +1089,7 @@ async function sincronizarDesdeSheets() {
         else if(k==='pinJuridico') STATE.config.pins.juridico      = v;
         else if(k==='pinContabilidad') STATE.config.pins.contabilidad = v;
         else if(k==='pinJefeTurno')    STATE.config.pins.jefe_turno   = v;
+        else if(k==='pinAdmin')        STATE.config.adminPin           = v;
         else if(k==='bonAnios1')   STATE.config.bonificacion.anios1 = parseInt(v)||5;
         else if(k==='bonNivel1')   STATE.config.bonificacion.nivel1 = parseInt(v)||5;
         else if(k==='bonAnios2')   STATE.config.bonificacion.anios2 = parseInt(v)||10;
@@ -1105,6 +1107,7 @@ async function sincronizarDesdeSheets() {
       if (cfg.pinJuridico)    STATE.config.pins.juridico       = cfg.pinJuridico;
       if (cfg.pinContabilidad)STATE.config.pins.contabilidad   = cfg.pinContabilidad;
       if (cfg.pinJefeTurno)  STATE.config.pins.jefe_turno     = cfg.pinJefeTurno;
+      if (cfg.pinAdmin)       STATE.config.adminPin            = cfg.pinAdmin;
       if (cfg.bonAnios1)      STATE.config.bonificacion.anios1 = parseInt(cfg.bonAnios1);
       if (cfg.bonNivel1)      STATE.config.bonificacion.nivel1 = parseInt(cfg.bonNivel1);
       if (cfg.bonAnios2)      STATE.config.bonificacion.anios2 = parseInt(cfg.bonAnios2);
@@ -1185,6 +1188,8 @@ function getDefaultState() {
     historialSalarial:[], documentos:{}, auditLog:[], asistencia:[], docsLegales:[], alertasJuridico:[], preformas:{}, historialPreformas:{}, plazas:{}, nextId:1
   };
 }
+let _loginAttempts=0;
+let _loginLockedUntil=0;
 let STATE = loadState();
 // Migrate legacy plazasSalarios → plazas
 if(!STATE.plazas)STATE.plazas={};
@@ -1227,10 +1232,16 @@ function detectRoleByPin(pin){
   return null;
 }
 function doLogin(){
+  const now=Date.now();
+  if(now<_loginLockedUntil){
+    const seg=Math.ceil((_loginLockedUntil-now)/1000);
+    showToast(`Demasiados intentos. Espera ${seg}s.`,'error',4000);return;
+  }
   const pin=getPin();
   if(pin.length!==4){showToast('Ingrese los 4 dígitos del PIN','warning');return}
   const role=detectRoleByPin(pin);
   if(role){
+    _loginAttempts=0;_loginLockedUntil=0;
     currentRole=role;
     selectedRole=role;
     document.getElementById('login-screen').classList.add('hidden');
@@ -1241,6 +1252,8 @@ function doLogin(){
     setTimeout(function(){ updateAlertaBadgeJur(); }, 300);
     setTimeout(async () => { await sincronizarDesdeSheets(); await flushPendingOps(); connectRealtime(); }, 500);
   } else {
+    _loginAttempts++;
+    if(_loginAttempts>=5){_loginLockedUntil=Date.now()+30000;_loginAttempts=0;}
     document.getElementById('login-error').style.display='block';
     clearPin();
     setTimeout(()=>{document.getElementById('login-error').style.display='none'},3000);
@@ -1389,7 +1402,21 @@ function closeSidebar(){
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('sidebar-overlay').classList.remove('open');
 }
+function getRoleSections(role){
+  const items=NAV_ITEMS[role]||[];
+  const allowed=new Set(items.map(i=>i.section));
+  // dashboard siempre permitido para cualquier rol autenticado
+  allowed.add('dashboard');
+  return allowed;
+}
 function navigateTo(section){
+  if(!currentRole){return;}
+  // Control de acceso: solo admin puede acceder a cualquier sección
+  if(currentRole!=='admin'&&!getRoleSections(currentRole).has(section)){
+    showToast('Acceso no autorizado para este rol','error');
+    addAuditLog('ACCESO_DENEGADO',`Intento de acceder a sección "${section}" por ${getRoleName(currentRole)}`);
+    return;
+  }
   closeSidebar();
   currentSection=section;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.section===section));
@@ -3720,7 +3747,7 @@ function cargarNomina(){
   const periodoKey=`${ano}-${String(mes).padStart(2,'0')}`;
   let nomina=STATE.nominas.find(n=>n.periodo===periodoKey);
   const canEdit=currentRole==='rrhh'||currentRole==='admin';
-  const isReadOnly=nomina&&nomina.estado==='aprobada'&&currentRole!=='admin';
+  const isReadOnly=(nomina&&nomina.estado==='aprobada'&&currentRole!=='admin')||(nomina&&nomina.estado==='pendiente'&&currentRole==='rrhh');
   // RRHH no puede editar ni enviar a aprobación mientras el mes esté en curso
   const hoy=new Date();
   const periodoActual=`${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
@@ -3746,7 +3773,13 @@ function cargarNomina(){
     nomina.lineas.forEach(l=>pushToSheets('nominaLineas','insertar',l,null));
   } else {
     const seen=new Set();
-    nomina.lineas=nomina.lineas.filter(l=>{if(seen.has(l.empleadoId))return false;seen.add(l.empleadoId);return true;});
+    // Eliminar duplicados y empleados dados de baja (solo en nóminas no aprobadas)
+    const activosIds=new Set(activos.map(e=>e.id));
+    nomina.lineas=nomina.lineas.filter(l=>{
+      if(seen.has(l.empleadoId))return false;
+      if(nomina.estado!=='aprobada'&&!activosIds.has(l.empleadoId))return false;
+      seen.add(l.empleadoId);return true;
+    });
     const newlyAdded=[];
     activos.forEach(e=>{
       if(!nomina.lineas.find(l=>l.empleadoId===e.id)){
@@ -3758,8 +3791,8 @@ function cargarNomina(){
     if(newlyAdded.length) newlyAdded.forEach(l=>pushToSheets('nominaLineas','insertar',l,null));
   }
 
-  // Si la nómina es borrador, siempre recalcular días desde asistencia actual (se congela solo al aprobar)
-  if(nomina.estado!=='aprobada'){
+  // Solo recalcular días automáticamente si está en borrador (pendiente y aprobada se congelan)
+  if(nomina.estado==='borrador'){
     nomina.lineas.forEach(l=>{
       const e=STATE.empleados.find(x=>x.id===l.empleadoId);
       if(e) l.diasTrabajados=getDiasTrab(e);
@@ -3849,6 +3882,8 @@ function cargarNomina(){
 
 function updateNominaLine(nomId,empId){
   const nomina=STATE.nominas.find(n=>n.id===nomId);if(!nomina)return;
+  if(nomina.estado==='aprobada'&&currentRole!=='admin'){showToast('La pre-nómina ya fue aprobada','error');return;}
+  if(nomina.estado==='pendiente'&&currentRole!=='admin'){showToast('Pre-nómina en revisión — no editable','error');return;}
   const linea=nomina.lineas.find(l=>l.empleadoId===empId);const e=STATE.empleados.find(x=>x.id===empId);if(!linea||!e)return;
   const dtEl=document.getElementById('dt-'+empId);
   if(dtEl)linea.diasTrabajados=parseFloat(dtEl.value)||0;
@@ -3884,6 +3919,7 @@ function calcularNomina(nomId){
 
 function solicitarAprobacion(nomId){
   const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
+  if(n.estado!=='borrador'){showToast('Solo se puede enviar una pre-nómina en estado borrador','error');return;}
   confirmAction('¿Enviar Pre-Nómina a revisión de Administración?',function(){
     n.estado='pendiente';saveState();
     const {lineas:_l,...nominaHeader}=n;pushToSheets('nominas','actualizar',nominaHeader,n.id);
@@ -3947,6 +3983,7 @@ function reabrirNomina(nomId){
 }
 
 function confirmarReopenNomina(nomId){
+  if(currentRole!=='admin'){showToast('Solo Administración puede reabrir nóminas','error');return;}
   const motivo=document.getElementById('reabrir-motivo').value.trim();
   if(!motivo){showToast('El motivo es obligatorio','warning');return}
   const n=STATE.nominas.find(x=>x.id===nomId);n.estado='borrador';saveState();
@@ -4326,9 +4363,10 @@ function renderConfiguracion(container){
       <div class="form-group"><label class="field-label">PIN Jefe de Turno</label>
         <div style="display:flex;gap:8px"><input type="password" id="cfg-pin-jt" value="${cfg.pins.jefe_turno||'4444'}" maxlength="4" style="font-family:monospace;letter-spacing:4px" autocomplete="new-password">
         <button class="btn btn-secondary btn-sm" onclick="togglePinVis('cfg-pin-jt',this)">👁️</button></div></div>
-      <div class="form-group"><label class="field-label" data-tip="El PIN de Administración es fijo">PIN Admin (fijo)</label>
-        <input type="text" value="****" readonly style="color:var(--text-light)">
-        <div class="input-hint">PIN 1059 — no editable por diseño</div></div>
+      <div class="form-group"><label class="field-label">PIN Administración</label>
+        <div style="display:flex;gap:8px"><input type="password" id="cfg-pin-admin" value="${cfg.adminPin}" maxlength="4" style="font-family:monospace;letter-spacing:4px" autocomplete="new-password">
+        <button class="btn btn-secondary btn-sm" onclick="togglePinVis('cfg-pin-admin',this)">👁️</button></div>
+        <div class="input-hint">Cambia el PIN de acceso de Administración</div></div>
       <div class="form-section-title">💰 Bonificación por Antigüedad</div>
       <div class="form-group"><label class="field-label">Años para nivel 1</label><input type="number" id="cfg-bon-anos1" value="${cfg.bonificacion.anios1}" min="1"></div>
       <div class="form-group"><label class="field-label">Porcentaje nivel 1 (%)</label><input type="number" id="cfg-bon-pct1" value="${cfg.bonificacion.nivel1}" min="0" max="100"></div>
@@ -4346,10 +4384,10 @@ function renderConfiguracion(container){
 function togglePinVis(id,btn){const inp=document.getElementById(id);if(inp.type==='password'){inp.type='text';btn.textContent='🙈'}else{inp.type='password';btn.textContent='👁️'}}
 
 function guardarConfiguracion(){
-  const r=document.getElementById('cfg-pin-rrhh').value.trim();const j=document.getElementById('cfg-pin-jur').value.trim();const c=document.getElementById('cfg-pin-cont').value.trim();const jt=document.getElementById('cfg-pin-jt').value.trim();
-  if([r,j,c,jt].some(p=>!/^\d{4}$/.test(p))){showToast('Todos los PINs deben tener exactamente 4 dígitos','error');return}
-  if([r,j,c,jt].includes(STATE.config.adminPin)){showToast('Un PIN no puede ser igual al PIN de Administración','error');return}
-  STATE.config.pins.rrhh=r;STATE.config.pins.juridico=j;STATE.config.pins.contabilidad=c;STATE.config.pins.jefe_turno=jt;
+  const r=document.getElementById('cfg-pin-rrhh').value.trim();const j=document.getElementById('cfg-pin-jur').value.trim();const c=document.getElementById('cfg-pin-cont').value.trim();const jt=document.getElementById('cfg-pin-jt').value.trim();const a=document.getElementById('cfg-pin-admin').value.trim();
+  if([r,j,c,jt,a].some(p=>!/^\d{4}$/.test(p))){showToast('Todos los PINs deben tener exactamente 4 dígitos','error');return}
+  const allPins=[r,j,c,jt,a];if(new Set(allPins).size!==allPins.length){showToast('Cada rol debe tener un PIN único','error');return}
+  STATE.config.pins.rrhh=r;STATE.config.pins.juridico=j;STATE.config.pins.contabilidad=c;STATE.config.pins.jefe_turno=jt;STATE.config.adminPin=a;
   STATE.config.bonificacion.anios1=parseInt(document.getElementById('cfg-bon-anos1').value)||5;
   STATE.config.bonificacion.nivel1=parseInt(document.getElementById('cfg-bon-pct1').value)||5;
   STATE.config.bonificacion.anios2=parseInt(document.getElementById('cfg-bon-anos2').value)||10;
@@ -4364,6 +4402,7 @@ function guardarConfiguracion(){
     pinJuridico: STATE.config.pins.juridico,
     pinContabilidad: STATE.config.pins.contabilidad,
     pinJefeTurno: STATE.config.pins.jefe_turno,
+    pinAdmin: STATE.config.adminPin,
     bonAnios1: STATE.config.bonificacion.anios1,
     bonNivel1: STATE.config.bonificacion.nivel1,
     bonAnios2: STATE.config.bonificacion.anios2,
