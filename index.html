@@ -672,8 +672,15 @@ function _applyRealtimeChange({ eventType, table, new: rec, old: oldRec }) {
       if (eventType === 'DELETE') {
         STATE[table] = STATE[table].filter(r => r.id !== oldRec?.id);
       } else if (rec) {
-        const idx = STATE[table].findIndex(r => r.id === rec.id);
-        if (idx >= 0) STATE[table][idx] = rec; else STATE[table].unshift(rec);
+        if (table === 'asistencia') {
+          // Para asistencia: deduplicar por fecha además de por id, preferir cerrado
+          if (rec.cerrado) STATE[table] = STATE[table].filter(r => r.fecha !== rec.fecha || r.id === rec.id);
+          const idx = STATE[table].findIndex(r => r.id === rec.id);
+          if (idx >= 0) STATE[table][idx] = rec; else STATE[table].unshift(rec);
+        } else {
+          const idx = STATE[table].findIndex(r => r.id === rec.id);
+          if (idx >= 0) STATE[table][idx] = rec; else STATE[table].unshift(rec);
+        }
       }
     }
   }
@@ -1056,7 +1063,10 @@ async function sincronizarDesdeSheets() {
       } else if (tabla === 'vacacionesControl') {
         STATE.vacacionesControl = data.map(r => ({ empleadoId: r.empleadoId, ano: parseInt(r.ano)||0, diasTomados: parseInt(r.diasTomados)||0 }));
       } else if (tabla === 'asistencia') {
-        STATE.asistencia = data;
+        // Deduplicar por fecha: si hay dos registros del mismo día (distintos dispositivos), preferir el cerrado
+        const byFecha = {};
+        data.forEach(r => { if(!byFecha[r.fecha]||r.cerrado) byFecha[r.fecha]=r; });
+        STATE.asistencia = Object.values(byFecha);
       } else if (tabla === 'plazas') {
         STATE.plazas = {};
         data.forEach(r=>{ if(r.id) STATE.plazas[r.id]={...r, salarioBase:parseFloat(r.salarioBase)||0}; });
@@ -3910,16 +3920,30 @@ function updateNominaLine(nomId,empId){
   saveState();
 }
 
-function calcularNomina(nomId){
+async function calcularNomina(nomId){
   const nomina=STATE.nominas.find(n=>n.id===nomId);if(!nomina)return;
-  // Actualizar días desde asistencia antes de calcular
+  // Sincronizar asistencia desde Supabase antes de calcular para tener datos de todos los dispositivos
+  showToast('Sincronizando asistencia...','info',2000);
+  try{
+    const dataAsist=await sbLeer('asistencia');
+    if(Array.isArray(dataAsist)&&dataAsist.length>0){
+      // Deduplicar por fecha: si hay varios registros del mismo día, preferir el cerrado
+      const byFecha={};
+      dataAsist.forEach(r=>{
+        const f=r.fecha;
+        if(!byFecha[f]||r.cerrado)byFecha[f]=r;
+      });
+      STATE.asistencia=Object.values(byFecha);
+      saveState();
+    }
+  }catch(e){showToast('Sin conexión — usando datos locales','warning',3000);}
+  // Actualizar días desde asistencia
   nomina.lineas.forEach(l=>{
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);if(!e)return;
     if(!esDeptoAdmin(e.departamento)){
       const presentes=getDiasPresentesMes(e.id,nomina.periodo);
       if(presentes>0)l.diasTrabajados=presentes;
     }
-    // Actualizar el input si está visible
     const dtEl=document.getElementById('dt-'+e.id);if(dtEl)dtEl.value=l.diasTrabajados;
   });
   nomina.lineas.forEach(l=>updateNominaLine(nomId,l.empleadoId));
@@ -3927,7 +3951,7 @@ function calcularNomina(nomId){
   const {lineas:_l,...nominaHeader}=nomina;
   pushToSheets('nominas','actualizar',nominaHeader,nomina.id);
   nomina.lineas.forEach(l=>{const lineaData={...l,nominaId:nomina.id};pushToSheets('nominaLineas','actualizar',lineaData,lineaData.id||null);});
-  showToast('Nómina recalculada desde asistencia ✅','success');
+  showToast('Pre-Nómina recalculada con asistencia actualizada ✅','success');
 }
 
 function solicitarAprobacion(nomId){
