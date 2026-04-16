@@ -3720,8 +3720,12 @@ function cargarNomina(){
   const mesNombre=new Date(ano,mes-1).toLocaleString('es-ES',{month:'long'});
   const periodoKey=`${ano}-${String(mes).padStart(2,'0')}`;
   let nomina=STATE.nominas.find(n=>n.periodo===periodoKey);
-  const canEdit=currentRole==='contabilidad'||currentRole==='admin';
+  const canEdit=currentRole==='rrhh'||currentRole==='admin';
   const isReadOnly=nomina&&nomina.estado==='aprobada'&&currentRole!=='admin';
+  // RRHH no puede editar ni enviar a aprobación mientras el mes esté en curso
+  const hoy=new Date();
+  const periodoActual=`${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+  const bloqueadoRRHH=currentRole==='rrhh'&&nomina&&nomina.periodo===periodoActual;
   const activos=getEmpleadosActivos();
 
   // Verificar si hay asistencia registrada en el período
@@ -3768,6 +3772,10 @@ function cargarNomina(){
     ?`<div style="background:#FFF3CD;border:1px solid #FBBF24;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400E;">
       ⚠️ No hay registros de asistencia cerrados para este período. Los días mostrados son los de jornada base. Registra la asistencia diaria antes de generar la nómina.
       </div>`:'';
+  const avisoBloqueado=bloqueadoRRHH
+    ?`<div style="background:#EFF6FF;border:1px solid #3B82F6;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#1D4ED8;display:flex;align-items:center;gap:8px">
+      🔒 <span><b>Mes en curso.</b> Podrás enviar a aprobación a partir del 1 de ${new Date(hoy.getFullYear(),hoy.getMonth()+1,1).toLocaleDateString('es-ES',{month:'long'})}. Puedes recalcular para ver el estado actual.</span>
+      </div>`:'';
 
   let html=`<div class="card">
     <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
@@ -3778,7 +3786,7 @@ function cargarNomina(){
         <button class="btn btn-secondary btn-sm" onclick="imprimirNominaCompleta('${nomina.id}')">🖨️ Imprimir</button>
       </div>
     </div>
-    ${advertencia}
+    ${advertencia}${avisoBloqueado}
     <div class="table-wrap"><table class="nomina-table"><thead><tr>
       <th>Nº</th><th>Empleado</th><th>Plaza</th>
       <th data-tip="Días trabajados este mes">Días</th>
@@ -3815,7 +3823,7 @@ function cargarNomina(){
       <td><b>${e.nombres} ${e.apellidos}</b><br><small style="color:var(--text-mid)">${e.departamento}</small></td>
       <td style="font-size:12px">${e.plaza||'—'}</td>
       <td style="text-align:center">
-        ${!isReadOnly&&canEdit
+        ${!isReadOnly&&canEdit&&!bloqueadoRRHH
           ?`<input type="number" id="dt-${e.id}" value="${l.diasTrabajados}" min="0" max="${jornadaDias*2}" style="width:56px;text-align:center" onchange="updateNominaLine('${nomina.id}','${e.id}')">`
           :`<b>${l.diasTrabajados}</b>`}
         ${fuenteTag}
@@ -3862,7 +3870,7 @@ function cargarNomina(){
     html+=`<div class="card-footer" style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
       ${nomina.estado==='borrador'?`
         <button class="btn btn-gold" onclick="calcularNomina('${nomina.id}')">🧮 Recalcular desde Asistencia</button>
-        <button class="btn btn-primary" onclick="solicitarAprobacion('${nomina.id}')">📤 Solicitar Aprobación</button>`:''}
+        ${!bloqueadoRRHH?`<button class="btn btn-primary" onclick="solicitarAprobacion('${nomina.id}')">📤 Solicitar Aprobación</button>`:''}`:''}
       ${nomina.estado==='pendiente'&&currentRole==='admin'?`<button class="btn btn-success" onclick="aprobarNomina('${nomina.id}')">✅ Aprobar Pre-Nómina</button>`:''}
     </div>`;
   }
