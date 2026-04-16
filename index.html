@@ -3751,7 +3751,7 @@ function cargarNomina(){
 
   let html=`<div class="card">
     <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-      <h3>Nómina: ${mesNombre} ${ano}</h3>
+      <h3>Pre-Nómina: ${mesNombre} ${ano}</h3>
       <div style="display:flex;gap:8px;align-items:center;">
         <span class="badge badge-${nomina.estado==='aprobada'?'approved':nomina.estado==='pendiente'?'pending':'draft'}">${nomina.estado}</span>
         <button class="btn btn-secondary btn-sm" onclick="imprimirNominaCompleta('${nomina.id}')">🖨️ Imprimir</button>
@@ -3942,7 +3942,7 @@ function verDetalleNomina(nomId){
     totBruto+=bruto;totNeto+=neto;
     return`<tr><td>${e?`${e.nombres} ${e.apellidos}`:'—'}</td><td>${e?e.plaza:'—'}</td><td style="text-align:center">${l.diasTrabajados}</td><td style="text-align:right">${fmtMoney(bruto)}</td><td style="text-align:right;color:#B45309">${fmtMoney(ss)}</td><td style="text-align:right;color:#991B1B">${irpf>0?fmtMoney(irpf):'—'}</td><td style="text-align:right;color:#2D6A4F;font-weight:700">${fmtMoney(neto)}</td></tr>`;
   }).join('');
-  openModal(`Nómina: ${n.mesNombre} ${n.ano}`,
+  openModal(`Pre-Nómina: ${n.mesNombre} ${n.ano}`,
     `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
       <span><b>Estado:</b> <span class="badge badge-${n.estado==='aprobada'?'approved':n.estado==='pendiente'?'pending':'draft'}">${n.estado}</span></span>
       <span><b>Bruto:</b> <span style="color:var(--burgundy);font-weight:700">${fmtMoney(totBruto)}</span></span>
@@ -4043,7 +4043,7 @@ function imprimirNominaCompleta(nomId){
   </div>
   <div class="header-block">
     <h1>${empresa}</h1>
-    <div class="subtitle">NÓMINA DE SALARIOS — <b>${(n.mesNombre||'').toUpperCase()} ${n.ano}</b></div>
+    <div class="subtitle">PRE-NÓMINA — <b>${(n.mesNombre||'').toUpperCase()} ${n.ano}</b></div>
     <div class="subtitle">Estado: ${n.estado.toUpperCase()} &nbsp;|&nbsp; ${n.lineas?n.lineas.length:0} trabajadores</div>
   </div>
   <div class="meta">
