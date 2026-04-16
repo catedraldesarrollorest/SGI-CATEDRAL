@@ -1344,10 +1344,8 @@ const NAV_ITEMS = {
   contabilidad:[
     {section:'dashboard',icon:'📈',label:'Dashboard'},
     {section:'empleados',icon:'👥',label:'Empleados',header:'CONSULTA'},
-    {section:'plantilla',icon:'🗂️',label:'Plantilla de Personal',header:'CONSULTA'},
-    {section:'historial_asistencia',icon:'📅',label:'Asistencia',header:'PRE-NÓMINA'},
-    {section:'nomina',icon:'📋',label:'Pre-Nóminas'},
-    {section:'incidencias',icon:'🗓️',label:'Incidencias'},
+    {section:'plantilla',icon:'🗂️',label:'Plantilla de Personal'},
+    {section:'incidencias',icon:'🗓️',label:'Incidencias',header:'REGISTROS'},
     {section:'vacaciones',icon:'🌴',label:'Vacaciones'}
   ],
   jefe_turno:[
@@ -1887,7 +1885,6 @@ function renderDashboard(container){
     ],
     contabilidad:[
       {icon:'👥',label:'Ver Empleados',desc:'Consulta de personal',section:'empleados'},
-      {icon:'📋',label:'Pre-Nóminas',desc:'Documento guía para contabilidad',section:'nomina'},
       {icon:'📅',label:'Incidencias',desc:'Ausencias y permisos',section:'incidencias'},
       {icon:'🌴',label:'Vacaciones',desc:'Submayor de descansos',section:'vacaciones'},
     ],
@@ -1978,6 +1975,20 @@ function renderDashboard(container){
       <div class="stat-card" style="border-top:3px solid #C0392B"><span class="stat-icon">📤</span><div class="stat-value">${STATE.bajas.length}</div><div class="stat-label">Bajas Registradas</div></div>
       <div class="stat-card" style="border-top:3px solid #2D9060"><span class="stat-icon">📋</span><div class="stat-value">${STATE.nominas.filter(n=>n.estado==='aprobada').length}</div><div class="stat-label">Pre-Nóminas Aprobadas</div></div>
       <div class="stat-card" style="border-top:3px solid #C97A2A"><span class="stat-icon">⚠️</span><div class="stat-value">${STATE.sanciones.length}</div><div class="stat-label">Sanciones Totales</div></div>
+    </div>
+    ${(()=>{
+      const pendientes=STATE.nominas.filter(n=>n.estado==='pendiente');
+      if(!pendientes.length||(currentRole!=='admin'&&currentRole!=='rrhh')) return '';
+      return pendientes.map(n=>`
+        <div onclick="navigateTo('nomina')" style="cursor:pointer;background:#FEF3C7;border:1.5px solid #D97706;border-radius:10px;padding:14px 18px;margin-bottom:10px;display:flex;align-items:center;gap:12px">
+          <span style="font-size:22px">📋</span>
+          <div style="flex:1">
+            <div style="font-weight:700;color:#92400E">Pre-Nómina pendiente de aprobación</div>
+            <div style="font-size:12px;color:#B45309">${n.mesNombre} ${n.ano} — ${n.lineas?n.lineas.length:0} trabajadores</div>
+          </div>
+          <span style="background:#D97706;color:white;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700">Revisar →</span>
+        </div>`).join('');
+    })()}
     </div>`;
 }
 // ══════════════════════════════════════════════════
@@ -3752,6 +3763,7 @@ function cargarNomina(){
   let html=`<div class="card">
     <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <h3>Pre-Nómina: ${mesNombre} ${ano}</h3>
+      ${nomina.aprobadaFecha?`<div style="font-size:11px;color:#2D6A4F;background:#DCFCE7;border-radius:6px;padding:4px 10px">✅ Aprobada el ${new Date(nomina.aprobadaFecha).toLocaleDateString('es-ES')} a las ${new Date(nomina.aprobadaFecha).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})} por ${nomina.aprobadaPor||'Administración'}</div>`:''}
       <div style="display:flex;gap:8px;align-items:center;">
         <span class="badge badge-${nomina.estado==='aprobada'?'approved':nomina.estado==='pendiente'?'pending':'draft'}">${nomina.estado}</span>
         <button class="btn btn-secondary btn-sm" onclick="imprimirNominaCompleta('${nomina.id}')">🖨️ Imprimir</button>
@@ -3899,20 +3911,60 @@ function calcularNomina(nomId){
 
 function solicitarAprobacion(nomId){
   const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
-  confirmAction('¿Enviar nómina a revisión de Administración?',function(){
+  confirmAction('¿Enviar Pre-Nómina a revisión de Administración?',function(){
     n.estado='pendiente';saveState();
     const {lineas:_l,...nominaHeader}=n;pushToSheets('nominas','actualizar',nominaHeader,n.id);
-    addAuditLog('NOMINA_PENDIENTE',`Nómina ${n.mesNombre} ${n.ano} enviada a aprobación`);showToast('Nómina enviada','info');cargarNomina();
+    addAuditLog('PRENOMINA_PENDIENTE',`Pre-Nómina ${n.mesNombre} ${n.ano} enviada a aprobación por RRHH`);
+    showToast('Pre-Nómina enviada a Administración','info');cargarNomina();
   });
 }
 
 function aprobarNomina(nomId){
   const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
-  confirmAction('¿Aprobar y cerrar esta nómina?',function(){
-    n.estado='aprobada';n.fechaAprobacion=new Date().toISOString();saveState();
-    const {lineas:_l,...nominaHeader}=n;pushToSheets('nominas','actualizar',nominaHeader,n.id);
-    addAuditLog('NOMINA_APROBADA',`Nómina ${n.mesNombre} ${n.ano} aprobada. Total: ${fmtMoney(n.totalDevengado)}`);showToast('Nómina aprobada','success');renderHistoricoNominas();
-  });
+  openModal('🔐 Aprobar Pre-Nómina',
+    `<p style="margin-bottom:14px;color:#555">Introduce el PIN de Administración para confirmar la aprobación de <b>Pre-Nómina ${n.mesNombre} ${n.ano}</b>.</p>
+     <div class="pin-inputs" style="justify-content:center">
+       <input class="pin-box" type="password" maxlength="1" id="ap0" inputmode="numeric">
+       <input class="pin-box" type="password" maxlength="1" id="ap1" inputmode="numeric">
+       <input class="pin-box" type="password" maxlength="1" id="ap2" inputmode="numeric">
+       <input class="pin-box" type="password" maxlength="1" id="ap3" inputmode="numeric">
+     </div>
+     <div id="ap-error" style="color:#C0392B;font-size:12px;text-align:center;margin-top:8px;min-height:16px"></div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-success" onclick="confirmarAprobacionNomina('${nomId}')">✅ Confirmar Aprobación</button>`,'sm');
+  setTimeout(()=>{
+    const boxes=['ap0','ap1','ap2','ap3'];
+    boxes.forEach((id,i)=>{
+      const el=document.getElementById(id);if(!el)return;
+      el.addEventListener('input',()=>{if(el.value&&i<3)document.getElementById(boxes[i+1]).focus();});
+    });
+    document.getElementById('ap0')&&document.getElementById('ap0').focus();
+  },120);
+}
+
+function confirmarAprobacionNomina(nomId){
+  const pin=['ap0','ap1','ap2','ap3'].map(id=>(document.getElementById(id)||{}).value||'').join('');
+  if(pin!==STATE.config.adminPin){
+    const err=document.getElementById('ap-error');
+    if(err)err.textContent='PIN incorrecto. Inténtalo de nuevo.';
+    ['ap0','ap1','ap2','ap3'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    document.getElementById('ap0')&&document.getElementById('ap0').focus();
+    return;
+  }
+  const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
+  const ahora=new Date();
+  n.estado='aprobada';
+  n.aprobadaFecha=ahora.toISOString();
+  n.aprobadaPor='Administración';
+  saveState();closeModal();
+  const {lineas:_l,...nominaHeader}=n;
+  pushToSheets('nominas','actualizar',nominaHeader,n.id);
+  addAuditLog('PRENOMINA_APROBADA',
+    `Pre-Nómina ${n.mesNombre} ${n.ano} APROBADA por Administración — `+
+    `${ahora.toLocaleDateString('es-ES')} ${ahora.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})} — `+
+    `Devengado: ${fmtMoney(n.totalDevengado)} | Neto: ${fmtMoney(n.totalNeto)}`);
+  showToast('Pre-Nómina aprobada ✅','success');
+  renderHistoricoNominas();
 }
 
 function reabrirNomina(nomId){
@@ -4045,6 +4097,7 @@ function imprimirNominaCompleta(nomId){
     <h1>${empresa}</h1>
     <div class="subtitle">PRE-NÓMINA — <b>${(n.mesNombre||'').toUpperCase()} ${n.ano}</b></div>
     <div class="subtitle">Estado: ${n.estado.toUpperCase()} &nbsp;|&nbsp; ${n.lineas?n.lineas.length:0} trabajadores</div>
+    ${n.aprobadaFecha?`<div style="margin-top:6px;font-size:11px;color:#2D6A4F;font-weight:bold">✅ APROBADA el ${new Date(n.aprobadaFecha).toLocaleDateString('es-ES')} a las ${new Date(n.aprobadaFecha).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})} por ${n.aprobadaPor||'Administración'}</div>`:''}
   </div>
   <div class="meta">
     <span>Fecha de emisión: ${fechaImpresion}</span>
