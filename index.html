@@ -1317,7 +1317,7 @@ const NAV_ITEMS = {
     {section:'gestion_plazas',icon:'🏷️',label:'Gestión de Plazas',header:'ADMINISTRACIÓN'},
     {section:'contratos',icon:'📄',label:'Contratos',header:'JURÍDICO'},
     {section:'sanciones',icon:'⚠️',label:'Sanciones'},
-    {section:'nomina',icon:'📋',label:'Nóminas',header:'CONTABILIDAD'},
+    {section:'nomina',icon:'📋',label:'Pre-Nóminas',header:'CONTABILIDAD'},
     {section:'incidencias',icon:'🗓️',label:'Incidencias'},
     {section:'vacaciones',icon:'🌴',label:'Vacaciones'},
     {section:'configuracion',icon:'⚙️',label:'Configuración',header:'SISTEMA'},
@@ -1345,8 +1345,8 @@ const NAV_ITEMS = {
     {section:'dashboard',icon:'📈',label:'Dashboard'},
     {section:'empleados',icon:'👥',label:'Empleados',header:'CONSULTA'},
     {section:'plantilla',icon:'🗂️',label:'Plantilla de Personal',header:'CONSULTA'},
-    {section:'historial_asistencia',icon:'📅',label:'Asistencia',header:'NÓMINA'},
-    {section:'nomina',icon:'📋',label:'Nóminas'},
+    {section:'historial_asistencia',icon:'📅',label:'Asistencia',header:'PRE-NÓMINA'},
+    {section:'nomina',icon:'📋',label:'Pre-Nóminas'},
     {section:'incidencias',icon:'🗓️',label:'Incidencias'},
     {section:'vacaciones',icon:'🌴',label:'Vacaciones'}
   ],
@@ -1391,7 +1391,7 @@ function navigateTo(section){
   closeSidebar();
   currentSection=section;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.section===section));
-  const titles={dashboard:'Dashboard',empleados:'Empleados',alta:'Alta de Empleado',expedientes:'Expedientes Laborales',traslados:'Traslados',bajas:'Bajas',plantilla:'Plantilla de Personal',salarios:'Salarios Base',gestion_plazas:'Gestión de Plazas',contratos:'Contratos',sanciones:'Sanciones',nomina:'Nóminas',incidencias:'Incidencias',vacaciones:'Submayor de Vacaciones',configuracion:'Configuración',auditoria:'Log de Auditoría',backup:'Copia de Seguridad',asistencia:'Tomar Asistencia',historial_asistencia:'Historial de Asistencia',docs_legales:'Documentos Legales',preformas:'Preformas de Contratos'};
+  const titles={dashboard:'Dashboard',empleados:'Empleados',alta:'Alta de Empleado',expedientes:'Expedientes Laborales',traslados:'Traslados',bajas:'Bajas',plantilla:'Plantilla de Personal',salarios:'Salarios Base',gestion_plazas:'Gestión de Plazas',contratos:'Contratos',sanciones:'Sanciones',nomina:'Pre-Nóminas',incidencias:'Incidencias',vacaciones:'Submayor de Vacaciones',configuracion:'Configuración',auditoria:'Log de Auditoría',backup:'Copia de Seguridad',asistencia:'Tomar Asistencia',historial_asistencia:'Historial de Asistencia',docs_legales:'Documentos Legales',preformas:'Preformas de Contratos'};
   document.getElementById('page-title').textContent=titles[section]||section;
   document.getElementById('topbar-actions').innerHTML='';
   const content=document.getElementById('app-content');
@@ -1864,7 +1864,7 @@ function renderDashboard(container){
       {icon:'📤',label:'Bajas',desc:'Gestión de salidas',section:'bajas'},
       {icon:'📄',label:'Contratos',desc:'Documentos contractuales',section:'contratos'},
       {icon:'⚠️',label:'Sanciones',desc:'Registro disciplinario',section:'sanciones'},
-      {icon:'📋',label:'Nóminas',desc:'Control de pagos mensuales',section:'nomina'},
+      {icon:'📋',label:'Pre-Nóminas',desc:'Documento guía para contabilidad',section:'nomina'},
       {icon:'📅',label:'Incidencias',desc:'Ausencias y permisos',section:'incidencias'},
       {icon:'🌴',label:'Vacaciones',desc:'Submayor de descansos',section:'vacaciones'},
       {icon:'⚙️',label:'Configuración',desc:'PINs y parámetros',section:'configuracion'},
@@ -1887,7 +1887,7 @@ function renderDashboard(container){
     ],
     contabilidad:[
       {icon:'👥',label:'Ver Empleados',desc:'Consulta de personal',section:'empleados'},
-      {icon:'📋',label:'Nóminas',desc:'Control de pagos mensuales',section:'nomina'},
+      {icon:'📋',label:'Pre-Nóminas',desc:'Documento guía para contabilidad',section:'nomina'},
       {icon:'📅',label:'Incidencias',desc:'Ausencias y permisos',section:'incidencias'},
       {icon:'🌴',label:'Vacaciones',desc:'Submayor de descansos',section:'vacaciones'},
     ],
@@ -1976,7 +1976,7 @@ function renderDashboard(container){
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:24px;">
       <div class="stat-card" style="border-top:3px solid ${pal.g2}"><span class="stat-icon">👥</span><div class="stat-value">${activos.length}</div><div class="stat-label">Empleados Activos</div></div>
       <div class="stat-card" style="border-top:3px solid #C0392B"><span class="stat-icon">📤</span><div class="stat-value">${STATE.bajas.length}</div><div class="stat-label">Bajas Registradas</div></div>
-      <div class="stat-card" style="border-top:3px solid #2D9060"><span class="stat-icon">📋</span><div class="stat-value">${STATE.nominas.filter(n=>n.estado==='aprobada').length}</div><div class="stat-label">Nóminas Aprobadas</div></div>
+      <div class="stat-card" style="border-top:3px solid #2D9060"><span class="stat-icon">📋</span><div class="stat-value">${STATE.nominas.filter(n=>n.estado==='aprobada').length}</div><div class="stat-label">Pre-Nóminas Aprobadas</div></div>
       <div class="stat-card" style="border-top:3px solid #C97A2A"><span class="stat-icon">⚠️</span><div class="stat-value">${STATE.sanciones.length}</div><div class="stat-label">Sanciones Totales</div></div>
     </div>`;
 }
@@ -3680,7 +3680,7 @@ function switchNominaTab(tab,el){
 
 function renderHistoricoNominas(){
   const tbody=document.getElementById('hist-tbody');if(!tbody)return;
-  if(!STATE.nominas.length){tbody.innerHTML=`<tr><td colspan="5" class="text-center text-muted" style="padding:40px">Sin nóminas</td></tr>`;return}
+  if(!STATE.nominas.length){tbody.innerHTML=`<tr><td colspan="5" class="text-center text-muted" style="padding:40px">Sin pre-nóminas</td></tr>`;return}
   tbody.innerHTML=STATE.nominas.slice().reverse().map(n=>`<tr>
     <td><b>${n.mesNombre} ${n.ano}</b></td>
     <td><span class="badge badge-${n.estado==='aprobada'?'approved':n.estado==='pendiente'?'pending':'draft'}">${n.estado}</span></td>
@@ -3842,7 +3842,7 @@ function cargarNomina(){
       ${nomina.estado==='borrador'?`
         <button class="btn btn-gold" onclick="calcularNomina('${nomina.id}')">🧮 Recalcular desde Asistencia</button>
         <button class="btn btn-primary" onclick="solicitarAprobacion('${nomina.id}')">📤 Solicitar Aprobación</button>`:''}
-      ${nomina.estado==='pendiente'&&currentRole==='admin'?`<button class="btn btn-success" onclick="aprobarNomina('${nomina.id}')">✅ Aprobar Nómina</button>`:''}
+      ${nomina.estado==='pendiente'&&currentRole==='admin'?`<button class="btn btn-success" onclick="aprobarNomina('${nomina.id}')">✅ Aprobar Pre-Nómina</button>`:''}
     </div>`;
   }
   html+=`</div>`;
@@ -4434,7 +4434,7 @@ function renderBackup(container){
     <div class="card-body">
       <div class="stats-grid" style="margin-bottom:24px">
         <div class="stat-card"><div class="stat-value">${STATE.empleados.length}</div><div class="stat-label">Empleados</div></div>
-        <div class="stat-card"><div class="stat-value">${STATE.nominas.length}</div><div class="stat-label">Nóminas</div></div>
+        <div class="stat-card"><div class="stat-value">${STATE.nominas.length}</div><div class="stat-label">Pre-Nóminas</div></div>
         <div class="stat-card"><div class="stat-value">${STATE.sanciones.length}</div><div class="stat-label">Sanciones</div></div>
         <div class="stat-card"><div class="stat-value">${STATE.auditLog.length}</div><div class="stat-label">Logs</div></div>
       </div>
