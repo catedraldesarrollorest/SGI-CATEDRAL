@@ -2053,13 +2053,11 @@ function renderDashboard(container){
       const regHoy=STATE.asistencia.find(a=>a.fecha===hoyISO);
       const lineas=regHoy?(regHoy.lineas||[]).filter(l=>{const e=STATE.empleados.find(x=>x.id===l.empleadoId);return e&&!DEPTS_EXCLUIDOS_JEFE_TURNO.includes(e.departamento);}):[];
       const P=lineas.filter(l=>l.estado==='P').length;
-      const A=lineas.filter(l=>l.estado==='A').length;
-      const T=lineas.filter(l=>l.estado==='T').length;
+      const D=lineas.filter(l=>l.estado==='D').length;
       const estadoBadge=!regHoy?'Sin registro':(regHoy.cerrado?'✅ Cerrado':'🔄 En curso');
       return`<div class="stat-card" style="border-top:3px solid ${pal.g2}"><span class="stat-icon">📋</span><div class="stat-value" style="font-size:14px">${estadoBadge}</div><div class="stat-label">Turno de Hoy</div></div>
       <div class="stat-card" style="border-top:3px solid #2D9060"><span class="stat-icon">✅</span><div class="stat-value">${P}</div><div class="stat-label">Presentes</div></div>
-      <div class="stat-card" style="border-top:3px solid #C0392B"><span class="stat-icon">❌</span><div class="stat-value">${A}</div><div class="stat-label">Ausentes</div></div>
-      <div class="stat-card" style="border-top:3px solid #C97A2A"><span class="stat-icon">🕐</span><div class="stat-value">${T}</div><div class="stat-label">Tardanzas</div></div>`;
+      <div class="stat-card" style="border-top:3px solid #1D4ED8"><span class="stat-icon">💤</span><div class="stat-value">${D}</div><div class="stat-label">Descansan</div></div>`;
     })():`
       <div class="stat-card" style="border-top:3px solid ${pal.g2}"><span class="stat-icon">👥</span><div class="stat-value">${activos.length}</div><div class="stat-label">Empleados Activos</div></div>
       <div class="stat-card" style="border-top:3px solid #C0392B"><span class="stat-icon">📤</span><div class="stat-value">${STATE.bajas.length}</div><div class="stat-label">Bajas Registradas</div></div>
@@ -5095,8 +5093,7 @@ function renderHistorialAsistencia(container){
   let rowsHtml = '';
   historial.forEach(function(reg){
     const P = (reg.lineas||[]).filter(function(l){return l.estado==='P';}).length;
-    const A = (reg.lineas||[]).filter(function(l){return l.estado==='A';}).length;
-    const T = (reg.lineas||[]).filter(function(l){return l.estado==='T';}).length;
+    const D = (reg.lineas||[]).filter(function(l){return l.estado==='D';}).length;
     const fechaFmt = new Date(reg.fecha+'T12:00:00').toLocaleDateString('es-ES',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
     const estadoBadge = reg.cerrado
       ? '<span class="badge badge-approved">Cerrado</span>'
@@ -5105,8 +5102,7 @@ function renderHistorialAsistencia(container){
       +'<td><b>'+fechaFmt+'</b></td>'
       +'<td>'+estadoBadge+'</td>'
       +'<td><span style="color:#2D6A4F;font-weight:700;">✅ '+P+'</span></td>'
-      +'<td><span style="color:#8B1A1A;font-weight:700;">❌ '+A+'</span></td>'
-      +'<td><span style="color:#B5642A;font-weight:700;">🕐 '+T+'</span></td>'
+      +'<td><span style="color:#1D4ED8;font-weight:700;">💤 '+D+'</span></td>'
       +'<td>'+(reg.registradoPor||'—')+'</td>'
       +'<td>'+(reg.horaCierre||'—')+'</td>'
       +'<td><button class="btn btn-secondary btn-xs" onclick="verDetalleAsistencia(\''+reg.id+'\')">👁️ Ver</button></td>'
@@ -5117,7 +5113,7 @@ function renderHistorialAsistencia(container){
     '<div class="card">'
     +'<div class="card-header"><h3>📅 Historial de Asistencia</h3></div>'
     +'<div class="table-wrap"><table>'
-    +'<thead><tr><th>Fecha</th><th>Estado</th><th>Presentes</th><th>Ausentes</th><th>Tardanzas</th><th>Registrado por</th><th>Cierre</th><th>Ver</th></tr></thead>'
+    +'<thead><tr><th>Fecha</th><th>Estado</th><th>Presentes</th><th>Descansan</th><th>Registrado por</th><th>Cierre</th><th>Ver</th></tr></thead>'
     +'<tbody>'+rowsHtml+'</tbody>'
     +'</table></div></div>';
 }
@@ -5126,17 +5122,16 @@ function verDetalleAsistencia(regId){
   const reg = STATE.asistencia.find(function(a){return a.id===regId;});
   if(!reg) return;
   const fechaFmt = new Date(reg.fecha+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-  const estadoIcon = {P:'✅',A:'❌',T:'🕐'};
-  const estadoLabel = {P:'Presente',A:'Ausente',T:'Tardanza'};
-  const estadoColor = {P:'var(--success)',A:'var(--danger)',T:'var(--warning)'};
+  const estadoIcon = {P:'✅',D:'💤',A:'❌',T:'🕐'};
+  const estadoLabel = {P:'Presente',D:'Descansando',A:'Ausente',T:'Tardanza'};
+  const estadoColor = {P:'var(--success)',D:'#1D4ED8',A:'var(--danger)',T:'var(--warning)'};
   const lineasVisibles = (reg.lineas||[]).filter(function(l){
     if(currentRole !== 'jefe_turno') return true;
     const emp = STATE.empleados.find(function(e){return e.id===l.empleadoId;});
     return emp && !DEPTS_EXCLUIDOS_JEFE_TURNO.includes(emp.departamento);
   });
   const P = lineasVisibles.filter(function(l){return l.estado==='P';}).length;
-  const A = lineasVisibles.filter(function(l){return l.estado==='A';}).length;
-  const T = lineasVisibles.filter(function(l){return l.estado==='T';}).length;
+  const D = lineasVisibles.filter(function(l){return l.estado==='D';}).length;
 
   let rowsHtml = '';
   const lineasFiltradas = (reg.lineas||[]).filter(function(l){
@@ -5157,8 +5152,7 @@ function verDetalleAsistencia(regId){
   const body =
     '<div style="margin-bottom:16px;display:flex;gap:12px;flex-wrap:wrap;">'
     +'<div class="badge badge-approved" style="padding:8px 16px;font-size:13px;">'+P+' Presentes</div>'
-    +'<div class="badge badge-inactive" style="padding:8px 16px;font-size:13px;">'+A+' Ausentes</div>'
-    +'<div class="badge badge-warning" style="padding:8px 16px;font-size:13px;">'+T+' Tardanzas</div>'
+    +'<div class="badge" style="padding:8px 16px;font-size:13px;background:#DBEAFE;color:#1D4ED8;">'+D+' Descansan</div>'
     +'</div>'
     +'<div class="table-wrap"><table>'
     +'<thead><tr><th>Empleado</th><th>Departamento</th><th>Estado</th><th>Motivo</th></tr></thead>'
@@ -5181,7 +5175,7 @@ function exportAsistencia(){
         Empleado: emp ? `${emp.nombres} ${emp.apellidos}` : '—',
         Departamento: emp ? emp.departamento : '—',
         Plaza: emp ? emp.plaza : '—',
-        Estado: l.estado==='P'?'Presente':l.estado==='A'?'Ausente':'Tardanza',
+        Estado: l.estado==='P'?'Presente':l.estado==='D'?'Descansando':l.estado==='A'?'Ausente':'Tardanza',
         Motivo: l.motivo||'—',
         'Registrado por': reg.registradoPor||'—',
         'Turno cerrado': reg.cerrado?'Sí':'No'
