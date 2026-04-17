@@ -674,6 +674,7 @@ function _applyRealtimeChange({ eventType, table, new: rec, old: oldRec }) {
       } else if (rec) {
         if (table === 'asistencia') {
           // Para asistencia: deduplicar por fecha además de por id, preferir cerrado
+          rec.lineas = parseLineas(rec.lineas); // deserializar desde TEXT o JSONB
           if (rec.cerrado) STATE[table] = STATE[table].filter(r => r.fecha !== rec.fecha || r.id === rec.id);
           const idx = STATE[table].findIndex(r => r.id === rec.id);
           if (idx >= 0) STATE[table][idx] = rec; else STATE[table].unshift(rec);
@@ -796,6 +797,9 @@ function cleanForSB(tabla, obj) {
   } else if (tabla === 'plazas') {
     const allowed = new Set(PLAZAS_COLS);
     Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
+  } else if (tabla === 'asistencia') {
+    // Serialize lineas array to JSON string for compatibility with TEXT and JSONB columns
+    if (Array.isArray(clean.lineas)) clean.lineas = JSON.stringify(clean.lineas);
   }
   // Limpiar campos numéricos vacíos → null
   ['salarioBase','anterior','nuevo','totalDevengado','diasTrabajados','horasExtras','diasAfectados','diasTomados','mes','ano'].forEach(f => {
@@ -862,17 +866,42 @@ function backupToSheets(tabla, accion, valores, id) {
 }
 
 // ── WRITE (Supabase primary + Sheets backup) ──────────────────
+// Helper: parse lineas back from JSON string or return array as-is
+function parseLineas(v) {
+  if (Array.isArray(v)) return v;
+  if (typeof v === 'string' && v.trim().startsWith('[')) {
+    try { return JSON.parse(v); } catch { return []; }
+  }
+  return [];
+}
 async function pushToSheets(tabla, accion, valores, id) {
+  let ok = false;
   try {
     if (accion === 'eliminar') await sbEliminarDB(tabla, id);
     else await sbUpsert(tabla, valores);
-    DB_ONLINE = true; updateSyncBadge(true);
-    showSyncIndicator('✅ Guardado', 'ok');
+    ok = true;
   } catch (err) {
-    DB_ONLINE = false; updateSyncBadge(false);
-    DB_PENDING_OPS.push({ tabla, accion, valores, id });
-    showSyncIndicator('⚠️ Guardado local (BD no disponible)', 'offline');
+    // Para asistencia: si falla por columna 'lineas' inexistente, reintentar sin lineas
+    // así al menos el flag 'cerrado' llega a Supabase
+    if (tabla === 'asistencia' && accion !== 'eliminar') {
+      const e = String(err.message || '');
+      if (e.includes('42703') || e.includes('PGRST204') || e.toLowerCase().includes('lineas')) {
+        try {
+          const v = Array.isArray(valores) ? valores[0] : valores;
+          const {lineas: _l, ...sinLineas} = v;
+          await sbUpsert(tabla, sinLineas);
+          ok = true;
+          showToast('⚠️ Asistencia guardada sin detalle de personal. Pide al administrador añadir columna "lineas JSONB" en Supabase.','warning',10000);
+        } catch(e2) { /* fall through */ }
+      }
+    }
+    if (!ok) {
+      DB_ONLINE = false; updateSyncBadge(false);
+      DB_PENDING_OPS.push({ tabla, accion, valores, id });
+      showSyncIndicator('⚠️ Guardado local (BD no disponible)', 'offline');
+    }
   }
+  if (ok) { DB_ONLINE = true; updateSyncBadge(true); showSyncIndicator('✅ Guardado', 'ok'); }
   backupToSheets(tabla, accion, valores, id);
 }
 async function manualSync() {
@@ -1065,7 +1094,10 @@ async function sincronizarDesdeSheets() {
       } else if (tabla === 'asistencia') {
         // Deduplicar por fecha: si hay dos registros del mismo día (distintos dispositivos), preferir el cerrado
         const byFecha = {};
-        data.forEach(r => { if(!byFecha[r.fecha]||r.cerrado) byFecha[r.fecha]=r; });
+        data.forEach(r => {
+          r.lineas = parseLineas(r.lineas); // deserializar desde TEXT o JSONB
+          if(!byFecha[r.fecha]||r.cerrado) byFecha[r.fecha]=r;
+        });
         STATE.asistencia = Object.values(byFecha);
       } else if (tabla === 'plazas') {
         STATE.plazas = {};
@@ -3930,6 +3962,7 @@ async function calcularNomina(nomId){
       // Deduplicar por fecha: si hay varios registros del mismo día, preferir el cerrado
       const byFecha={};
       dataAsist.forEach(r=>{
+        r.lineas=parseLineas(r.lineas); // deserializar desde TEXT o JSONB
         const f=r.fecha;
         if(!byFecha[f]||r.cerrado)byFecha[f]=r;
       });
@@ -4826,14 +4859,15 @@ function cerrarTurnoJT(){
   const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
   const D=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='D').length;
   const sinAsignar=_jt_emps.length-P-D;
-  confirmAction('¿Confirmar cierre del turno? <b>'+P+' trabajan</b>, <b>'+D+' descansan</b>, '+sinAsignar+' sin marcar (Contabilidad gestionará). <b>No se podrá modificar.</b>',function(){
+  confirmAction('¿Confirmar cierre del turno? <b>'+P+' trabajan</b>, <b>'+D+' descansan</b>, '+sinAsignar+' sin marcar (Contabilidad gestionará). <b>No se podrá modificar.</b>',async function(){
     if(_jt_autoCloseTimer){clearInterval(_jt_autoCloseTimer);_jt_autoCloseTimer=null;}
     reg.cerrado=true;
     reg.horaCierre=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
     _jt_readonly=true; saveState();
-    pushToSheets('asistencia','insertar',reg);
+    showToast('Guardando turno en la nube...','info',2000);
+    await pushToSheets('asistencia','insertar',reg);
     addAuditLog('ASISTENCIA','Turno '+_jt_hoy+' cerrado. P:'+P+' D:'+D+' Sin:'+sinAsignar);
-    showToast('Turno cerrado y guardado ✅','success',4000);
+    showToast(DB_ONLINE?'✅ Turno cerrado y guardado en la nube':'⚠️ Turno cerrado — guardado solo localmente (sin conexión)',DB_ONLINE?'success':'warning',5000);
     document.getElementById('topbar-actions').innerHTML='<span class="badge badge-approved" style="padding:8px 16px;font-size:13px;">✅ Turno cerrado</span>';
     const c=document.getElementById('app-content');
     if(c) renderListaJT(c);
