@@ -638,6 +638,7 @@ function _applyRealtimeChange({ eventType, table, new: rec, old: oldRec }) {
         else if (k==='recargoHE')    STATE.config.recargoHorasExtras = parseFloat(v)||50;
         else if (k==='diasVacaciones') STATE.config.diasVacaciones = parseInt(v)||14;
         else if (k==='diasPagados')  STATE.config.diasPagadosPeriodo = parseInt(v)||15;
+        else if (k==='vacPendientes'){try{STATE.vacPendientes=JSON.parse(v)||[];}catch{STATE.vacPendientes=[];}}
       }
       break;
     }
@@ -1139,6 +1140,7 @@ async function sincronizarDesdeSheets() {
         else if(k==='recargoHE')   STATE.config.recargoHorasExtras  = parseFloat(v)||50;
         else if(k==='diasVacaciones') STATE.config.diasVacaciones   = parseInt(v)||14;
         else if(k==='diasPagados') STATE.config.diasPagadosPeriodo  = parseInt(v)||15;
+        else if(k==='vacPendientes'){try{STATE.vacPendientes=JSON.parse(v)||[];}catch{STATE.vacPendientes=[];}}
       });
     } catch(e) {}
     // Config desde Sheets
@@ -1157,6 +1159,7 @@ async function sincronizarDesdeSheets() {
       if (cfg.recargoHE)      STATE.config.recargoHorasExtras  = parseFloat(cfg.recargoHE);
       if (cfg.diasVacaciones) STATE.config.diasVacaciones      = parseInt(cfg.diasVacaciones);
       if (cfg.diasPagados)    STATE.config.diasPagadosPeriodo  = parseInt(cfg.diasPagados);
+      if (cfg.vacPendientes)  {try{STATE.vacPendientes=JSON.parse(cfg.vacPendientes)||[];}catch{}}
     } catch(e) {}
     // Re-aplicar ops pendientes para TODAS las tablas sobre los datos recién sincronizados
     DB_PENDING_OPS.forEach(op => {
@@ -1227,7 +1230,8 @@ function getDefaultState() {
     },
     empleados:[], traslados:[], bajas:[], sanciones:[],
     nominas:[], incidencias:[], vacacionesControl:[],
-    historialSalarial:[], documentos:{}, auditLog:[], asistencia:[], docsLegales:[], alertasJuridico:[], preformas:{}, historialPreformas:{}, plazas:{}, nextId:1
+    historialSalarial:[], documentos:{}, auditLog:[], asistencia:[], docsLegales:[], alertasJuridico:[], preformas:{}, historialPreformas:{}, plazas:{}, nextId:1,
+    vacPendientes:[]
   };
 }
 let _loginAttempts=0;
@@ -3875,19 +3879,28 @@ function cargarNomina(){
     <div class="table-wrap"><table class="nomina-table"><thead><tr>
       <th>Nº</th><th>Nombre y Apellido</th><th>Plaza</th>
       <th data-tip="Días trabajados este mes según asistencia">Días</th>
-      <th data-tip="Salario diario × días trabajados">Salario Bruto</th>
-      <th data-tip="Días de vacaciones del período (pendiente de definir)">Vacaciones</th>
+      <th data-tip="Salario diario × días trabajados">Sal. Base</th>
+      <th data-tip="Días de vacaciones a liquidar este período">Vac.</th>
+      <th data-tip="Importe de vacaciones (días × salario diario)">Vac. Acum.</th>
+      <th data-tip="Sal. Base + Vac. Acum.">Sal. Bruto</th>
     </tr></thead><tbody>`;
 
-  let totBruto=0;
+  let totBase=0,totVacAcum=0,totBruto=0;
+  const canEditVac=(currentRole==='contabilidad'||currentRole==='admin')&&!isReadOnly&&nomina.estado==='borrador';
   nomina.lineas.forEach((l,idx)=>{
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);if(!e)return;
     const salBase=e.salarioBase||0;
     const jornadaDias=getDiasJornada(e.jornada);
     const salDiario=jornadaDias>0?salBase/jornadaDias:0;
-    const bruto=Math.round(salDiario*l.diasTrabajados*100)/100;
+    const base=Math.round(salDiario*l.diasTrabajados*100)/100;
+    // Días de vacaciones: primero desde vacPendientes confirmados, luego desde la línea misma
+    const vpEntry=(STATE.vacPendientes||[]).find(v=>v.empleadoId===e.id&&v.periodo===nomina.periodo&&v.confirmado);
+    const vacDias=l.diasVacaciones!=null?l.diasVacaciones:(vpEntry?vpEntry.diasLiquidar:0);
+    if(vpEntry&&l.diasVacaciones==null)l.diasVacaciones=vpEntry.diasLiquidar; // sincronizar
+    const vacAcum=Math.round(salDiario*vacDias*100)/100;
+    const bruto=Math.round((base+vacAcum)*100)/100;
     l.totalDevengado=bruto;
-    totBruto+=bruto;
+    totBase+=base;totVacAcum+=vacAcum;totBruto+=bruto;
 
     const fuenteTag=esDeptoAdmin(e.departamento)
       ?'<span title="Administración - 100% automático" style="font-size:10px;color:#6B7280">⚙️</span>'
@@ -3905,8 +3918,14 @@ function cargarNomina(){
           :`<b>${l.diasTrabajados}</b>`}
         ${fuenteTag}
       </td>
-      <td id="bruto-${e.id}" style="font-weight:700">${fmtMoney(bruto)}</td>
-      <td style="text-align:center;color:var(--text-light)">—</td>
+      <td id="base-${e.id}" style="font-weight:600">${fmtMoney(base)}</td>
+      <td style="text-align:center">
+        ${canEditVac
+          ?`<input type="number" id="vac-${e.id}" value="${vacDias}" min="0" max="365" style="width:56px;text-align:center" onchange="updateVacNomina('${nomina.id}','${e.id}')">`
+          :`<span style="color:${vacDias>0?'#2D6A4F':'var(--text-light)'};font-weight:${vacDias>0?'700':'400'}">${vacDias>0?vacDias+'d':'—'}</span>`}
+      </td>
+      <td id="vac-acum-${e.id}" style="color:#1D4ED8;font-weight:${vacAcum>0?'700':'400'}">${vacAcum>0?fmtMoney(vacAcum):'—'}</td>
+      <td id="bruto-${e.id}" style="font-weight:700;color:var(--burgundy)">${fmtMoney(bruto)}</td>
     </tr>`;
   });
 
@@ -3914,9 +3933,16 @@ function cargarNomina(){
   html+=`</tbody>
     <tfoot>
       <tr style="background:#F9F5F0;font-weight:700;border-top:2px solid var(--gold)">
-        <td colspan="4" class="text-right">TOTAL SALARIO BRUTO:</td>
-        <td id="nom-tot-bruto">${fmtMoney(totBruto)}</td>
+        <td colspan="4" class="text-right" style="font-size:12px">TOTAL SAL. BASE:</td>
+        <td id="nom-tot-base" style="color:#374151">${fmtMoney(totBase)}</td>
         <td></td>
+        <td id="nom-tot-vac" style="color:#1D4ED8">${totVacAcum>0?fmtMoney(totVacAcum):'—'}</td>
+        <td></td>
+      </tr>
+      <tr style="background:#F0EBE3;font-weight:700;border-top:1px solid var(--gold)">
+        <td colspan="4" class="text-right">TOTAL SAL. BRUTO:</td>
+        <td colspan="3"></td>
+        <td id="nom-tot-bruto" style="color:var(--burgundy);font-size:15px">${fmtMoney(totBruto)}</td>
       </tr>
     </tfoot>
   </table></div>`;
@@ -3941,11 +3967,20 @@ function updateNominaLine(nomId,empId){
   const dtEl=document.getElementById('dt-'+empId);
   if(dtEl)linea.diasTrabajados=parseFloat(dtEl.value)||0;
   const salBase=e.salarioBase||0;const jornadaDias=getDiasJornada(e.jornada);const salDiario=jornadaDias>0?salBase/jornadaDias:0;
-  const bruto=Math.round(salDiario*linea.diasTrabajados*100)/100;
+  const base=Math.round(salDiario*linea.diasTrabajados*100)/100;
+  const vacDias=linea.diasVacaciones||0;
+  const vacAcum=Math.round(salDiario*vacDias*100)/100;
+  const bruto=Math.round((base+vacAcum)*100)/100;
   linea.totalDevengado=bruto;
+  const baseEl=document.getElementById('base-'+empId);if(baseEl)baseEl.innerHTML=fmtMoney(base);
+  const vacAcumEl=document.getElementById('vac-acum-'+empId);if(vacAcumEl)vacAcumEl.innerHTML=vacAcum>0?fmtMoney(vacAcum):'—';
   const brutoEl=document.getElementById('bruto-'+empId);if(brutoEl)brutoEl.innerHTML=fmtMoney(bruto);
+  const totBase=nomina.lineas.reduce((s,l)=>{const lE=STATE.empleados.find(x=>x.id===l.empleadoId);const jd=lE?getDiasJornada(lE.jornada):0;const sd=jd>0?(lE.salarioBase||0)/jd:0;return s+Math.round(sd*l.diasTrabajados*100)/100;},0);
+  const totVac=nomina.lineas.reduce((s,l)=>{const lE=STATE.empleados.find(x=>x.id===l.empleadoId);const jd=lE?getDiasJornada(lE.jornada):0;const sd=jd>0?(lE.salarioBase||0)/jd:0;return s+Math.round(sd*(l.diasVacaciones||0)*100)/100;},0);
   const totBruto=nomina.lineas.reduce((s,l)=>s+(l.totalDevengado||0),0);
   nomina.totalDevengado=totBruto;nomina.totalNeto=totBruto;
+  const totBaseEl=document.getElementById('nom-tot-base');if(totBaseEl)totBaseEl.innerHTML=fmtMoney(totBase);
+  const totVacEl=document.getElementById('nom-tot-vac');if(totVacEl)totVacEl.innerHTML=totVac>0?fmtMoney(totVac):'—';
   const totEl=document.getElementById('nom-tot-bruto');if(totEl)totEl.innerHTML=fmtMoney(totBruto);
   saveState();
 }
@@ -4033,6 +4068,21 @@ function confirmarAprobacionNomina(nomId){
   n.estado='aprobada';
   n.aprobadaFecha=ahora.toISOString();
   n.aprobadaPor='Administración';
+  // Registrar días de vacaciones pagados en vacacionesControl
+  n.lineas.forEach(l=>{
+    if(!l.diasVacaciones||l.diasVacaciones<=0)return;
+    const ano=n.ano;
+    let ctrl=STATE.vacacionesControl.find(v=>v.empleadoId===l.empleadoId&&v.ano===ano);
+    if(!ctrl){ctrl={id:'VC'+uid(),empleadoId:l.empleadoId,ano,diasTomados:0};STATE.vacacionesControl.push(ctrl);}
+    ctrl.diasTomados=(ctrl.diasTomados||0)+l.diasVacaciones;
+    pushToSheets('vacacionesControl',ctrl.id?'actualizar':'insertar',ctrl,ctrl.id);
+  });
+  // Marcar las solicitudes de este período como pagadas y limpiar confirmados
+  STATE.vacPendientes=(STATE.vacPendientes||[]).map(v=>{
+    if(v.periodo===n.periodo&&v.confirmado)return{...v,estado:'pagado',confirmado:false};
+    return v;
+  }).filter(v=>v.estado!=='pagado'); // limpiar pagados del array activo
+  saveVacPendientes();
   saveState();closeModal();
   const {lineas:_l,...nominaHeader}=n;
   pushToSheets('nominas','actualizar',nominaHeader,n.id);
@@ -4062,19 +4112,23 @@ function confirmarReopenNomina(nomId){
 
 function verDetalleNomina(nomId){
   const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
-  let totBruto=0;
+  let totBase=0,totVac=0,totBruto=0;
   const rows=n.lineas.map(l=>{
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);
+    const jd=e?getDiasJornada(e.jornada):0;const sd=jd>0?(e.salarioBase||0)/jd:0;
+    const base=Math.round(sd*l.diasTrabajados*100)/100;
+    const vacDias=l.diasVacaciones||0;const vacAcum=Math.round(sd*vacDias*100)/100;
     const bruto=l.totalDevengado||0;
-    totBruto+=bruto;
-    return`<tr><td>${e?`${e.nombres} ${e.apellidos}`:'—'}</td><td>${e?e.plaza:'—'}</td><td style="text-align:center">${l.diasTrabajados}</td><td style="text-align:right;font-weight:700">${fmtMoney(bruto)}</td><td style="text-align:center;color:var(--text-light)">—</td></tr>`;
+    totBase+=base;totVac+=vacAcum;totBruto+=bruto;
+    return`<tr><td>${e?`${e.nombres} ${e.apellidos}`:'—'}</td><td>${e?e.plaza:'—'}</td><td style="text-align:center">${l.diasTrabajados}</td><td style="text-align:right">${fmtMoney(base)}</td><td style="text-align:center;color:#1D4ED8;font-weight:${vacDias>0?'700':'400'}">${vacDias>0?vacDias+'d':'—'}</td><td style="text-align:right;color:#1D4ED8">${vacAcum>0?fmtMoney(vacAcum):'—'}</td><td style="text-align:right;font-weight:700;color:var(--burgundy)">${fmtMoney(bruto)}</td></tr>`;
   }).join('');
   openModal(`Pre-Nómina: ${n.mesNombre} ${n.ano}`,
     `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
       <span><b>Estado:</b> <span class="badge badge-${n.estado==='aprobada'?'approved':n.estado==='pendiente'?'pending':'draft'}">${n.estado}</span></span>
-      <span><b>Total Bruto:</b> <span style="color:var(--burgundy);font-weight:700">${fmtMoney(totBruto)}</span></span>
+      <span><b>Sal. Bruto Total:</b> <span style="color:var(--burgundy);font-weight:700">${fmtMoney(totBruto)}</span></span>
+      ${totVac>0?`<span><b>incl. Vac. Acum.:</b> <span style="color:#1D4ED8;font-weight:700">${fmtMoney(totVac)}</span></span>`:''}
     </div>
-    <div class="table-wrap"><table><thead><tr><th>Nombre y Apellido</th><th>Plaza</th><th>Días</th><th>Salario Bruto</th><th>Vacaciones</th></tr></thead><tbody>
+    <div class="table-wrap"><table><thead><tr><th>Nombre y Apellido</th><th>Plaza</th><th style="text-align:center">Días</th><th style="text-align:right">Sal. Base</th><th style="text-align:center">Vac.</th><th style="text-align:right">Vac. Acum.</th><th style="text-align:right">Sal. Bruto</th></tr></thead><tbody>
     ${rows}
     </tbody></table></div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
@@ -4086,7 +4140,10 @@ function exportNomina(nomId){
   const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
   exportToExcel(n.lineas.map(l=>{
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);
-    return{'Nombre':e?e.nombres:'—','Apellidos':e?e.apellidos:'—',CI:e?e.carnet:'—',Plaza:e?e.plaza:'—',Departamento:e?e.departamento:'—','Días Trabajados':l.diasTrabajados,'Salario Bruto':l.totalDevengado||0,'Vacaciones':'—'};
+    const jd=e?getDiasJornada(e.jornada):0;const sd=jd>0?(e.salarioBase||0)/jd:0;
+    const base=Math.round(sd*l.diasTrabajados*100)/100;
+    const vacDias=l.diasVacaciones||0;const vacAcum=Math.round(sd*vacDias*100)/100;
+    return{'Nombre':e?e.nombres:'—','Apellidos':e?e.apellidos:'—',CI:e?e.carnet:'—',Plaza:e?e.plaza:'—',Departamento:e?e.departamento:'—','Días Trabajados':l.diasTrabajados,'Sal. Base':base,'Vac. Días':vacDias,'Vac. Acum.':vacAcum,'Sal. Bruto':l.totalDevengado||0};
   }),`PreNomina_${n.mesNombre}_${n.ano}`);
   showToast('Exportado','success');
 }
@@ -4105,19 +4162,24 @@ function imprimirNominaCompleta(nomId){
   const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
   const empresa=STATE.config.empresa||'La Catedral S.R.L.';
   const fechaImpresion=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
-  let totBruto=0;
+  let totBase=0,totVacAcum=0,totBruto=0;
   const fmt=v=>v>0?v.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
   const rows=n.lineas.map((l,i)=>{
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);if(!e)return'';
+    const jd=getDiasJornada(e.jornada);const sd=jd>0?(e.salarioBase||0)/jd:0;
+    const base=Math.round(sd*l.diasTrabajados*100)/100;
+    const vacDias=l.diasVacaciones||0;const vacAcum=Math.round(sd*vacDias*100)/100;
     const bruto=l.totalDevengado||0;
-    totBruto+=bruto;
+    totBase+=base;totVacAcum+=vacAcum;totBruto+=bruto;
     return`<tr>
       <td style="text-align:center">${i+1}</td>
       <td>${e.nombres} ${e.apellidos}</td>
       <td>${e.plaza||'—'}</td>
       <td style="text-align:center">${l.diasTrabajados}</td>
+      <td style="text-align:right">${fmt(base)}</td>
+      <td style="text-align:center;color:#1D4ED8">${vacDias>0?vacDias+'d':'—'}</td>
+      <td style="text-align:right;color:#1D4ED8">${vacAcum>0?fmt(vacAcum):'—'}</td>
       <td style="text-align:right"><b>${fmt(bruto)}</b></td>
-      <td style="text-align:center">—</td>
     </tr>`;
   }).join('');
   const fmtT=v=>v.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -4163,13 +4225,19 @@ function imprimirNominaCompleta(nomId){
   <table>
     <thead><tr>
       <th>Nº</th><th style="text-align:left">Nombre y Apellido</th><th style="text-align:left">Plaza</th>
-      <th>Días</th><th>Salario Bruto</th><th>Vacaciones</th>
+      <th>Días</th><th>Sal. Base</th><th>Vac.</th><th>Vac. Acum.</th><th>Sal. Bruto</th>
     </tr></thead>
     <tbody>${rows}</tbody>
-    <tfoot><tr class="tfoot-row">
-      <td colspan="4" style="text-align:right">TOTAL SALARIO BRUTO:</td>
+    <tfoot>
+    <tr class="tfoot-row" style="font-size:9px">
+      <td colspan="4" style="text-align:right">TOTAL SAL. BASE:</td>
+      <td style="text-align:right">${fmtT(totBase)} CUP</td>
+      <td></td><td style="text-align:right;color:#1D4ED8">${totVacAcum>0?fmtT(totVacAcum)+' CUP':'—'}</td><td></td>
+    </tr>
+    <tr class="tfoot-row">
+      <td colspan="4" style="text-align:right">TOTAL SAL. BRUTO:</td>
+      <td colspan="3"></td>
       <td style="text-align:right"><b>${fmtT(totBruto)} CUP</b></td>
-      <td></td>
     </tr></tfoot>
   </table>
   <div class="firmas">
@@ -4373,39 +4441,243 @@ function eliminarIncidencia(id){
 // ══════════════════════════════════════════════════
 // VACACIONES
 // ══════════════════════════════════════════════════
+// ══════════════════════════════════════════════════
+// GESTIÓN DE VACACIONES
+// ══════════════════════════════════════════════════
+function saveVacPendientes(){
+  STATE.vacPendientes=STATE.vacPendientes||[];
+  saveState();
+  const val=JSON.stringify(STATE.vacPendientes);
+  sbUpsert('config',[{clave:'vacPendientes',valor:val}]).catch(()=>{});
+  backupToSheets('config','actualizar',{clave:'vacPendientes',valor:val},null);
+}
+function getVacPeriodoActual(){
+  const h=new Date();return`${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}`;
+}
+function marcarVacacionesRRHH(empId,periodo){
+  STATE.vacPendientes=STATE.vacPendientes||[];
+  const idx=STATE.vacPendientes.findIndex(v=>v.empleadoId===empId&&v.periodo===periodo);
+  if(idx>=0&&!STATE.vacPendientes[idx].confirmado){
+    STATE.vacPendientes.splice(idx,1);showToast('Marca removida','info');
+  } else if(idx<0){
+    STATE.vacPendientes.push({id:'VP'+uid(),empleadoId:empId,periodo,diasLiquidar:0,marcadoRRHH:true,confirmado:false,estado:'marcado'});
+    showToast('Empleado marcado para cobrar vacaciones','success');
+  }
+  saveVacPendientes();
+  renderVacaciones(document.getElementById('app-content'));
+}
+function confirmarVacacionesCont(empId,periodo){
+  STATE.vacPendientes=STATE.vacPendientes||[];
+  const diasEl=document.getElementById('vac-inp-'+empId);
+  const dias=parseInt(diasEl?diasEl.value:0)||0;
+  if(dias<=0){showToast('Introduce los días a liquidar (> 0)','warning');return;}
+  let vp=STATE.vacPendientes.find(v=>v.empleadoId===empId&&v.periodo===periodo);
+  if(!vp){vp={id:'VP'+uid(),empleadoId:empId,periodo,diasLiquidar:0,marcadoRRHH:false,confirmado:false,estado:'marcado'};STATE.vacPendientes.push(vp);}
+  vp.diasLiquidar=dias;vp.confirmado=true;vp.estado='confirmado';
+  saveVacPendientes();
+  showToast(`${dias} días de vacaciones confirmados para nómina de ${periodo}`,'success',4000);
+  renderVacaciones(document.getElementById('app-content'));
+}
+function quitarVacCont(empId,periodo){
+  STATE.vacPendientes=STATE.vacPendientes||[];
+  const vp=STATE.vacPendientes.find(v=>v.empleadoId===empId&&v.periodo===periodo);
+  if(!vp)return;
+  if(vp.marcadoRRHH){vp.confirmado=false;vp.diasLiquidar=0;vp.estado='marcado';}
+  else{STATE.vacPendientes=STATE.vacPendientes.filter(v=>!(v.empleadoId===empId&&v.periodo===periodo));}
+  saveVacPendientes();
+  renderVacaciones(document.getElementById('app-content'));
+}
+function updateVacNomina(nomId,empId){
+  const nomina=STATE.nominas.find(n=>n.id===nomId);if(!nomina)return;
+  const linea=nomina.lineas.find(l=>l.empleadoId===empId);if(!linea)return;
+  const vacEl=document.getElementById('vac-'+empId);
+  const dias=parseFloat(vacEl?vacEl.value:0)||0;
+  linea.diasVacaciones=dias;
+  STATE.vacPendientes=STATE.vacPendientes||[];
+  let vp=STATE.vacPendientes.find(v=>v.empleadoId===empId&&v.periodo===nomina.periodo);
+  if(dias>0){
+    if(!vp){vp={id:'VP'+uid(),empleadoId:empId,periodo:nomina.periodo,diasLiquidar:0,marcadoRRHH:false,confirmado:false,estado:'marcado'};STATE.vacPendientes.push(vp);}
+    vp.diasLiquidar=dias;vp.confirmado=true;vp.estado='confirmado';
+  } else if(vp&&!vp.marcadoRRHH){
+    STATE.vacPendientes=STATE.vacPendientes.filter(v=>!(v.empleadoId===empId&&v.periodo===nomina.periodo));
+  } else if(vp){vp.diasLiquidar=0;vp.confirmado=false;vp.estado='marcado';}
+  saveVacPendientes();
+  updateNominaLine(nomId,empId);
+}
+
 function renderVacaciones(container){
   document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-secondary btn-sm" onclick="exportVacaciones()">⬇️ Excel</button>`;
   const activos=getEmpleadosActivos().slice().sort((a,b)=>(a.departamento||'').localeCompare(b.departamento||'')||`${a.nombres} ${a.apellidos}`.localeCompare(`${b.nombres} ${b.apellidos}`));
   const anoActual=new Date().getFullYear();
-  container.innerHTML=`<div class="card">
-    <div class="card-header"><h3>🌴 Submayor de Vacaciones ${anoActual}</h3>
-      <span class="text-muted" style="font-size:13px">Derecho: ${STATE.config.diasVacaciones}d/año | Pagados/período: ${STATE.config.diasPagadosPeriodo}d</span></div>
-    <div class="table-wrap resp-table"><table>
-      <thead><tr><th>Empleado</th><th>Dpto</th><th>Derecho Anual</th><th>Días Tomados</th><th>Días Pendientes</th><th>Valor Pendiente</th><th>Progreso</th></tr></thead>
+  const periodoActual=getVacPeriodoActual();
+  const vp=STATE.vacPendientes||[];
+  const mesLabel=new Date(periodoActual+'-15').toLocaleDateString('es-ES',{month:'long',year:'numeric'});
+
+  // Alerta fin de año (diciembre)
+  const esdiciembre=new Date().getMonth()===11;
+  const sinCobrar=activos.filter(e=>{const ctrl=STATE.vacacionesControl.find(v=>v.empleadoId===e.id&&v.ano===anoActual);return !(ctrl&&ctrl.diasTomados>0);});
+  const alertaFinAnio=esdiciembre&&sinCobrar.length>0
+    ?`<div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;padding:12px 16px;margin-bottom:16px;color:#991B1B;font-size:13px;">
+       ⚠️ <b>Cierre de año:</b> ${sinCobrar.length} empleado(s) aún no han cobrado vacaciones en ${anoActual}. Por ley deben cobrar antes del 31 de diciembre.
+       </div>`:' ';
+
+  // ── VISTA RRHH ──
+  if(currentRole==='rrhh'){
+    const filas=activos.map(e=>{
+      const ctrl=STATE.vacacionesControl.find(v=>v.empleadoId===e.id&&v.ano===anoActual);
+      const tomados=(ctrl?ctrl.diasTomados:0)||0;
+      const vpEntry=vp.find(v=>v.empleadoId===e.id&&v.periodo===periodoActual);
+      const marcado=!!vpEntry;
+      const confirmado=vpEntry&&vpEntry.confirmado;
+      const bg=confirmado?'#F0FDF4':marcado?'#FFFBEB':'';
+      return`<tr style="background:${bg}">
+        <td><b>${e.nombres} ${e.apellidos}</b><br><small style="color:var(--text-mid)">${e.departamento}</small></td>
+        <td style="text-align:center">${tomados}</td>
+        <td style="text-align:center">${confirmado?`<span style="color:#2D6A4F;font-weight:700">✅ Confirmado (${vpEntry.diasLiquidar}d)</span>`:marcado?'<span style="color:#B45309;font-weight:700">🕐 Pendiente Cont.</span>':'—'}</td>
+        <td style="text-align:center">
+          ${!confirmado
+            ?`<button class="btn btn-sm ${marcado?'btn-secondary':'btn-gold'}" onclick="marcarVacacionesRRHH('${e.id}','${periodoActual}')">${marcado?'✕ Desmarcar':'✓ Marcar'}</button>`
+            :`<span style="font-size:11px;color:#2D6A4F">Contabilidad confirmó</span>`}
+        </td></tr>`;
+    }).join('');
+    const marcados=vp.filter(v=>v.periodo===periodoActual);
+    container.innerHTML=`${alertaFinAnio}
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <h3>🌴 Vacaciones — ${mesLabel}</h3>
+        ${marcados.length>0?`<button class="btn btn-secondary btn-sm" onclick="exportVacacionesRRHH('${periodoActual}')">📄 Exportar lista para Contabilidad</button>`:''}
+      </div>
+      <p style="padding:0 20px 12px;font-size:13px;color:var(--text-mid)">Marca los empleados que deben cobrar vacaciones en la nómina de <b>${mesLabel}</b>. Contabilidad recibirá la lista y confirmará los días.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Empleado</th><th style="text-align:center">Días cobrados ${anoActual}</th><th style="text-align:center">Estado</th><th style="text-align:center">Acción</th></tr></thead>
+        <tbody>${filas}</tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>📊 Submayor ${anoActual}</h3></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Empleado</th><th>Dpto</th><th style="text-align:center">Días Cobrados</th></tr></thead>
+        <tbody>${activos.map(e=>{
+          const ctrl=STATE.vacacionesControl.find(v=>v.empleadoId===e.id&&v.ano===anoActual);
+          const tomados=(ctrl?ctrl.diasTomados:0)||0;
+          return`<tr><td><b>${e.nombres} ${e.apellidos}</b></td><td>${e.departamento}</td>
+            <td style="text-align:center">${tomados>0?`<b style="color:#2D6A4F">${tomados}d</b>`:`<span style="color:var(--text-light)">0d</span>`}</td></tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    </div>`;
+    return;
+  }
+
+  // ── VISTA CONTABILIDAD ──
+  if(currentRole==='contabilidad'){
+    const pendCont=vp.filter(v=>v.periodo===periodoActual&&v.marcadoRRHH&&!v.confirmado);
+    const confirmados=vp.filter(v=>v.periodo===periodoActual&&v.confirmado);
+    const filasPend=pendCont.map(v=>{
+      const e=STATE.empleados.find(x=>x.id===v.empleadoId);if(!e)return'';
+      const ctrl=STATE.vacacionesControl.find(c=>c.empleadoId===e.id&&c.ano===anoActual);
+      const tomados=(ctrl?ctrl.diasTomados:0)||0;
+      const salDiario=(e.salarioBase||0)/getDiasJornada(e.jornada);
+      return`<tr>
+        <td><b>${e.nombres} ${e.apellidos}</b><br><small style="color:var(--text-mid)">${e.departamento}</small></td>
+        <td style="text-align:center">${tomados}d cobrados en ${anoActual}</td>
+        <td style="text-align:center"><input type="number" id="vac-inp-${e.id}" min="1" max="365" placeholder="días" style="width:70px;text-align:center" value="${v.diasLiquidar||''}"></td>
+        <td style="text-align:center"><small style="color:var(--text-mid)" id="vac-est-${e.id}"></small></td>
+        <td><button class="btn btn-success btn-sm" onclick="confirmarVacacionesCont('${e.id}','${periodoActual}')">✅ Confirmar</button></td>
+      </tr>`;
+    }).join('');
+    const filasConf=confirmados.map(v=>{
+      const e=STATE.empleados.find(x=>x.id===v.empleadoId);if(!e)return'';
+      const salDiario=(e.salarioBase||0)/getDiasJornada(e.jornada);
+      const monto=Math.round(salDiario*v.diasLiquidar*100)/100;
+      return`<tr style="background:#F0FDF4">
+        <td><b>${e.nombres} ${e.apellidos}</b></td>
+        <td style="text-align:center">${v.diasLiquidar}d</td>
+        <td style="text-align:right;font-weight:700">${fmtMoney(monto)}</td>
+        <td><button class="btn btn-secondary btn-xs" onclick="quitarVacCont('${e.id}','${periodoActual}')">✕</button></td>
+      </tr>`;
+    }).join('');
+    container.innerHTML=`${alertaFinAnio}
+    ${pendCont.length>0?`<div class="card" style="margin-bottom:16px">
+      <div class="card-header"><h3>📋 Solicitudes de RRHH — ${mesLabel}</h3></div>
+      <p style="padding:0 20px 12px;font-size:13px;color:var(--text-mid)">RRHH marcó estos empleados para cobrar vacaciones. Introduce los días a liquidar y confirma.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Empleado</th><th>Historial</th><th style="text-align:center">Días a liquidar</th><th></th><th>Acción</th></tr></thead>
+        <tbody>${filasPend}</tbody>
+      </table></div>
+    </div>`:`<div class="card" style="margin-bottom:16px;padding:20px;text-align:center;color:var(--text-mid)"><p>No hay solicitudes de RRHH pendientes para ${mesLabel}.</p></div>`}
+    ${confirmados.length>0?`<div class="card">
+      <div class="card-header"><h3>✅ Confirmados para Pre-Nómina de ${mesLabel}</h3></div>
+      <p style="padding:0 20px 12px;font-size:13px;color:#2D6A4F">Estos días aparecerán en la columna <b>Vac. Acum.</b> de la pre-nómina. Se registrarán al aprobar.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Empleado</th><th style="text-align:center">Días</th><th style="text-align:right">Importe est.</th><th></th></tr></thead>
+        <tbody>${filasConf}</tbody>
+      </table></div>
+    </div>`:''}`;
+    return;
+  }
+
+  // ── VISTA ADMIN (y fallback) ──
+  const confirmados=vp.filter(v=>v.periodo===periodoActual&&v.confirmado);
+  const filasAdmin=activos.map(e=>{
+    const ctrl=STATE.vacacionesControl.find(v=>v.empleadoId===e.id&&v.ano===anoActual);
+    const tomados=(ctrl?ctrl.diasTomados:0)||0;
+    const vpE=vp.find(v=>v.empleadoId===e.id&&v.periodo===periodoActual);
+    const salDiario=(e.salarioBase||0)/getDiasJornada(e.jornada);
+    const diasPend=vpE&&vpE.confirmado?vpE.diasLiquidar:0;
+    const monto=Math.round(salDiario*diasPend*100)/100;
+    const estado=vpE?( vpE.confirmado?`<span style="color:#2D6A4F;font-weight:700">✅ ${vpE.diasLiquidar}d confirmados`:`<span style="color:#B45309">🕐 Marcado por RRHH</span>`):'—';
+    return`<tr>
+      <td><b>${e.nombres} ${e.apellidos}</b><br><small style="color:var(--text-mid)">${e.departamento}</small></td>
+      <td style="text-align:center">${tomados}</td>
+      <td style="text-align:center">${estado}</td>
+      <td style="text-align:right;font-weight:700">${diasPend>0?fmtMoney(monto):'—'}</td>
+    </tr>`;
+  }).join('');
+  container.innerHTML=`${alertaFinAnio}
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+      <h3>🌴 Vacaciones — ${mesLabel}</h3>
+      <span style="font-size:13px;color:var(--text-mid)">${confirmados.length} confirmado(s) para pre-nómina</span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Empleado</th><th style="text-align:center">Días cobrados ${anoActual}</th><th style="text-align:center">Estado ${mesLabel}</th><th style="text-align:right">Importe est.</th></tr></thead>
+      <tbody>${filasAdmin}</tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3>📊 Submayor ${anoActual}</h3></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Empleado</th><th>Dpto</th><th style="text-align:center">Días Cobrados</th></tr></thead>
       <tbody>${activos.map(e=>{
         const ctrl=STATE.vacacionesControl.find(v=>v.empleadoId===e.id&&v.ano===anoActual);
-        const tomados=(ctrl?ctrl.diasTomados:0)||0;const pendientes=Math.max(0,STATE.config.diasVacaciones-tomados);
-        const salDiario=(e.salarioBase||0)/(getDiasJornada(e.jornada));const valPend=salDiario*pendientes;
-        const pct=Math.min(100,(tomados/STATE.config.diasVacaciones)*100);
-        return`<tr>
-        <td data-label="Empleado"><b>${e.nombres} ${e.apellidos}</b></td>
-        <td data-label="Dpto">${e.departamento}</td>
-        <td data-label="Derecho">${STATE.config.diasVacaciones}d</td>
-        <td data-label="Tomados">${tomados}</td>
-        <td data-label="Pendientes"><b style="color:var(--burgundy)">${pendientes}</b></td>
-        <td data-label="Valor">${fmtMoney(valPend)}</td>
-        <td data-label="Progreso"><div class="progress-bar-wrap" style="min-width:80px"><div class="progress-bar" style="width:${pct}%"></div></div><small>${pct.toFixed(0)}%</small></td></tr>`;
+        const t=(ctrl?ctrl.diasTomados:0)||0;
+        return`<tr><td><b>${e.nombres} ${e.apellidos}</b></td><td>${e.departamento}</td>
+          <td style="text-align:center">${t>0?`<b style="color:#2D6A4F">${t}d</b>`:`<span style="color:var(--text-light)">0d</span>`}</td></tr>`;
       }).join('')}</tbody>
     </table></div>
   </div>`;
 }
 
+function exportVacacionesRRHH(periodo){
+  const vp=(STATE.vacPendientes||[]).filter(v=>v.periodo===periodo);
+  const data=vp.map(v=>{
+    const e=STATE.empleados.find(x=>x.id===v.empleadoId);
+    const anoActual=new Date().getFullYear();
+    const ctrl=STATE.vacacionesControl.find(c=>c.empleadoId===v.empleadoId&&c.ano===anoActual);
+    return{Empleado:e?`${e.nombres} ${e.apellidos}`:'—',Departamento:e?e.departamento:'—',Plaza:e?e.plaza:'—','Días Cobrados Año':(ctrl?ctrl.diasTomados:0)||0,'Estado':v.confirmado?`Confirmado (${v.diasLiquidar}d)`:'Pendiente Contabilidad'};
+  });
+  if(!data.length){showToast('No hay empleados marcados para este período','warning');return;}
+  exportToExcel(data,`Vacaciones_Solicitud_${periodo}`);showToast('Lista exportada para Contabilidad','success');
+}
+
 function exportVacaciones(){
   const activos=getEmpleadosActivos();const anoActual=new Date().getFullYear();
+  const periodo=getVacPeriodoActual();const vp=STATE.vacPendientes||[];
   const data=activos.map(e=>{
     const ctrl=STATE.vacacionesControl.find(v=>v.empleadoId===e.id&&v.ano===anoActual);
-    const tomados=(ctrl?ctrl.diasTomados:0)||0;const pendientes=Math.max(0,STATE.config.diasVacaciones-tomados);
-    return{Empleado:`${e.nombres} ${e.apellidos}`,Departamento:e.departamento,'Derecho Anual':STATE.config.diasVacaciones,'Días Tomados':tomados,'Días Pendientes':pendientes,'Valor Pendiente':((e.salarioBase||0)/(getDiasJornada(e.jornada)))*pendientes};
+    const tomados=(ctrl?ctrl.diasTomados:0)||0;
+    const vpE=vp.find(v=>v.empleadoId===e.id&&v.periodo===periodo);
+    return{Empleado:`${e.nombres} ${e.apellidos}`,Departamento:e.departamento,'Días Cobrados Año':tomados,'Estado período':vpE?(vpE.confirmado?`Confirmado (${vpE.diasLiquidar}d)`:' Marcado'):'—'};
   });
   exportToExcel(data,`Vacaciones_${anoActual}`);showToast('Exportado','success');
 }
