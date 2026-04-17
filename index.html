@@ -5355,7 +5355,29 @@ function renderHistorialAsistencia(container){
   document.getElementById('topbar-actions').innerHTML =
     '<button class="btn btn-secondary btn-sm" onclick="exportAsistencia()">⬇️ Excel</button>';
 
-  const historial = STATE.asistencia.slice().reverse();
+  // Siempre sincronizar asistencia desde Supabase al abrir el historial
+  (async()=>{
+    try{
+      const dataAsist=await sbLeer('asistencia');
+      if(Array.isArray(dataAsist)&&dataAsist.length>0){
+        const byFecha={};
+        dataAsist.forEach(r=>{
+          r.lineas=parseLineas(r.lineas);
+          if(!byFecha[r.fecha]||r.cerrado)byFecha[r.fecha]=r;
+        });
+        STATE.asistencia=Object.values(byFecha);
+        saveState();
+        // Re-renderizar con datos frescos
+        _renderHistorialAsistenciaTabla(container);
+      }
+    }catch(e){}
+  })();
+
+  _renderHistorialAsistenciaTabla(container);
+}
+
+function _renderHistorialAsistenciaTabla(container){
+  const historial = STATE.asistencia.slice().sort((a,b)=>b.fecha.localeCompare(a.fecha));
 
   if(!historial.length){
     container.innerHTML = '<div class="empty-state"><div class="empty-icon">📅</div><h4>Sin registros aún</h4><p class="text-muted">Los turnos cerrados aparecerán aquí.</p></div>';
@@ -5383,11 +5405,13 @@ function renderHistorialAsistencia(container){
 
   container.innerHTML =
     '<div class="card">'
-    +'<div class="card-header"><h3>📅 Historial de Asistencia</h3></div>'
+    +'<div class="card-header" style="display:flex;justify-content:space-between;align-items:center"><h3>📅 Historial de Asistencia</h3>'
+    +'<span id="hist-sync-status" style="font-size:12px;color:var(--text-mid)">🔄 Actualizando...</span></div>'
     +'<div class="table-wrap"><table>'
     +'<thead><tr><th>Fecha</th><th>Estado</th><th>Presentes</th><th>Descansan</th><th>Registrado por</th><th>Cierre</th><th>Ver</th></tr></thead>'
     +'<tbody>'+rowsHtml+'</tbody>'
     +'</table></div></div>';
+  setTimeout(()=>{const s=document.getElementById('hist-sync-status');if(s)s.textContent='';},3000);
 }
 
 function verDetalleAsistencia(regId){
