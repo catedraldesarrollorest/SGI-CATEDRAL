@@ -4837,9 +4837,10 @@ function iniciarAutoCloseJT(hoy){
         const D=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='D').length;
         reg.cerrado=true; reg.horaCierre='20:00'; reg.cierreAutomatico=true;
         _jt_readonly=true; saveState();
-        pushToSheets('asistencia','insertar',reg);
+        pushToSheets('asistencia','insertar',reg).then(()=>{
+          showToast(DB_ONLINE?'✅ Turno cerrado automáticamente (20:00) — guardado en la nube':'⚠️ Turno cerrado (20:00) — guardado solo localmente',DB_ONLINE?'success':'warning',6000);
+        });
         addAuditLog('ASISTENCIA','Turno '+hoy+' cerrado automáticamente a las 20:00. P:'+P+' D:'+D);
-        showToast('Turno cerrado automáticamente a las 20:00 ✅','success',6000);
         const tb=document.getElementById('topbar-actions');
         if(tb) tb.innerHTML='<span class="badge badge-approved" style="padding:8px 16px;font-size:13px;">✅ Turno cerrado</span>';
         const c=document.getElementById('app-content');
@@ -5063,17 +5064,18 @@ function cerrarTurno(hoy){
   const ausentes = activos.filter(function(e){ return getEstadoActual(e.id) === 'A'; }).length;
   const tardanzas = activos.filter(function(e){ return getEstadoActual(e.id) === 'T'; }).length;
   const msg = '¿Confirmar cierre del turno? '+ausentes+' ausente(s), '+tardanzas+' tardanza(s). <b>No se podrá modificar.</b>';
-  confirmAction(msg, function(){
+  confirmAction(msg, async function(){
     autoGuardarTurno(hoy);
     const registro = STATE.asistencia.find(function(a){ return a.fecha === hoy; });
     if(registro){
       registro.cerrado = true;
       registro.horaCierre = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
       saveState();
-      pushToSheets('asistencia','insertar', registro);
+      showToast('Guardando turno en la nube...','info',2000);
+      await pushToSheets('asistencia','insertar', registro);
       const presentes = activos.length - ausentes - tardanzas;
       addAuditLog('ASISTENCIA','Turno '+hoy+' cerrado. Presentes:'+presentes+' Ausentes:'+ausentes+' Tardanzas:'+tardanzas);
-      showToast('Turno cerrado y guardado ✅','success',4000);
+      showToast(DB_ONLINE?'✅ Turno cerrado y guardado en la nube':'⚠️ Turno cerrado — guardado solo localmente (sin conexión)',DB_ONLINE?'success':'warning',5000);
       renderAsistencia(document.getElementById('app-content'));
     }
   });
