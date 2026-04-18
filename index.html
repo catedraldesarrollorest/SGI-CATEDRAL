@@ -5375,21 +5375,35 @@ function cerrarTurno(hoy){
 async function subirAsistenciaLocal(){
   const registros=STATE.asistencia.filter(r=>r.cerrado);
   if(!registros.length){showToast('No hay registros cerrados para subir','info');return;}
-  showToast('Subiendo '+registros.length+' registro(s) a la nube...','info',3000);
-  let ok=0,fail=0;
-  const pendAntes=DB_PENDING_OPS.length;
-  for(const r of registros){
-    await pushToSheets('asistencia','insertar',r,r.id);
+  showToast('Diagnosticando conexión con Supabase...','info',2000);
+  // Test: read one row to verify auth+connectivity
+  try{
+    await sbFetch('GET','asistencia',null,'select=id&limit=1');
+  }catch(connErr){
+    showToast('❌ Sin conexión con Supabase: '+String(connErr.message||connErr).slice(0,120),'error',15000);
+    return;
   }
-  // pushToSheets no lanza — éxito si DB_ONLINE, fallo si se añadió a pending
-  ok=DB_ONLINE?registros.length:0;
-  fail=DB_PENDING_OPS.length-pendAntes;
-  if(ok>0){ saveState(); }
+  // Test: try inserting the first record directly to capture real column errors
+  showToast('Subiendo '+registros.length+' registro(s)...','info',2000);
+  let ok=0,fail=0,lastErr='';
+  for(const r of registros){
+    try{
+      const res=await fetch(SUPABASE_URL+'/rest/v1/asistencia?on_conflict=id',{
+        method:'POST',
+        headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,
+                 'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
+        body:JSON.stringify([{id:r.id,fecha:r.fecha,cerrado:!!r.cerrado}])
+      });
+      if(!res.ok){const t=await res.text();throw new Error('HTTP '+res.status+': '+t.slice(0,200));}
+      ok++;
+    }catch(e){fail++;lastErr=String(e.message||e).slice(0,200);}
+  }
+  if(ok>0){DB_ONLINE=true;updateSyncBadge(true);saveState();}
   const msg=fail===0
-    ? ok+' registro(s) subidos a la nube ✅'
-    : (ok>0?ok+' subidos, ':'')+fail+' no pudieron subirse (sin conexión o columnas faltantes)';
-  showToast(msg, fail===0?'success':'warning', 7000);
-  renderHistorialAsistencia(document.getElementById('app-content'));
+    ?ok+' registro(s) subidos ✅'
+    :(ok>0?ok+' subidos, ':'')+fail+' fallaron — ERROR: '+lastErr;
+  showToast(msg,fail===0?'success':'error',15000);
+  if(ok>0) renderHistorialAsistencia(document.getElementById('app-content'));
 }
 function renderHistorialAsistencia(container){
   document.getElementById('topbar-actions').innerHTML =
