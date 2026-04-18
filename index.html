@@ -893,6 +893,22 @@ function normalizeAsistencia(r) {
     cierreAutomatico: !!(r.cierreAutomatico || r.cierreautomatico || false)
   };
 }
+// Merge remote asistencia records with local STATE, keeping the richer record per date
+function mergeAsistenciaRemota(remote) {
+  const byFecha = {};
+  STATE.asistencia.forEach(r => { byFecha[r.fecha] = r; });
+  remote.forEach(r => {
+    r = normalizeAsistencia(r);
+    const local = byFecha[r.fecha];
+    if (!local) { byFecha[r.fecha] = r; return; }
+    const remoteRich = r.cerrado && r.lineas && r.lineas.length > 0;
+    const localRich  = local.cerrado && local.lineas && local.lineas.length > 0;
+    if (remoteRich && !localRich) byFecha[r.fecha] = r;
+    else if (!localRich && !remoteRich && r.cerrado) byFecha[r.fecha] = r;
+    // else keep local (has more data or equal)
+  });
+  return Object.values(byFecha);
+}
 async function pushToSheets(tabla, accion, valores, id) {
   let ok = false;
   try {
@@ -1116,12 +1132,7 @@ async function sincronizarDesdeSheets() {
       } else if (tabla === 'vacacionesControl') {
         STATE.vacacionesControl = data.map(r => ({ empleadoId: r.empleadoId, ano: parseInt(r.ano)||0, diasTomados: parseInt(r.diasTomados)||0 }));
       } else if (tabla === 'asistencia') {
-        const byFecha = {};
-        data.forEach(r => {
-          r = normalizeAsistencia(r);
-          if(!byFecha[r.fecha]||r.cerrado) byFecha[r.fecha]=r;
-        });
-        STATE.asistencia = Object.values(byFecha);
+        STATE.asistencia = mergeAsistenciaRemota(data);
       } else if (tabla === 'plazas') {
         STATE.plazas = {};
         data.forEach(r=>{ if(r.id) STATE.plazas[r.id]={...r, salarioBase:parseFloat(r.salarioBase)||0}; });
@@ -4014,13 +4025,7 @@ async function calcularNomina(nomId){
   try{
     const dataAsist=await sbLeer('asistencia');
     if(Array.isArray(dataAsist)&&dataAsist.length>0){
-      // Deduplicar por fecha: si hay varios registros del mismo día, preferir el cerrado
-      const byFecha={};
-      dataAsist.forEach(r=>{
-        r=normalizeAsistencia(r);
-        if(!byFecha[r.fecha]||r.cerrado)byFecha[r.fecha]=r;
-      });
-      STATE.asistencia=Object.values(byFecha);
+      STATE.asistencia=mergeAsistenciaRemota(dataAsist);
       saveState();
     }
   }catch(e){showToast('Sin conexión — usando datos locales','warning',3000);}
@@ -5415,14 +5420,8 @@ function renderHistorialAsistencia(container){
     try{
       const dataAsist=await sbLeer('asistencia');
       if(Array.isArray(dataAsist)&&dataAsist.length>0){
-        const byFecha={};
-        dataAsist.forEach(r=>{
-          r=normalizeAsistencia(r);
-          if(!byFecha[r.fecha]||r.cerrado)byFecha[r.fecha]=r;
-        });
-        STATE.asistencia=Object.values(byFecha);
+        STATE.asistencia=mergeAsistenciaRemota(dataAsist);
         saveState();
-        // Re-renderizar con datos frescos
         _renderHistorialAsistenciaTabla(container);
       }
     }catch(e){}
