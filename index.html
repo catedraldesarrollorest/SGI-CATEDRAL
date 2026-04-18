@@ -799,8 +799,16 @@ function cleanForSB(tabla, obj) {
     const allowed = new Set(PLAZAS_COLS);
     Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
   } else if (tabla === 'asistencia') {
-    // Serialize lineas array to JSON string for compatibility with TEXT and JSONB columns
-    if (Array.isArray(clean.lineas)) clean.lineas = JSON.stringify(clean.lineas);
+    // Map camelCase JS fields → lowercase PostgreSQL column names
+    return {
+      id: clean.id,
+      fecha: clean.fecha,
+      cerrado: !!clean.cerrado,
+      registradopor: clean.registradoPor || clean.registradopor || '',
+      horacierre: clean.horaCierre || clean.horacierre || null,
+      cierreautomatico: !!(clean.cierreAutomatico || clean.cierreautomatico || false),
+      lineas: Array.isArray(clean.lineas) ? JSON.stringify(clean.lineas) : (clean.lineas || null)
+    };
   }
   // Limpiar campos numéricos vacíos → null
   ['salarioBase','anterior','nuevo','totalDevengado','diasTrabajados','horasExtras','diasAfectados','diasTomados','mes','ano'].forEach(f => {
@@ -875,6 +883,16 @@ function parseLineas(v) {
   }
   return [];
 }
+// Normalize asistencia record from DB (lowercase cols) to camelCase for JS
+function normalizeAsistencia(r) {
+  return {
+    ...r,
+    lineas: parseLineas(r.lineas),
+    registradoPor: r.registradoPor || r.registradopor || '',
+    horaCierre: r.horaCierre || r.horacierre || '',
+    cierreAutomatico: !!(r.cierreAutomatico || r.cierreautomatico || false)
+  };
+}
 async function pushToSheets(tabla, accion, valores, id) {
   let ok = false;
   try {
@@ -882,17 +900,20 @@ async function pushToSheets(tabla, accion, valores, id) {
     else await sbUpsert(tabla, valores);
     ok = true;
   } catch (err) {
-    // Para asistencia: si falla por columna 'lineas' inexistente, reintentar sin lineas
-    // así al menos el flag 'cerrado' llega a Supabase
     if (tabla === 'asistencia' && accion !== 'eliminar') {
       const e = String(err.message || '');
-      if (e.includes('42703') || e.includes('PGRST204') || e.toLowerCase().includes('lineas')) {
+      // Any column mismatch → try minimal fallback {id, fecha, cerrado, lineas}
+      if (e.includes('42703') || e.includes('PGRST204') || e.includes('column') || e.toLowerCase().includes('lineas')) {
         try {
           const v = Array.isArray(valores) ? valores[0] : valores;
-          const {lineas: _l, ...sinLineas} = v;
-          await sbUpsert(tabla, sinLineas);
+          const lin = v.lineas;
+          const minimal = {
+            id: v.id, fecha: v.fecha, cerrado: !!v.cerrado,
+            lineas: Array.isArray(lin) ? JSON.stringify(lin) : (lin || null)
+          };
+          await sbUpsert(tabla, minimal);
           ok = true;
-          showToast('⚠️ Asistencia guardada sin detalle de personal. Pide al administrador añadir columna "lineas JSONB" en Supabase.','warning',10000);
+          showToast('⚠️ Asistencia guardada (modo básico) — verifica columnas en Supabase','warning',8000);
         } catch(e2) { /* fall through */ }
       }
     }
@@ -1093,10 +1114,9 @@ async function sincronizarDesdeSheets() {
       } else if (tabla === 'vacacionesControl') {
         STATE.vacacionesControl = data.map(r => ({ empleadoId: r.empleadoId, ano: parseInt(r.ano)||0, diasTomados: parseInt(r.diasTomados)||0 }));
       } else if (tabla === 'asistencia') {
-        // Deduplicar por fecha: si hay dos registros del mismo día (distintos dispositivos), preferir el cerrado
         const byFecha = {};
         data.forEach(r => {
-          r.lineas = parseLineas(r.lineas); // deserializar desde TEXT o JSONB
+          r = normalizeAsistencia(r);
           if(!byFecha[r.fecha]||r.cerrado) byFecha[r.fecha]=r;
         });
         STATE.asistencia = Object.values(byFecha);
@@ -3995,9 +4015,8 @@ async function calcularNomina(nomId){
       // Deduplicar por fecha: si hay varios registros del mismo día, preferir el cerrado
       const byFecha={};
       dataAsist.forEach(r=>{
-        r.lineas=parseLineas(r.lineas); // deserializar desde TEXT o JSONB
-        const f=r.fecha;
-        if(!byFecha[f]||r.cerrado)byFecha[f]=r;
+        r=normalizeAsistencia(r);
+        if(!byFecha[r.fecha]||r.cerrado)byFecha[r.fecha]=r;
       });
       STATE.asistencia=Object.values(byFecha);
       saveState();
@@ -5362,7 +5381,7 @@ function renderHistorialAsistencia(container){
       if(Array.isArray(dataAsist)&&dataAsist.length>0){
         const byFecha={};
         dataAsist.forEach(r=>{
-          r.lineas=parseLineas(r.lineas);
+          r=normalizeAsistencia(r);
           if(!byFecha[r.fecha]||r.cerrado)byFecha[r.fecha]=r;
         });
         STATE.asistencia=Object.values(byFecha);
