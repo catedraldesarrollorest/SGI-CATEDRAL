@@ -5370,8 +5370,22 @@ function cerrarTurno(hoy){
   });
 }
 
+async function subirAsistenciaLocal(){
+  const registros=STATE.asistencia.filter(r=>r.cerrado);
+  if(!registros.length){showToast('No hay registros cerrados para subir','info');return;}
+  showToast('Subiendo '+registros.length+' registro(s) a la nube...','info',3000);
+  let ok=0,fail=0;
+  for(const r of registros){
+    try{ await sbUpsert('asistencia',r); ok++; }
+    catch(e){ fail++; }
+  }
+  if(ok>0){ DB_ONLINE=true; updateSyncBadge(true); saveState(); }
+  showToast(ok+' registro(s) subidos'+(fail?' — '+fail+' fallaron':'')+'','success',5000);
+  renderHistorialAsistencia(document.getElementById('app-content'));
+}
 function renderHistorialAsistencia(container){
   document.getElementById('topbar-actions').innerHTML =
+    '<button class="btn btn-primary btn-sm" onclick="subirAsistenciaLocal()" title="Sube registros cerrados del dispositivo actual a la nube">☁️ Subir local</button> '+
     '<button class="btn btn-secondary btn-sm" onclick="exportAsistencia()">⬇️ Excel</button>';
 
   // Siempre sincronizar asistencia desde Supabase al abrir el historial
