@@ -1058,6 +1058,27 @@ async function recuperarDesdeSheets(){
 }
 
 
+// Silently re-upload any local asistencia records whose lineas are missing in Supabase
+async function repararLineasAsistencia() {
+  if (!DB_ONLINE) return;
+  const conLineas = STATE.asistencia.filter(r => r.cerrado && r.lineas && r.lineas.length > 0);
+  if (!conLineas.length) return;
+  try {
+    const remoto = await sbLeer('asistencia');
+    if (!Array.isArray(remoto)) return;
+    const remotoMap = {};
+    remoto.forEach(r => { remotoMap[r.id] = r; });
+    for (const local of conLineas) {
+      const rem = remotoMap[local.id];
+      // If remote record has no lineas data, re-upload the full local record
+      const remLineas = rem ? parseLineas(rem.lineas) : [];
+      if (!rem || remLineas.length === 0) {
+        await sbUpsert('asistencia', local);
+      }
+    }
+  } catch(e) { /* silent — best effort */ }
+}
+
 async function flushPendingOps() {
   if (DB_PENDING_OPS.length === 0) return;
   const ops = [...DB_PENDING_OPS]; DB_PENDING_OPS = [];
@@ -1329,7 +1350,7 @@ function doLogin(){
     renderSidebar();
     navigateTo('dashboard');
     setTimeout(function(){ updateAlertaBadgeJur(); }, 300);
-    setTimeout(async () => { await sincronizarDesdeSheets(); await flushPendingOps(); connectRealtime(); }, 500);
+    setTimeout(async () => { await sincronizarDesdeSheets(); await flushPendingOps(); await repararLineasAsistencia(); connectRealtime(); }, 500);
   } else {
     _loginAttempts++;
     if(_loginAttempts>=5){_loginLockedUntil=Date.now()+30000;_loginAttempts=0;}
