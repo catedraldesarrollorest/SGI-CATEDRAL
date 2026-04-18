@@ -799,16 +799,16 @@ function cleanForSB(tabla, obj) {
     const allowed = new Set(PLAZAS_COLS);
     Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
   } else if (tabla === 'asistencia') {
-    // Map camelCase JS fields → lowercase PostgreSQL column names
-    return {
-      id: clean.id,
-      fecha: clean.fecha,
-      cerrado: !!clean.cerrado,
-      registradopor: clean.registradoPor || clean.registradopor || '',
-      horacierre: clean.horaCierre || clean.horacierre || null,
-      cierreautomatico: !!(clean.cierreAutomatico || clean.cierreautomatico || false),
-      lineas: Array.isArray(clean.lineas) ? JSON.stringify(clean.lineas) : (clean.lineas || null)
-    };
+    // Only include optional fields when they have values — avoids 42703 on missing columns
+    const out = { id: clean.id, fecha: clean.fecha, cerrado: !!clean.cerrado };
+    const lv = Array.isArray(clean.lineas) ? JSON.stringify(clean.lineas) : (clean.lineas || null);
+    if (lv !== null) out.lineas = lv;
+    const rp = clean.registradoPor || clean.registradopor || '';
+    if (rp) out.registradopor = rp;
+    const hc = clean.horaCierre || clean.horacierre || '';
+    if (hc) out.horacierre = hc;
+    if (clean.cierreAutomatico || clean.cierreautomatico) out.cierreautomatico = true;
+    return out;
   }
   // Limpiar campos numéricos vacíos → null
   ['salarioBase','anterior','nuevo','totalDevengado','diasTrabajados','horasExtras','diasAfectados','diasTomados','mes','ano'].forEach(f => {
@@ -902,19 +902,21 @@ async function pushToSheets(tabla, accion, valores, id) {
   } catch (err) {
     if (tabla === 'asistencia' && accion !== 'eliminar') {
       const e = String(err.message || '');
-      // Any column mismatch → try minimal fallback {id, fecha, cerrado, lineas}
       if (e.includes('42703') || e.includes('PGRST204') || e.includes('column') || e.toLowerCase().includes('lineas')) {
+        // Bypass cleanForSB entirely — raw POST with only guaranteed columns {id, fecha, cerrado}
         try {
           const v = Array.isArray(valores) ? valores[0] : valores;
-          const lin = v.lineas;
-          const minimal = {
-            id: v.id, fecha: v.fecha, cerrado: !!v.cerrado,
-            lineas: Array.isArray(lin) ? JSON.stringify(lin) : (lin || null)
-          };
-          await sbUpsert(tabla, minimal);
+          const raw = { id: v.id, fecha: v.fecha, cerrado: !!v.cerrado };
+          const res = await fetch(SUPABASE_URL + '/rest/v1/asistencia?on_conflict=id', {
+            method: 'POST',
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY,
+                       'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+            body: JSON.stringify([raw])
+          });
+          if (!res.ok) { const t = await res.text(); throw new Error('HTTP ' + res.status + ': ' + t.slice(0,120)); }
           ok = true;
-          showToast('⚠️ Asistencia guardada (modo básico) — verifica columnas en Supabase','warning',8000);
-        } catch(e2) { /* fall through */ }
+          showToast('⚠️ Asistencia guardada (básico) — faltan columnas en Supabase. Pide al admin ejecutar el SQL de configuración.','warning',10000);
+        } catch(e2) { /* truly offline */ }
       }
     }
     if (!ok) {
@@ -5375,12 +5377,18 @@ async function subirAsistenciaLocal(){
   if(!registros.length){showToast('No hay registros cerrados para subir','info');return;}
   showToast('Subiendo '+registros.length+' registro(s) a la nube...','info',3000);
   let ok=0,fail=0;
+  const pendAntes=DB_PENDING_OPS.length;
   for(const r of registros){
-    try{ await sbUpsert('asistencia',r); ok++; }
-    catch(e){ fail++; }
+    await pushToSheets('asistencia','insertar',r,r.id);
   }
-  if(ok>0){ DB_ONLINE=true; updateSyncBadge(true); saveState(); }
-  showToast(ok+' registro(s) subidos'+(fail?' — '+fail+' fallaron':'')+'','success',5000);
+  // pushToSheets no lanza — éxito si DB_ONLINE, fallo si se añadió a pending
+  ok=DB_ONLINE?registros.length:0;
+  fail=DB_PENDING_OPS.length-pendAntes;
+  if(ok>0){ saveState(); }
+  const msg=fail===0
+    ? ok+' registro(s) subidos a la nube ✅'
+    : (ok>0?ok+' subidos, ':'')+fail+' no pudieron subirse (sin conexión o columnas faltantes)';
+  showToast(msg, fail===0?'success':'warning', 7000);
   renderHistorialAsistencia(document.getElementById('app-content'));
 }
 function renderHistorialAsistencia(container){
