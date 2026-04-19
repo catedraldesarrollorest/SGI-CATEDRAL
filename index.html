@@ -799,15 +799,20 @@ function cleanForSB(tabla, obj) {
     const allowed = new Set(PLAZAS_COLS);
     Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
   } else if (tabla === 'asistencia') {
-    // Only include optional fields when they have values — avoids 42703 on missing columns
-    const out = { id: clean.id, fecha: clean.fecha, cerrado: !!clean.cerrado };
-    const lv = Array.isArray(clean.lineas) ? JSON.stringify(clean.lineas) : (clean.lineas || null);
-    if (lv !== null) out.lineas = lv;
-    const rp = clean.registradoPor || clean.registradopor || '';
-    if (rp) out.registradopor = rp;
-    const hc = clean.horaCierre || clean.horacierre || '';
-    if (hc) out.horacierre = hc;
-    if (clean.cierreAutomatico || clean.cierreautomatico) out.cierreautomatico = true;
+    // Map camelCase → lowercase PostgreSQL column names
+    // lineas sent as actual array (not string) because column type is JSONB
+    const lineas = Array.isArray(clean.lineas) ? clean.lineas : parseLineas(clean.lineas);
+    const out = {
+      id: clean.id,
+      fecha: clean.fecha,
+      cerrado: !!clean.cerrado,
+      lineas: lineas.length > 0 ? lineas : null,
+      registradopor: clean.registradoPor || clean.registradopor || null,
+      horacierre: clean.horaCierre || clean.horacierre || null,
+      cierreautomatico: !!(clean.cierreAutomatico || clean.cierreautomatico)
+    };
+    // Strip null fields to avoid 42703 if column doesn't exist yet
+    Object.keys(out).forEach(k => { if (out[k] === null && k !== 'id' && k !== 'fecha') delete out[k]; });
     return out;
   }
   // Limpiar campos numéricos vacíos → null
