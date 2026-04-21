@@ -4026,15 +4026,16 @@ function updateNominaLine(nomId,empId){
   const dtEl=document.getElementById('dt-'+empId);
   if(dtEl)linea.diasTrabajados=parseFloat(dtEl.value)||0;
   const salBase=e.salarioBase||0;const jornadaDias=getDiasJornada(e.jornada);const salDiario=jornadaDias>0?salBase/jornadaDias:0;
-  const base=Math.round(salDiario*linea.diasTrabajados*100)/100;
+  const devengado=Math.round(salDiario*linea.diasTrabajados*100)/100;
   const vacDias=linea.diasVacaciones||0;
   const vacAcum=Math.round(salDiario*vacDias*100)/100;
-  const bruto=Math.round((base+vacAcum)*100)/100;
+  const bruto=Math.round((devengado+vacAcum)*100)/100;
   linea.totalDevengado=bruto;
-  const baseEl=document.getElementById('base-'+empId);if(baseEl)baseEl.innerHTML=fmtMoney(base);
+  // base-{id} shows monthly salary (not pro-rated), bruto shows actual earnings
+  const baseEl=document.getElementById('base-'+empId);if(baseEl)baseEl.innerHTML=fmtMoney(salBase);
   const vacAcumEl=document.getElementById('vac-acum-'+empId);if(vacAcumEl)vacAcumEl.innerHTML=vacAcum>0?fmtMoney(vacAcum):'—';
   const brutoEl=document.getElementById('bruto-'+empId);if(brutoEl)brutoEl.innerHTML=fmtMoney(bruto);
-  const totBase=nomina.lineas.reduce((s,l)=>{const lE=STATE.empleados.find(x=>x.id===l.empleadoId);const jd=lE?getDiasJornada(lE.jornada):0;const sd=jd>0?(lE.salarioBase||0)/jd:0;return s+Math.round(sd*l.diasTrabajados*100)/100;},0);
+  const totBase=nomina.lineas.reduce((s,l)=>{const lE=STATE.empleados.find(x=>x.id===l.empleadoId);return s+(lE?lE.salarioBase||0:0);},0);
   const totVac=nomina.lineas.reduce((s,l)=>{const lE=STATE.empleados.find(x=>x.id===l.empleadoId);const jd=lE?getDiasJornada(lE.jornada):0;const sd=jd>0?(lE.salarioBase||0)/jd:0;return s+Math.round(sd*(l.diasVacaciones||0)*100)/100;},0);
   const totBruto=nomina.lineas.reduce((s,l)=>s+(l.totalDevengado||0),0);
   nomina.totalDevengado=totBruto;nomina.totalNeto=totBruto;
@@ -4192,10 +4193,11 @@ function exportNomina(nomId){
   const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
   exportToExcel(n.lineas.map(l=>{
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);
-    const jd=e?getDiasJornada(e.jornada):0;const sd=jd>0?(e.salarioBase||0)/jd:0;
-    const base=Math.round(sd*l.diasTrabajados*100)/100;
+    const salBase=e?e.salarioBase||0:0;const jd=e?getDiasJornada(e.jornada):0;const sd=jd>0?salBase/jd:0;
+    const devengado=Math.round(sd*l.diasTrabajados*100)/100;
     const vacDias=l.diasVacaciones||0;const vacAcum=Math.round(sd*vacDias*100)/100;
-    return{'Nombre':e?e.nombres:'—','Apellidos':e?e.apellidos:'—',CI:e?e.carnet:'—',Plaza:e?e.plaza:'—',Departamento:e?e.departamento:'—','Días Trabajados':l.diasTrabajados,'Sal. Base':base,'Vac. Días':vacDias,'Vac. Acum.':vacAcum,'Sal. Bruto':l.totalDevengado||0};
+    const bruto=Math.round((devengado+vacAcum)*100)/100;
+    return{'Nombre':e?e.nombres:'—','Apellidos':e?e.apellidos:'—',CI:e?e.carnet:'—',Plaza:e?e.plaza:'—',Departamento:e?e.departamento:'—','Días Trabajados':l.diasTrabajados,'Sal. Base (mensual)':salBase,'Devengado':devengado,'Vac. Días':vacDias,'Vac. Acum.':vacAcum,'Sal. Bruto':bruto};
   }),`PreNomina_${n.mesNombre}_${n.ano}`);
   showToast('Exportado','success');
 }
@@ -4218,17 +4220,18 @@ function imprimirNominaCompleta(nomId){
   const fmt=v=>v>0?v.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
   const rows=n.lineas.map((l,i)=>{
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);if(!e)return'';
-    const jd=getDiasJornada(e.jornada);const sd=jd>0?(e.salarioBase||0)/jd:0;
-    const base=Math.round(sd*l.diasTrabajados*100)/100;
+    const salBase=e.salarioBase||0;
+    const jd=getDiasJornada(e.jornada);const sd=jd>0?salBase/jd:0;
+    const devengado=Math.round(sd*l.diasTrabajados*100)/100;
     const vacDias=l.diasVacaciones||0;const vacAcum=Math.round(sd*vacDias*100)/100;
-    const bruto=l.totalDevengado||0;
-    totBase+=base;totVacAcum+=vacAcum;totBruto+=bruto;
+    const bruto=Math.round((devengado+vacAcum)*100)/100;
+    totBase+=salBase;totVacAcum+=vacAcum;totBruto+=bruto;
     return`<tr>
       <td style="text-align:center">${i+1}</td>
       <td>${e.nombres} ${e.apellidos}</td>
       <td>${e.plaza||'—'}</td>
       <td style="text-align:center">${l.diasTrabajados}</td>
-      <td style="text-align:right">${fmt(base)}</td>
+      <td style="text-align:right">${fmt(salBase)}</td>
       <td style="text-align:center;color:#1D4ED8">${vacDias>0?vacDias+'d':'—'}</td>
       <td style="text-align:right;color:#1D4ED8">${vacAcum>0?fmt(vacAcum):'—'}</td>
       <td style="text-align:right"><b>${fmt(bruto)}</b></td>
