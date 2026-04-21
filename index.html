@@ -3960,11 +3960,11 @@ function cargarNomina(){
     ${advertencia}${avisoBloqueado}
     <div class="table-wrap"><table class="nomina-table"><thead><tr>
       <th>Nº</th><th>Nombre y Apellido</th><th>Plaza</th>
-      <th data-tip="Días trabajados este mes según asistencia">Días</th>
+      <th data-tip="Días trabajados este mes según asistencia">Días Trabajados</th>
       <th data-tip="Salario mensual base del contrato">Sal. Base</th>
       <th data-tip="Días de vacaciones a liquidar este período">Vac.</th>
       <th data-tip="Importe de vacaciones (días × salario diario)">Vac. Acum.</th>
-      <th data-tip="(Sal.Base ÷ jornada) × días + Vac. Acum.">Sal. Bruto</th>
+      <th data-tip="(Sal.Base ÷ jornada) × días + Vac. Acum.">Salario Bruto a Cobrar</th>
     </tr></thead><tbody>`;
 
   let totBase=0,totVacAcum=0,totBruto=0;
@@ -4227,7 +4227,7 @@ function verDetalleNomina(nomId){
       <span><b>Sal. Bruto Total:</b> <span style="color:var(--burgundy);font-weight:700">${fmtMoney(totBruto)}</span></span>
       ${totVac>0?`<span><b>incl. Vac. Acum.:</b> <span style="color:#1D4ED8;font-weight:700">${fmtMoney(totVac)}</span></span>`:''}
     </div>
-    <div class="table-wrap"><table><thead><tr><th>Nombre y Apellido</th><th>Plaza</th><th style="text-align:center">Días</th><th style="text-align:right">Sal. Base</th><th style="text-align:center">Vac.</th><th style="text-align:right">Vac. Acum.</th><th style="text-align:right">Sal. Bruto</th></tr></thead><tbody>
+    <div class="table-wrap"><table><thead><tr><th>Nombre y Apellido</th><th>Plaza</th><th style="text-align:center">Días Trabajados</th><th style="text-align:right">Sal. Base</th><th style="text-align:center">Vac.</th><th style="text-align:right">Vac. Acum.</th><th style="text-align:right">Salario Bruto a Cobrar</th></tr></thead><tbody>
     ${rows}
     </tbody></table></div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
@@ -4243,7 +4243,7 @@ function exportNomina(nomId){
     const devengado=Math.round(sd*l.diasTrabajados*100)/100;
     const vacDias=l.diasVacaciones||0;const vacAcum=Math.round(sd*vacDias*100)/100;
     const bruto=Math.round((devengado+vacAcum)*100)/100;
-    return{'Nombre':e?e.nombres:'—','Apellidos':e?e.apellidos:'—',CI:e?e.carnet:'—',Plaza:e?e.plaza:'—',Departamento:e?e.departamento:'—','Días Trabajados':l.diasTrabajados,'Sal. Base (mensual)':salBase,'Devengado':devengado,'Vac. Días':vacDias,'Vac. Acum.':vacAcum,'Sal. Bruto':bruto};
+    return{'Nombre':e?e.nombres:'—','Apellidos':e?e.apellidos:'—',CI:e?e.carnet:'—',Plaza:e?e.plaza:'—',Departamento:e?e.departamento:'—','Días Trabajados':l.diasTrabajados,'Sal. Base (mensual)':salBase,'Devengado':devengado,'Vac. Días':vacDias,'Vac. Acum.':vacAcum,'Salario Bruto a Cobrar':bruto};
   }),`PreNomina_${n.mesNombre}_${n.ano}`);
   showToast('Exportado','success');
 }
@@ -4326,7 +4326,7 @@ function imprimirNominaCompleta(nomId){
   <table>
     <thead><tr>
       <th>Nº</th><th style="text-align:left">Nombre y Apellido</th><th style="text-align:left">Plaza</th>
-      <th>Días</th><th>Sal. Base</th><th>Vac.</th><th>Vac. Acum.</th><th>Sal. Bruto</th>
+      <th>Días Trabajados</th><th>Sal. Base</th><th>Vac.</th><th>Vac. Acum.</th><th>Salario Bruto a Cobrar</th>
     </tr></thead>
     <tbody>${rows}</tbody>
     <tfoot>
