@@ -3938,10 +3938,10 @@ function cargarNomina(){
     <div class="table-wrap"><table class="nomina-table"><thead><tr>
       <th>Nº</th><th>Nombre y Apellido</th><th>Plaza</th>
       <th data-tip="Días trabajados este mes según asistencia">Días</th>
-      <th data-tip="Salario diario × días trabajados">Sal. Base</th>
+      <th data-tip="Salario mensual base del contrato">Sal. Base</th>
       <th data-tip="Días de vacaciones a liquidar este período">Vac.</th>
       <th data-tip="Importe de vacaciones (días × salario diario)">Vac. Acum.</th>
-      <th data-tip="Sal. Base + Vac. Acum.">Sal. Bruto</th>
+      <th data-tip="(Sal.Base ÷ jornada) × días + Vac. Acum.">Sal. Bruto</th>
     </tr></thead><tbody>`;
 
   let totBase=0,totVacAcum=0,totBruto=0;
@@ -3951,15 +3951,15 @@ function cargarNomina(){
     const salBase=e.salarioBase||0;
     const jornadaDias=getDiasJornada(e.jornada);
     const salDiario=jornadaDias>0?salBase/jornadaDias:0;
-    const base=Math.round(salDiario*l.diasTrabajados*100)/100;
+    const devengado=Math.round(salDiario*l.diasTrabajados*100)/100;
     // Días de vacaciones: primero desde vacPendientes confirmados, luego desde la línea misma
     const vpEntry=(STATE.vacPendientes||[]).find(v=>v.empleadoId===e.id&&v.periodo===nomina.periodo&&v.confirmado);
     const vacDias=l.diasVacaciones!=null?l.diasVacaciones:(vpEntry?vpEntry.diasLiquidar:0);
-    if(vpEntry&&l.diasVacaciones==null)l.diasVacaciones=vpEntry.diasLiquidar; // sincronizar
+    if(vpEntry&&l.diasVacaciones==null)l.diasVacaciones=vpEntry.diasLiquidar;
     const vacAcum=Math.round(salDiario*vacDias*100)/100;
-    const bruto=Math.round((base+vacAcum)*100)/100;
+    const bruto=Math.round((devengado+vacAcum)*100)/100;
     l.totalDevengado=bruto;
-    totBase+=base;totVacAcum+=vacAcum;totBruto+=bruto;
+    totBase+=salBase;totVacAcum+=vacAcum;totBruto+=bruto;
 
     const fuenteTag=esDeptoAdmin(e.departamento)
       ?'<span title="Administración - 100% automático" style="font-size:10px;color:#6B7280">⚙️</span>'
@@ -3977,7 +3977,7 @@ function cargarNomina(){
           :`<b>${l.diasTrabajados}</b>`}
         ${fuenteTag}
       </td>
-      <td id="base-${e.id}" style="font-weight:600">${fmtMoney(base)}</td>
+      <td id="base-${e.id}" style="font-weight:600">${fmtMoney(salBase)}</td>
       <td style="text-align:center">
         ${canEditVac
           ?`<input type="number" id="vac-${e.id}" value="${vacDias}" min="0" max="365" style="width:56px;text-align:center" onchange="updateVacNomina('${nomina.id}','${e.id}')">`
@@ -5430,19 +5430,18 @@ function renderHistorialAsistencia(container){
     '<button class="btn btn-primary btn-sm" onclick="subirAsistenciaLocal()" title="Sube registros cerrados del dispositivo actual a la nube">☁️ Subir local</button> '+
     '<button class="btn btn-secondary btn-sm" onclick="exportAsistencia()">⬇️ Excel</button>';
 
-  // Siempre sincronizar asistencia desde Supabase al abrir el historial
+  // Fetch first, render once — avoids race condition where double-render shifts rows under a tap
+  container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-mid)">⏳ Cargando historial...</div>';
   (async()=>{
     try{
       const dataAsist=await sbLeer('asistencia');
       if(Array.isArray(dataAsist)&&dataAsist.length>0){
         STATE.asistencia=mergeAsistenciaRemota(dataAsist);
         saveState();
-        _renderHistorialAsistenciaTabla(container);
       }
     }catch(e){}
+    _renderHistorialAsistenciaTabla(container);
   })();
-
-  _renderHistorialAsistenciaTabla(container);
 }
 
 function _renderHistorialAsistenciaTabla(container){
@@ -5514,15 +5513,20 @@ function verDetalleAsistencia(regId){
       +'</tr>';
   });
 
+  const sinDetalle = lineasFiltradas.length === 0;
   const body =
     '<div style="margin-bottom:16px;display:flex;gap:12px;flex-wrap:wrap;">'
     +'<div class="badge badge-approved" style="padding:8px 16px;font-size:13px;">'+P+' Presentes</div>'
     +'<div class="badge" style="padding:8px 16px;font-size:13px;background:#DBEAFE;color:#1D4ED8;">'+D+' Descansan</div>'
+    +(reg.registradoPor?'<div class="badge" style="padding:8px 16px;font-size:13px;background:#F3F4F6;color:#374151;">👤 '+reg.registradoPor+'</div>':'')
+    +(reg.horaCierre?'<div class="badge" style="padding:8px 16px;font-size:13px;background:#FEF3C7;color:#92400E;">🔒 '+reg.horaCierre+'</div>':'')
     +'</div>'
-    +'<div class="table-wrap"><table>'
-    +'<thead><tr><th>Empleado</th><th>Departamento</th><th>Estado</th><th>Motivo</th></tr></thead>'
-    +'<tbody>'+rowsHtml+'</tbody>'
-    +'</table></div>';
+    +(sinDetalle
+      ? '<div style="text-align:center;padding:24px;color:var(--text-mid);background:#FEF3C7;border-radius:8px;margin-bottom:8px">⚠️ El detalle de este turno no se pudo sincronizar. El Jefe de Turno debe abrir la app con conexión para restaurarlo automáticamente.</div>'
+      : '<div class="table-wrap"><table>'
+        +'<thead><tr><th>Empleado</th><th>Departamento</th><th>Estado</th><th>Motivo</th></tr></thead>'
+        +'<tbody>'+rowsHtml+'</tbody>'
+        +'</table></div>');
 
   openModal('📋 Asistencia: '+fechaFmt, body,
     '<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>'
