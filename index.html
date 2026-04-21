@@ -1063,6 +1063,21 @@ async function recuperarDesdeSheets(){
 }
 
 
+// Remove asistencia records older than 3 months whose nómina is already approved
+function archivarAsistenciaAntigua() {
+  const hoy = new Date();
+  const limite = new Date(hoy.getFullYear(), hoy.getMonth() - 3, 1);
+  const periodoLimite = `${limite.getFullYear()}-${String(limite.getMonth()+1).padStart(2,'0')}`;
+  const antes = STATE.asistencia.length;
+  STATE.asistencia = STATE.asistencia.filter(r => {
+    if (!r.fecha || r.fecha >= periodoLimite) return true; // keep current and recent
+    const periodo = r.fecha.slice(0,7);
+    const nomAprobada = STATE.nominas.some(n => n.periodo === periodo && n.estado === 'aprobada');
+    return !nomAprobada; // only drop if the nómina for that month is already approved
+  });
+  if (STATE.asistencia.length < antes) saveState();
+}
+
 // Silently re-upload any local asistencia records whose lineas are missing in Supabase
 async function repararLineasAsistencia() {
   if (!DB_ONLINE) return;
@@ -1355,7 +1370,7 @@ function doLogin(){
     renderSidebar();
     navigateTo('dashboard');
     setTimeout(function(){ updateAlertaBadgeJur(); }, 300);
-    setTimeout(async () => { await sincronizarDesdeSheets(); await flushPendingOps(); await repararLineasAsistencia(); connectRealtime(); }, 500);
+    setTimeout(async () => { await sincronizarDesdeSheets(); await flushPendingOps(); await repararLineasAsistencia(); archivarAsistenciaAntigua(); connectRealtime(); }, 500);
   } else {
     _loginAttempts++;
     if(_loginAttempts>=5){_loginLockedUntil=Date.now()+30000;_loginAttempts=0;}
@@ -3873,11 +3888,19 @@ function cargarNomina(){
   // Verificar si hay asistencia registrada en el período
   const hayAsistencia=STATE.asistencia.some(a=>a.cerrado&&a.fecha.startsWith(periodoKey));
 
-  // Días trabajados: para admin → jornada completa; para otros → presentes reales si hay asistencia, sino jornada como fallback global
+  // Días trabajados: admin→jornada completa; otros→presentes reales solo si el empleado
+  // aparece en alguna linea del mes; si hay asistencia pero el empleado nunca fue registrado
+  // (ej. dpto no cubierto por JT) se usa jornada completa como fallback seguro
+  const empApareceMes=(empId)=>STATE.asistencia.some(a=>
+    a.cerrado&&a.fecha.startsWith(periodoKey)&&(a.lineas||[]).some(l=>l.empleadoId===empId)
+  );
   const getDiasTrab=(e)=>{
     if(esDeptoAdmin(e.departamento)) return getDiasJornada(e.jornada);
-    if(hayAsistencia) return getDiasPresentesMes(e.id,periodoKey);
-    return getDiasJornada(e.jornada); // fallback solo si no existe ningún registro del mes
+    if(hayAsistencia){
+      if(empApareceMes(e.id)) return getDiasPresentesMes(e.id,periodoKey);
+      return getDiasJornada(e.jornada); // hay asistencia pero este empleado no fue incluido → jornada
+    }
+    return getDiasJornada(e.jornada);
   };
 
   if(!nomina){
@@ -4056,12 +4079,19 @@ async function calcularNomina(nomId){
       saveState();
     }
   }catch(e){showToast('Sin conexión — usando datos locales','warning',3000);}
-  // Actualizar días desde asistencia
+  // Actualizar días desde asistencia usando misma lógica que getDiasTrab en cargarNomina
+  const periodo=nomina.periodo;
+  const hayAsis=STATE.asistencia.some(a=>a.cerrado&&a.fecha.startsWith(periodo));
+  const empEnLineas=(empId)=>STATE.asistencia.some(a=>
+    a.cerrado&&a.fecha.startsWith(periodo)&&(a.lineas||[]).some(l=>l.empleadoId===empId)
+  );
   nomina.lineas.forEach(l=>{
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);if(!e)return;
-    if(!esDeptoAdmin(e.departamento)){
-      const presentes=getDiasPresentesMes(e.id,nomina.periodo);
-      if(presentes>0)l.diasTrabajados=presentes;
+    if(!esDeptoAdmin(e.departamento)&&hayAsis){
+      if(empEnLineas(e.id)){
+        l.diasTrabajados=getDiasPresentesMes(e.id,periodo);
+      }
+      // si hay asistencia pero el empleado nunca aparece → no tocar diasTrabajados (conserva jornada)
     }
     const dtEl=document.getElementById('dt-'+e.id);if(dtEl)dtEl.value=l.diasTrabajados;
   });
@@ -4117,6 +4147,21 @@ function confirmarAprobacionNomina(nomId){
     return;
   }
   const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
+  // Validación crítica antes de aprobar
+  const cerosDias=n.lineas.filter(l=>!(l.diasTrabajados>0)&&!(l.diasVacaciones>0));
+  if(cerosDias.length>0){
+    const nombres=cerosDias.slice(0,5).map(l=>{const e=STATE.empleados.find(x=>x.id===l.empleadoId);return e?e.nombres+' '+e.apellidos:'?';}).join(', ');
+    const err=document.getElementById('ap-error');
+    if(err)err.innerHTML='⚠️ <b>'+cerosDias.length+' empleado(s) con 0 días:</b> '+nombres+(cerosDias.length>5?'...':', etc.')+'<br><small>Recalcula la nómina o ajusta manualmente antes de aprobar.</small>';
+    return;
+  }
+  const sinSalario=n.lineas.filter(l=>{const e=STATE.empleados.find(x=>x.id===l.empleadoId);return !e||!(e.salarioBase>0);});
+  if(sinSalario.length>0){
+    const nombres=sinSalario.slice(0,3).map(l=>{const e=STATE.empleados.find(x=>x.id===l.empleadoId);return e?e.nombres+' '+e.apellidos:'?';}).join(', ');
+    const err=document.getElementById('ap-error');
+    if(err)err.innerHTML='⚠️ <b>'+sinSalario.length+' empleado(s) sin salario base:</b> '+nombres+'<br><small>Asigna salario en el perfil del empleado antes de aprobar.</small>';
+    return;
+  }
   const ahora=new Date();
   n.estado='aprobada';
   n.aprobadaFecha=ahora.toISOString();
@@ -4168,12 +4213,13 @@ function verDetalleNomina(nomId){
   let totBase=0,totVac=0,totBruto=0;
   const rows=n.lineas.map(l=>{
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);
-    const jd=e?getDiasJornada(e.jornada):0;const sd=jd>0?(e.salarioBase||0)/jd:0;
-    const base=Math.round(sd*l.diasTrabajados*100)/100;
+    const salBase=e?e.salarioBase||0:0;
+    const jd=e?getDiasJornada(e.jornada):0;const sd=jd>0?salBase/jd:0;
+    const devengado=Math.round(sd*l.diasTrabajados*100)/100;
     const vacDias=l.diasVacaciones||0;const vacAcum=Math.round(sd*vacDias*100)/100;
-    const bruto=l.totalDevengado||0;
-    totBase+=base;totVac+=vacAcum;totBruto+=bruto;
-    return`<tr><td>${e?`${e.nombres} ${e.apellidos}`:'—'}</td><td>${e?e.plaza:'—'}</td><td style="text-align:center">${l.diasTrabajados}</td><td style="text-align:right">${fmtMoney(base)}</td><td style="text-align:center;color:#1D4ED8;font-weight:${vacDias>0?'700':'400'}">${vacDias>0?vacDias+'d':'—'}</td><td style="text-align:right;color:#1D4ED8">${vacAcum>0?fmtMoney(vacAcum):'—'}</td><td style="text-align:right;font-weight:700;color:var(--burgundy)">${fmtMoney(bruto)}</td></tr>`;
+    const bruto=Math.round((devengado+vacAcum)*100)/100;
+    totBase+=salBase;totVac+=vacAcum;totBruto+=bruto;
+    return`<tr><td>${e?`${e.nombres} ${e.apellidos}`:'—'}</td><td>${e?e.plaza:'—'}</td><td style="text-align:center">${l.diasTrabajados}</td><td style="text-align:right">${fmtMoney(salBase)}</td><td style="text-align:center;color:#1D4ED8;font-weight:${vacDias>0?'700':'400'}">${vacDias>0?vacDias+'d':'—'}</td><td style="text-align:right;color:#1D4ED8">${vacAcum>0?fmtMoney(vacAcum):'—'}</td><td style="text-align:right;font-weight:700;color:var(--burgundy)">${fmtMoney(bruto)}</td></tr>`;
   }).join('');
   openModal(`Pre-Nómina: ${n.mesNombre} ${n.ano}`,
     `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
