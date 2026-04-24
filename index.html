@@ -1660,12 +1660,12 @@ function confirmAction(msg,cb){
 }
 function fmtDate(d){
   if(!d)return'—';
-  // Parse YYYY-MM-DD directly to avoid UTC→local timezone shift (off-by-one day bug)
   const s=String(d).slice(0,10);
   const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
   if(m)return`${m[3]}/${m[2]}/${m[1]}`;
   try{return new Date(d).toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'})}catch(e){return d}
 }
+function fmtMoney(n){if(n==null||isNaN(n))return'—';return new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(n)+' CUP';}
 function calcAntiguedad(fechaAlta){
   if(!fechaAlta)return 0;
   // Parse sin timezone para consistencia
