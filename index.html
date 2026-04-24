@@ -3504,7 +3504,11 @@ function abrirModalPlaza(plazaId){
         <select id="mp-contrato"><option ${!p||p.tipoContrato==='Indefinido'?'selected':''}>Indefinido</option><option ${p&&p.tipoContrato==='Determinado'?'selected':''}>Determinado</option></select></div>
     </div>
     <div class="form-group full" style="margin-top:8px">
-      <label class="field-label" style="margin-bottom:8px">Documento de Funciones</label>
+      <label class="field-label" style="margin-bottom:4px">Funciones para impresión <span style="font-weight:400;color:var(--muted);font-size:12px">(Anexo No.1 — una función por línea)</span></label>
+      <textarea id="mp-descripcion" rows="6" placeholder="Ej:&#10;Organizar y supervisar las operaciones del área de logística&#10;Controlar entradas y salidas de mercancías&#10;Coordinar al personal a su cargo">${p&&p.descripcion?p.descripcion:''}</textarea>
+    </div>
+    <div class="form-group full" style="margin-top:4px">
+      <label class="field-label" style="margin-bottom:8px">Documento de Funciones (PDF respaldo)</label>
       ${pdfBtnHtml}
     </div>`;
   const footer=`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
@@ -3521,7 +3525,8 @@ async function guardarPlaza(plazaId){
   const id=plazaId||(dept+'||'+nombre);
   const existing=(STATE.plazas||{})[id]||{};
   const salario=currentRole==='admin'?(parseFloat(document.getElementById('mp-salario')?.value)||0):(existing.salarioBase||0);
-  const plaza={...existing,id,departamento:dept,nombre,salarioBase:salario,jornada,tipoContrato:contrato,descripcion:existing.descripcion||'',
+  const descripcionTexto=(document.getElementById('mp-descripcion')?.value||'').trim();
+  const plaza={...existing,id,departamento:dept,nombre,salarioBase:salario,jornada,tipoContrato:contrato,descripcion:descripcionTexto,
     funcionesPdfId:existing.funcionesPdfId||'',funcionesPdfUrl:existing.funcionesPdfUrl||''};
 
   // Subir PDF de funciones si se seleccionó
@@ -3656,10 +3661,18 @@ function imprimirFichaPlaza(empId){
   });
   const plaza=plazaKey?STATE.plazas[plazaKey]:null;
   const descripcion=plaza&&plaza.descripcion?plaza.descripcion.trim():'';
+  const pdfUrl=plaza&&plaza.funcionesPdfUrl?plaza.funcionesPdfUrl:'';
+
+  // Si hay PDF pero no texto: abrir el PDF en otra pestaña como respaldo
+  if(!descripcion&&pdfUrl){
+    window.open(pdfUrl,'_blank');
+  }
 
   const funcionesHTML=descripcion
     ?descripcion.split('\n').filter(l=>l.trim()).map(l=>`<li>${l.trim().replace(/^[-•*]\s*/,'')}</li>`).join('')
-    :'<li style="color:#C0392B"><i>No hay funciones registradas para esta plaza. Agrégalas en Administración → Gestión de Plazas.</i></li>';
+    :pdfUrl
+      ?`<li><i>Las funciones de este puesto están en el documento PDF adjunto que se ha abierto en otra pestaña. Imprímelo junto a este anexo.</i></li>`
+      :`<li style="color:#C0392B"><i>No hay funciones registradas. Agrégalas en Administración → Gestión de Plazas (campo "Funciones para impresión").</i></li>`;
 
   const win=window.open('','_blank','width=820,height=960');
   win.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
