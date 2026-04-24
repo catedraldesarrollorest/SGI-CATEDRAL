@@ -3702,7 +3702,6 @@ function imprimirFichaPlaza(empId){
   const empresa=STATE.config.empresa||'La Catedral S.R.L.';
   const fecha=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
 
-  // Buscar plaza: 1) por nombre exacto, 2) sin mayúsculas/tildes, 3) por clave dept||nombre
   const norm=s=>(s||'').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g,'');
   const plazaNorm=norm(e.plaza);
   const deptNorm=norm(e.departamento);
@@ -3710,9 +3709,7 @@ function imprimirFichaPlaza(empId){
     const p=STATE.plazas[k];
     if(!p)return false;
     if(norm(p.nombre)===plazaNorm)return true;
-    // fallback: la clave misma contiene el nombre de la plaza
     if(norm(k).includes(plazaNorm))return true;
-    // fallback: coincide dept Y nombre parcial
     if(norm(p.departamento)===deptNorm&&norm(p.nombre).includes(plazaNorm.split(' ')[0]))return true;
     return false;
   });
@@ -3720,96 +3717,105 @@ function imprimirFichaPlaza(empId){
   const descripcion=plaza&&plaza.descripcion?plaza.descripcion.trim():'';
   const pdfUrl=plaza&&plaza.funcionesPdfUrl?plaza.funcionesPdfUrl:'';
 
-  // Si hay PDF pero no texto: abrir el PDF en otra pestaña como respaldo
-  if(!descripcion&&pdfUrl){
-    window.open(pdfUrl,'_blank');
-  }
+  if(!descripcion&&pdfUrl){ window.open(pdfUrl,'_blank'); }
 
   const funcionesHTML=descripcion
     ?descripcion.split('\n').filter(l=>l.trim()).map(l=>`<li>${l.trim().replace(/^[-•*]\s*/,'')}</li>`).join('')
     :pdfUrl
-      ?`<li><i>Las funciones de este puesto están en el documento PDF adjunto que se ha abierto en otra pestaña. Imprímelo junto a este anexo.</i></li>`
-      :`<li style="color:#C0392B"><i>No hay funciones registradas. Agrégalas en Administración → Gestión de Plazas (campo "Funciones para impresión").</i></li>`;
+      ?`<li><i>Las funciones están en el PDF adjunto que se ha abierto en otra pestaña.</i></li>`
+      :`<li style="color:#C0392B"><i>Sin funciones registradas. Agrégalas en Gestión de Plazas.</i></li>`;
 
-  const win=window.open('','_blank');
-  win.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
-  <title>Anexo No.1 — ${e.plaza} — ${e.nombres} ${e.apellidos}</title>
+  const html=`<!DOCTYPE html><html lang="es"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Anexo No.1 — ${e.nombres} ${e.apellidos}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:'Times New Roman',serif;font-size:12pt;color:#000;background:#fff;padding:20mm 25mm}
-    .no-print{text-align:center;padding:10px;background:#f5f0e8;border-bottom:1px solid #ccc;margin-bottom:20px;position:sticky;top:0;z-index:10}
-    .no-print button{border:none;padding:8px 20px;border-radius:4px;font-size:14px;cursor:pointer;margin:0 6px}
-    .btn-print{background:#6B1A1A;color:#fff}
-    .btn-close{background:#888;color:#fff}
-    .header{text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:20px}
-    .header h1{font-size:16pt;font-weight:bold;letter-spacing:1px;text-transform:uppercase}
-    .header h2{font-size:12pt;font-weight:normal;margin-top:4px}
-    .titulo{text-align:center;margin:20px 0 14px}
-    .titulo h3{font-size:14pt;font-weight:bold;text-transform:uppercase;letter-spacing:1px}
-    .titulo .subtitulo{font-size:10pt;color:#555;margin-top:4px}
-    .datos{border:1px solid #000;padding:12px 16px;margin-bottom:18px}
+    html,body{min-height:100%;background:#fff;font-family:'Times New Roman',Georgia,serif;font-size:13px;color:#000}
+    body{padding:0}
+    .toolbar{background:#f5f0e8;border-bottom:2px solid #c8a96e;padding:12px;text-align:center;display:flex;justify-content:center;gap:12px}
+    .toolbar button{border:none;padding:10px 24px;border-radius:4px;font-size:14px;cursor:pointer;font-weight:600}
+    .btn-p{background:#6B1A1A;color:#fff}
+    .btn-c{background:#888;color:#fff}
+    .doc{max-width:750px;margin:0 auto;padding:30px 40px 60px}
+    .header{text-align:center;border-bottom:2px solid #000;padding-bottom:14px;margin-bottom:24px}
+    .header h1{font-size:20px;font-weight:bold;letter-spacing:2px;text-transform:uppercase}
+    .header h2{font-size:13px;font-weight:normal;margin-top:5px;letter-spacing:1px}
+    .titulo{text-align:center;margin:0 0 20px}
+    .titulo h3{font-size:16px;font-weight:bold;text-transform:uppercase;letter-spacing:2px}
+    .titulo p{font-size:12px;color:#555;margin-top:5px}
+    .datos{border:1px solid #555;padding:14px 18px;margin-bottom:20px}
     .datos table{width:100%;border-collapse:collapse}
-    .datos td{padding:4px 8px;font-size:11pt}
-    .datos td:first-child{font-weight:bold;width:38%;color:#333}
-    .section-title{font-size:11pt;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;padding-bottom:4px;margin-bottom:10px}
-    .funciones{margin-bottom:24px}
-    .funciones ul{padding-left:20px}
-    .funciones li{margin-bottom:5px;font-size:11pt;line-height:1.5}
-    .firmas{display:flex;justify-content:space-between;margin-top:40px;gap:40px}
-    .firma-bloque{flex:1;text-align:center}
-    .firma-linea{border-top:1px solid #000;margin-top:50px;padding-top:6px;font-size:10pt}
-    .firma-nombre{font-weight:bold;font-size:10.5pt}
-    .firma-cargo{font-size:10pt;color:#444}
-    .pie{margin-top:30px;font-size:9pt;color:#666;text-align:center;border-top:1px solid #ccc;padding-top:8px}
-    @media print{.no-print{display:none!important}body{padding:15mm 20mm}}
+    .datos td{padding:5px 8px;font-size:13px;vertical-align:top}
+    .datos td:first-child{font-weight:bold;width:35%;color:#222}
+    .sec{font-size:12px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;border-bottom:1.5px solid #000;padding-bottom:5px;margin-bottom:12px}
+    .funciones{margin-bottom:20px}
+    .funciones ul{padding-left:22px;margin:0}
+    .funciones li{margin-bottom:6px;font-size:13px;line-height:1.6}
+    .aviso{font-size:12.5px;line-height:1.6;margin-bottom:30px;text-align:justify}
+    .firmas{display:table;width:100%;margin-top:50px}
+    .f-row{display:table-row}
+    .f-cell{display:table-cell;width:50%;text-align:center;padding:0 20px}
+    .f-line{border-top:1px solid #000;margin-top:60px;padding-top:8px}
+    .f-nombre{font-weight:bold;font-size:13px}
+    .f-cargo{font-size:12px;color:#555;margin-top:2px}
+    .pie{margin-top:40px;font-size:11px;color:#888;text-align:center;border-top:1px solid #ddd;padding-top:10px}
+    @media print{
+      .toolbar{display:none!important}
+      html,body{background:#fff}
+      .doc{padding:20px 30px 40px}
+    }
   </style></head><body>
-  <div class="no-print">
-    <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
-    <button class="btn-close" onclick="window.close()">✕ Cerrar</button>
+  <div class="toolbar">
+    <button class="btn-p" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
+    <button class="btn-c" onclick="window.close()">✕ Cerrar</button>
   </div>
-  <div class="header">
-    <h1>${empresa}</h1>
-    <h2>GESTIÓN DE RECURSOS HUMANOS</h2>
-  </div>
-  <div class="titulo">
-    <h3>ANEXO No. 1</h3>
-    <div class="subtitulo">Descripción de Funciones y Responsabilidades del Puesto de Trabajo</div>
-  </div>
-  <div class="datos">
-    <table>
-      <tr><td>Trabajador:</td><td>${e.nombres} ${e.apellidos}</td></tr>
-      <tr><td>Carnet de Identidad:</td><td>${e.carnet||'—'}</td></tr>
-      <tr><td>Plaza / Cargo:</td><td>${e.plaza}</td></tr>
-      <tr><td>Departamento:</td><td>${e.departamento}</td></tr>
-      <tr><td>Fecha de Alta:</td><td>${fmtDate(e.fechaAlta)}</td></tr>
-      <tr><td>Tipo de Contrato:</td><td>${e.tipoContrato||'Indefinido'}</td></tr>
-    </table>
-  </div>
-  <div class="funciones">
-    <div class="section-title">Funciones y Responsabilidades</div>
-    <ul>${funcionesHTML}</ul>
-  </div>
-  <p style="font-size:10.5pt;margin-bottom:24px">
-    El presente documento constituye el <strong>Anexo No. 1</strong> del Contrato de Trabajo suscrito entre las partes,
-    y forma parte integrante del mismo. Ambas partes declaran conocer y aceptar el contenido aquí descrito.
-  </p>
-  <div class="firmas">
-    <div class="firma-bloque">
-      <div class="firma-linea">
-        <div class="firma-nombre">${e.nombres} ${e.apellidos}</div>
-        <div class="firma-cargo">El Trabajador</div>
+  <div class="doc">
+    <div class="header">
+      <h1>${empresa}</h1>
+      <h2>GESTIÓN DE RECURSOS HUMANOS</h2>
+    </div>
+    <div class="titulo">
+      <h3>ANEXO No. 1</h3>
+      <p>Descripción de Funciones y Responsabilidades del Puesto de Trabajo</p>
+    </div>
+    <div class="datos">
+      <table>
+        <tr><td>Trabajador:</td><td>${e.nombres} ${e.apellidos}</td></tr>
+        <tr><td>Carnet de Identidad:</td><td>${e.carnet||'—'}</td></tr>
+        <tr><td>Plaza / Cargo:</td><td>${e.plaza}</td></tr>
+        <tr><td>Departamento:</td><td>${e.departamento}</td></tr>
+        <tr><td>Fecha de Alta:</td><td>${fmtDate(e.fechaAlta)}</td></tr>
+        <tr><td>Tipo de Contrato:</td><td>${e.tipoContrato||'Indefinido'}</td></tr>
+      </table>
+    </div>
+    <div class="funciones">
+      <div class="sec">Funciones y Responsabilidades</div>
+      <ul>${funcionesHTML}</ul>
+    </div>
+    <p class="aviso">El presente documento constituye el <strong>Anexo No. 1</strong> del Contrato de Trabajo suscrito entre las partes, y forma parte integrante del mismo. Ambas partes declaran conocer y aceptar el contenido aquí descrito.</p>
+    <div class="firmas">
+      <div class="f-row">
+        <div class="f-cell">
+          <div class="f-line">
+            <div class="f-nombre">${e.nombres} ${e.apellidos}</div>
+            <div class="f-cargo">El Trabajador</div>
+          </div>
+        </div>
+        <div class="f-cell">
+          <div class="f-line">
+            <div class="f-nombre">Dirección de Recursos Humanos</div>
+            <div class="f-cargo">${empresa}</div>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="firma-bloque">
-      <div class="firma-linea">
-        <div class="firma-nombre">Dirección de Recursos Humanos</div>
-        <div class="firma-cargo">${empresa}</div>
-      </div>
-    </div>
+    <div class="pie">Emitido el ${fecha} &mdash; ${empresa} &middot; Sistema de Gestión Integral</div>
   </div>
-  <div class="pie">Emitido el ${fecha} — ${empresa} · Sistema de Gestión Integral</div>
-  </body></html>`);
-  win.document.close();
+  </body></html>`;
+
+  const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  window.open(url,'_blank');
 }
 
 function openModalFechaContrato(){
