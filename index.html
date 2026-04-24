@@ -1533,7 +1533,8 @@ const NAV_ITEMS = {
     {section:'contratos',icon:'📄',label:'Contratos',header:'JURÍDICO'},
     {section:'preformas',icon:'📝',label:'Preformas'},
     {section:'sanciones',icon:'⚠️',label:'Sanciones'},
-    {section:'docs_legales',icon:'🗂️',label:'Docs. Legales'}
+    {section:'docs_legales',icon:'🗂️',label:'Docs. Legales'},
+    {section:'gestion_plazas',icon:'🏷️',label:'Plazas y Funciones',header:'REFERENCIA'}
   ],
   contabilidad:[
     {section:'dashboard',icon:'📈',label:'Dashboard'},
@@ -3411,8 +3412,11 @@ function renderSalarios(container){
 
 function renderGestionPlazas(container){
   const canEdit=currentRole==='admin'||currentRole==='rrhh';
-  if(!canEdit){container.innerHTML='<div class="empty-state"><div class="empty-icon">🔒</div><h4>Acceso restringido</h4></div>';return}
-  document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-secondary btn-sm" onclick="sincronizarSalariosDesidePlazas()" title="Actualiza el salario de todos los empleados activos según su plaza">🔄 Sincronizar Salarios</button> <button class="btn btn-primary btn-sm" onclick="abrirModalPlaza(null)" style="font-weight:700;font-size:14px;padding:8px 18px">＋ Nueva Plaza</button>`;
+  const soloLectura=currentRole==='juridico';
+  if(!canEdit&&!soloLectura){container.innerHTML='<div class="empty-state"><div class="empty-icon">🔒</div><h4>Acceso restringido</h4></div>';return}
+  document.getElementById('topbar-actions').innerHTML=canEdit
+    ?`<button class="btn btn-secondary btn-sm" onclick="sincronizarSalariosDesidePlazas()" title="Actualiza el salario de todos los empleados activos según su plaza">🔄 Sincronizar Salarios</button> <button class="btn btn-primary btn-sm" onclick="abrirModalPlaza(null)" style="font-weight:700;font-size:14px;padding:8px 18px">＋ Nueva Plaza</button>`
+    :'';
   const plazas=Object.values(STATE.plazas||{});
   const depts=[...new Set(plazas.map(p=>p.departamento))].sort();
   const showSal=currentRole==='admin';
@@ -3438,7 +3442,8 @@ function renderPlazasRows(plazas){
   return plazas.map(p=>{
     const count=activos.filter(e=>e.departamento===p.departamento&&e.plaza===p.nombre).length;
     const idEsc=p.id.replace(/'/g,'\\&apos;');
-    return `<tr onclick="abrirModalPlaza('${idEsc}')" style="cursor:pointer"
+    const esJuridico=currentRole==='juridico';
+    return `<tr onclick="${esJuridico?'':'abrirModalPlaza(\''+idEsc+'\')'}" style="${esJuridico?'':'cursor:pointer'}"
       onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background=''">
       <td data-label="Departamento">${p.departamento}</td>
       <td data-label="Plaza"><b>${p.nombre}</b></td>
@@ -3447,7 +3452,9 @@ function renderPlazasRows(plazas){
       <td data-label="Contrato">${p.tipoContrato||'—'}</td>
       <td data-label="Empleados">${count?`<span class="badge badge-active">${count}</span>`:'<span class="badge badge-inactive">0</span>'}</td>
       <td class="td-act" onclick="event.stopPropagation()">
-        <button class="btn btn-danger btn-xs" onclick="eliminarPlaza('${idEsc}')">🗑️</button>
+        ${esJuridico
+          ?`<button class="btn btn-secondary btn-xs" onclick="imprimirFichaPlazaDirecta('${idEsc}')" title="Imprimir funciones">📄 Imprimir</button>`
+          :`<button class="btn btn-danger btn-xs" onclick="eliminarPlaza('${idEsc}')">🗑️</button>`}
       </td></tr>`;
   }).join('');
 }
@@ -3695,6 +3702,65 @@ function renderContratos(container){
     +'<thead><tr><th>Empleado</th><th>Departamento</th><th>Plaza</th><th>Tipo Contrato</th><th>Fecha Alta</th><th>Contrato</th><th>Acciones</th></tr></thead>'
     +'<tbody>'+rowsHtml+'</tbody>'
     +'</table></div></div>';
+}
+
+// Imprimir funciones de una plaza directamente (sin empleado específico — para Jurídico)
+function imprimirFichaPlazaDirecta(plazaId){
+  const p=(STATE.plazas||{})[plazaId];if(!p)return;
+  const empresa=STATE.config.empresa||'La Catedral S.R.L.';
+  const fecha=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  const descripcion=p.descripcion?p.descripcion.trim():'';
+  if(!descripcion&&p.funcionesPdfUrl){window.open(p.funcionesPdfUrl,'_blank');return;}
+  const funcionesHTML=descripcion
+    ?descripcion.split('\n').filter(l=>l.trim()).map(l=>`<li>${l.trim().replace(/^[-•*]\s*/,'')}</li>`).join('')
+    :`<li style="color:#C0392B"><i>Sin funciones registradas para esta plaza.</i></li>`;
+  const html=`<!DOCTYPE html><html lang="es"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Funciones — ${p.nombre}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{background:#fff;font-family:'Times New Roman',Georgia,serif;font-size:13px;color:#000}
+    .toolbar{background:#f5f0e8;border-bottom:2px solid #c8a96e;padding:12px;text-align:center;display:flex;justify-content:center;gap:12px}
+    .toolbar button{border:none;padding:10px 24px;border-radius:4px;font-size:14px;cursor:pointer;font-weight:600}
+    .btn-p{background:#6B1A1A;color:#fff}.btn-c{background:#888;color:#fff}
+    .doc{max-width:750px;margin:0 auto;padding:30px 40px 60px}
+    .header{text-align:center;border-bottom:2px solid #000;padding-bottom:14px;margin-bottom:24px}
+    .header h1{font-size:20px;font-weight:bold;letter-spacing:2px;text-transform:uppercase}
+    .header h2{font-size:13px;font-weight:normal;margin-top:5px;letter-spacing:1px}
+    .titulo{text-align:center;margin:0 0 20px}
+    .titulo h3{font-size:16px;font-weight:bold;text-transform:uppercase;letter-spacing:2px}
+    .titulo p{font-size:12px;color:#555;margin-top:5px}
+    .datos{border:1px solid #555;padding:14px 18px;margin-bottom:20px}
+    .datos table{width:100%;border-collapse:collapse}
+    .datos td{padding:5px 8px;font-size:13px}
+    .datos td:first-child{font-weight:bold;width:35%;color:#222}
+    .sec{font-size:12px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;border-bottom:1.5px solid #000;padding-bottom:5px;margin-bottom:12px}
+    ul{padding-left:22px;margin:0 0 20px}
+    li{margin-bottom:6px;font-size:13px;line-height:1.6}
+    .pie{margin-top:40px;font-size:11px;color:#888;text-align:center;border-top:1px solid #ddd;padding-top:10px}
+    @media print{.toolbar{display:none!important}.doc{padding:20px 30px 40px}}
+  </style></head><body>
+  <div class="toolbar">
+    <button class="btn-p" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
+    <button class="btn-c" onclick="window.close()">✕ Cerrar</button>
+  </div>
+  <div class="doc">
+    <div class="header"><h1>${empresa}</h1><h2>GESTIÓN DE RECURSOS HUMANOS</h2></div>
+    <div class="titulo"><h3>Descripción de Funciones del Puesto</h3></div>
+    <div class="datos">
+      <table>
+        <tr><td>Plaza / Cargo:</td><td><b>${p.nombre}</b></td></tr>
+        <tr><td>Departamento:</td><td>${p.departamento}</td></tr>
+        <tr><td>Jornada:</td><td>${p.jornada||'—'}</td></tr>
+        <tr><td>Tipo de Contrato:</td><td>${p.tipoContrato||'Indefinido'}</td></tr>
+      </table>
+    </div>
+    <div class="sec">Funciones y Responsabilidades</div>
+    <ul>${funcionesHTML}</ul>
+    <div class="pie">Emitido el ${fecha} &mdash; ${empresa} &middot; Sistema de Gestión Integral</div>
+  </div></body></html>`;
+  const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+  window.open(URL.createObjectURL(blob),'_blank');
 }
 
 function imprimirFichaPlaza(empId){
