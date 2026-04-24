@@ -3640,10 +3640,19 @@ function imprimirFichaPlaza(empId){
   const empresa=STATE.config.empresa||'La Catedral S.R.L.';
   const fecha=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
 
-  // Buscar plaza por nombre (normalizado)
+  // Buscar plaza: 1) por nombre exacto, 2) sin mayúsculas/tildes, 3) por clave dept||nombre
+  const norm=s=>(s||'').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  const plazaNorm=norm(e.plaza);
+  const deptNorm=norm(e.departamento);
   const plazaKey=Object.keys(STATE.plazas||{}).find(k=>{
     const p=STATE.plazas[k];
-    return p.nombre&&p.nombre.toLowerCase().trim()===e.plaza.toLowerCase().trim();
+    if(!p)return false;
+    if(norm(p.nombre)===plazaNorm)return true;
+    // fallback: la clave misma contiene el nombre de la plaza
+    if(norm(k).includes(plazaNorm))return true;
+    // fallback: coincide dept Y nombre parcial
+    if(norm(p.departamento)===deptNorm&&norm(p.nombre).includes(plazaNorm.split(' ')[0]))return true;
+    return false;
   });
   const plaza=plazaKey?STATE.plazas[plazaKey]:null;
   const descripcion=plaza&&plaza.descripcion?plaza.descripcion.trim():'';
@@ -3652,12 +3661,16 @@ function imprimirFichaPlaza(empId){
     ?descripcion.split('\n').filter(l=>l.trim()).map(l=>`<li>${l.trim().replace(/^[-•*]\s*/,'')}</li>`).join('')
     :'<li style="color:#C0392B"><i>No hay funciones registradas para esta plaza. Agrégalas en Administración → Gestión de Plazas.</i></li>';
 
-  const win=window.open('','_blank','width=800,height=900');
+  const win=window.open('','_blank','width=820,height=960');
   win.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
   <title>Anexo No.1 — ${e.plaza} — ${e.nombres} ${e.apellidos}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Times New Roman',serif;font-size:12pt;color:#000;background:#fff;padding:20mm 25mm}
+    .no-print{text-align:center;padding:10px;background:#f5f0e8;border-bottom:1px solid #ccc;margin-bottom:20px;position:sticky;top:0;z-index:10}
+    .no-print button{border:none;padding:8px 20px;border-radius:4px;font-size:14px;cursor:pointer;margin:0 6px}
+    .btn-print{background:#6B1A1A;color:#fff}
+    .btn-close{background:#888;color:#fff}
     .header{text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:20px}
     .header h1{font-size:16pt;font-weight:bold;letter-spacing:1px;text-transform:uppercase}
     .header h2{font-size:12pt;font-weight:normal;margin-top:4px}
@@ -3678,8 +3691,12 @@ function imprimirFichaPlaza(empId){
     .firma-nombre{font-weight:bold;font-size:10.5pt}
     .firma-cargo{font-size:10pt;color:#444}
     .pie{margin-top:30px;font-size:9pt;color:#666;text-align:center;border-top:1px solid #ccc;padding-top:8px}
-    @media print{body{padding:15mm 20mm}button{display:none!important}}
+    @media print{.no-print{display:none!important}body{padding:15mm 20mm}}
   </style></head><body>
+  <div class="no-print">
+    <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
+    <button class="btn-close" onclick="window.close()">✕ Cerrar</button>
+  </div>
   <div class="header">
     <h1>${empresa}</h1>
     <h2>GESTIÓN DE RECURSOS HUMANOS</h2>
@@ -3721,7 +3738,6 @@ function imprimirFichaPlaza(empId){
     </div>
   </div>
   <div class="pie">Emitido el ${fecha} — ${empresa} · Sistema de Gestión Integral</div>
-  <script>window.onload=function(){window.print();}<\/script>
   </body></html>`);
   win.document.close();
 }
