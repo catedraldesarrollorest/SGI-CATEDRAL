@@ -3731,7 +3731,7 @@ function imprimirFichaPlaza(empId){
       ?`<li><i>Las funciones de este puesto están en el documento PDF adjunto que se ha abierto en otra pestaña. Imprímelo junto a este anexo.</i></li>`
       :`<li style="color:#C0392B"><i>No hay funciones registradas. Agrégalas en Administración → Gestión de Plazas (campo "Funciones para impresión").</i></li>`;
 
-  const win=window.open('','_blank','width=820,height=960');
+  const win=window.open('','_blank');
   win.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
   <title>Anexo No.1 — ${e.plaza} — ${e.nombres} ${e.apellidos}</title>
   <style>
