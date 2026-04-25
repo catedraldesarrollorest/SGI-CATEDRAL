@@ -2504,9 +2504,12 @@ function verFicha(id, tabInicial){
   const accionesHtml=`<div class="ficha-actions">
     ${canEditData?`<button class="btn btn-info btn-sm" onclick="closeModal();editarEmpleado('${id}')">✏️ Editar</button>`:''}
     ${canEditCuenta?`<button class="btn btn-gold btn-sm" onclick="editarCuenta('${id}')">🏦 Cuenta</button>`:''}
+    ${currentRole==='admin'?`<button class="btn btn-gold btn-sm" onclick="fichaEditarSalario('${id}')">💰 Salario</button>`:''}
     ${canContract?`<button class="btn btn-primary btn-sm" onclick="previewContrato('${id}')">📄 Contrato</button>`:''}
     <button class="btn btn-secondary btn-sm" onclick="exportFichaExcel('${id}')">⬇️ Excel</button>
+    ${currentRole==='admin'&&e.activo?`<button class="btn btn-danger btn-sm" onclick="fichaDarBaja('${id}')">📤 Baja</button>`:''}
     ${currentRole==='admin'&&!e.activo?`<button class="btn btn-success btn-sm" onclick="closeModal();restaurarEmpleado('${id}')">♻️ Restaurar</button>`:''}
+    ${currentRole==='admin'?`<button class="btn btn-danger btn-sm" style="background:#555" onclick="fichaEliminarEmpleado('${id}')">🗑️ Eliminar</button>`:''}
   </div>`;
 
   const body=`
@@ -3444,6 +3447,94 @@ function restaurarEmpleado(empId){
 function exportBajas(){
   const data=STATE.bajas.map(b=>{const e=STATE.empleados.find(x=>x.id===b.empleadoId);return{Nombre:e?`${e.nombres} ${e.apellidos}`:'—',Carnet:(e?e.carnet:'—'),'Fecha Baja':fmtDate(b.fecha),Motivo:b.motivo,'Registrado por':b.registradoPor}});
   exportToExcel(data,'Bajas_LaCatedral');showToast('Exportado','success');
+}
+
+function fichaDarBaja(empId){
+  const emp=STATE.empleados.find(e=>e.id===empId);if(!emp)return;
+  const hoy=new Date().toISOString().slice(0,10);
+  openModal('📤 Dar de Baja — '+emp.nombres+' '+emp.apellidos,
+    `<div class="form-grid">
+      <div class="form-group"><label class="field-label required">Fecha de Baja</label><input type="date" id="fdb-fecha" value="${hoy}"></div>
+      <div class="form-group"><label class="field-label required">Motivo</label>
+        <select id="fdb-motivo"><option>Renuncia voluntaria</option><option>Despido</option><option>Fin de contrato</option><option>Jubilación</option><option>Fallecimiento</option><option>Otro</option></select></div>
+      <div class="form-group full"><label class="field-label">Detalle</label><textarea id="fdb-detalle" placeholder="Descripción adicional..."></textarea></div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-danger" onclick="fichaDarBajaConfirmar('${empId}')">📤 Confirmar Baja</button>`,'sm');
+}
+
+async function fichaDarBajaConfirmar(empId){
+  const emp=STATE.empleados.find(e=>e.id===empId);if(!emp)return;
+  const fecha=document.getElementById('fdb-fecha').value;
+  const motivo=document.getElementById('fdb-motivo').value+(document.getElementById('fdb-detalle').value?' — '+document.getElementById('fdb-detalle').value:'');
+  if(!fecha){showToast('Ingrese la fecha de baja','warning');return;}
+  closeModal();
+  const baja={id:'B'+uid(),empleadoId:empId,fecha,motivo,registradoPor:getRoleName(currentRole)};
+  STATE.bajas.push(baja);
+  emp.activo=false;emp.fechaBaja=fecha;
+  try{
+    await sbUpsert('empleados',emp);
+    await sbUpsert('bajas',baja);
+  }catch(err){
+    pushToSheets('empleados','actualizar',emp,emp.id);
+    pushToSheets('bajas','insertar',baja);
+  }
+  saveState();
+  addAuditLog('BAJA',`Baja: ${emp.nombres} ${emp.apellidos} — ${motivo}`);
+  showToast(`${emp.nombres} ${emp.apellidos} dado de baja`,'warning',4000);
+  navigateTo('bajas');
+}
+
+function fichaEditarSalario(empId){
+  const emp=STATE.empleados.find(e=>e.id===empId);if(!emp)return;
+  openModal('💰 Editar Salario — '+emp.nombres+' '+emp.apellidos,
+    `<div class="form-group">
+      <label class="field-label required">Nuevo Salario Base (CUP)</label>
+      <input type="number" id="fes-salario" value="${emp.salarioBase||0}" min="0" step="0.01">
+    </div>
+    <div class="form-group">
+      <label class="field-label">Motivo del cambio</label>
+      <input type="text" id="fes-motivo" placeholder="Ej: Corrección de tarifa..." value="">
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="fichaEditarSalarioGuardar('${empId}')">💾 Guardar</button>`,'sm');
+}
+
+async function fichaEditarSalarioGuardar(empId){
+  const emp=STATE.empleados.find(e=>e.id===empId);if(!emp)return;
+  const nuevo=parseFloat(document.getElementById('fes-salario').value);
+  const motivo=(document.getElementById('fes-motivo').value||'Edición manual de salario').trim();
+  if(isNaN(nuevo)||nuevo<0){showToast('Salario inválido','warning');return;}
+  const anterior=emp.salarioBase;
+  const reg={id:'HS'+uid(),empleadoId:empId,fecha:new Date().toISOString(),anterior,nuevo,motivo};
+  STATE.historialSalarial.push(reg);
+  emp.salarioBase=nuevo;
+  closeModal();
+  try{
+    await sbUpsert('empleados',emp);
+    await sbUpsert('historialSalarial',reg);
+  }catch(err){
+    pushToSheets('empleados','actualizar',emp,empId);
+    pushToSheets('historialSalarial','insertar',reg);
+  }
+  saveState();
+  addAuditLog('SALARIO',`Salario de ${emp.nombres} ${emp.apellidos} cambiado: ${fmtMoney(anterior)} → ${fmtMoney(nuevo)} (${motivo})`);
+  showToast(`Salario actualizado a ${fmtMoney(nuevo)}`,'success');
+  verFicha(empId);
+}
+
+async function fichaEliminarEmpleado(empId){
+  const emp=STATE.empleados.find(e=>e.id===empId);if(!emp)return;
+  if(!confirm(`⚠️ ELIMINAR permanentemente a ${emp.nombres} ${emp.apellidos}?\n\nEsta acción no se puede deshacer.`))return;
+  try{await sbFetch('DELETE','empleados',null,`id=eq.${empId}`);}catch(err){console.warn('Delete error:',err);}
+  STATE.empleados=STATE.empleados.filter(e=>e.id!==empId);
+  STATE.bajas=STATE.bajas.filter(b=>b.empleadoId!==empId);
+  delete STATE.documentos[empId];
+  saveState();
+  addAuditLog('ELIMINAR',`Empleado eliminado permanentemente: ${emp.nombres} ${emp.apellidos} (${emp.carnet})`);
+  showToast(`${emp.nombres} ${emp.apellidos} eliminado del sistema`,'warning',5000);
+  closeModal();
+  navigateTo('empleados');
 }
 
 // ══════════════════════════════════════════════════
