@@ -1105,10 +1105,6 @@ function precargarDescripcionesPlazas() {
     'Inventarista': `Planificar y ejecutar los inventarios periódicos de todas las áreas de la instalación\nVerificar la existencia física de los bienes, mercancías e insumos\nConciliar los resultados del inventario físico con los registros contables\nElaborar actas, informes y reportes de inventario con los resultados obtenidos\nDetectar y reportar faltantes, sobrantes o deterioros de los bienes\nVelar por la correcta clasificación y codificación de los activos inventariados\nCumplir con los procedimientos de control interno establecidos`
   };
 
-  const SALARIOS_OFICIALES = {
-    'Portero/a': 30000,
-  };
-
   let actualizadas=0;
   Object.values(STATE.plazas||{}).forEach(p=>{
     let cambio=false;
@@ -1225,6 +1221,14 @@ async function sincronizarDesdeSheets() {
             STATE.documentos[r.id].certMedicoFecha = r.certMedicoFecha;
           }
           return empData;
+        });
+        // Aplicar salarios oficiales: corrige en memoria y encola actualización a Supabase
+        STATE.empleados.forEach(emp=>{
+          const salOf=SALARIOS_OFICIALES[emp.plaza];
+          if(salOf!==undefined&&Number(emp.salarioBase)!==salOf){
+            emp.salarioBase=salOf;
+            pushToSheets('empleados','actualizar',emp,emp.id);
+          }
         });
       } else if (tabla === 'nominas') {
         const existLineas = STATE.nominas.reduce((acc,n)=>{acc[n.id]=n.lineas||[];return acc},{});
@@ -1386,6 +1390,7 @@ function getDefaultState() {
 }
 let _loginAttempts=0;
 let _loginLockedUntil=0;
+const SALARIOS_OFICIALES={'Portero/a':30000};
 let STATE = loadState();
 // Migrate legacy plazasSalarios → plazas
 if(!STATE.plazas)STATE.plazas={};
@@ -3403,15 +3408,18 @@ function confirmarBaja(){
   const empId=document.getElementById('baja-emp').value;
   if(!empId){showToast('Seleccione un empleado','warning');return}
   const emp=STATE.empleados.find(e=>e.id===empId);
+  const fecha=document.getElementById('baja-fecha').value;
+  const motivoTipo=document.getElementById('baja-motivo-tipo').value;
+  const detalle=document.getElementById('baja-detalle').value||'';
+  const pdfInput=document.getElementById('baja-pdf');
+  const pdfFile=pdfInput&&pdfInput.files[0]?pdfInput.files[0]:null;
   confirmAction(`¿Confirma dar de baja a <b>${emp.nombres} ${emp.apellidos}</b>?`,async function(){
-    const fecha=document.getElementById('baja-fecha').value;
-    const motivo=document.getElementById('baja-motivo-tipo').value+' — '+(document.getElementById('baja-detalle').value||'');
+    const motivo=motivoTipo+(detalle?' — '+detalle:'');
     const baja={id:'B'+uid(),empleadoId:empId,fecha,motivo,registradoPor:getRoleName(currentRole)};
     STATE.bajas.push(baja);emp.activo=false;emp.fechaBaja=fecha;
     pushToSheets('bajas','insertar', baja);
     pushToSheets('empleados','actualizar', emp, emp.id);
-    const pdfInput=document.getElementById('baja-pdf');
-    if(pdfInput&&pdfInput.files[0]){try{const b64=await fileToBase64(pdfInput.files[0]);if(!STATE.documentos[empId])STATE.documentos[empId]={};STATE.documentos[empId].bajaPDF=b64}catch(e){}}
+    if(pdfFile){try{const b64=await fileToBase64(pdfFile);if(!STATE.documentos[empId])STATE.documentos[empId]={};STATE.documentos[empId].bajaPDF=b64}catch(e){}}
     saveState();addAuditLog('BAJA',`Baja: ${emp.nombres} ${emp.apellidos} — ${motivo}`);
     showToast('Empleado dado de baja','warning',4000);
     renderBajas(document.getElementById('app-content'));
