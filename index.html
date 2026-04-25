@@ -2636,9 +2636,12 @@ function previewContrato(id){
   </div>`;
 
   const canEditPreforma = currentRole==='juridico'||currentRole==='admin';
+  const docEmp=STATE.documentos[id]||{};
+  const yaFirmado=!!docEmp.contratoFecha;
   openModal('📄 Contrato: '+e.nombres+' '+e.apellidos, html,
     '<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>'
     +(canEditPreforma?'<button class="btn btn-gold btn-sm" onclick="closeModal();editarPreforma(\''+grupo+'\')">✏️ Editar Preforma</button>':'')
+    +(canEditPreforma?'<button class="btn btn-success btn-sm" onclick="closeModal();openModalFechaContratoEmp(\''+id+'\')">'+(yaFirmado?'✏️ Editar Firma':'✅ Registrar Firmado')+'</button>':'')
     +'<button class="btn btn-primary" onclick="imprimirContrato()">🖨️ Imprimir / PDF</button>','xl');
 }
 
