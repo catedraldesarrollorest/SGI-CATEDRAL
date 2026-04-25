@@ -1119,22 +1119,23 @@ function precargarDescripcionesPlazas() {
     if(SALARIOS_OFICIALES[p.nombre]!==undefined && p.salarioBase!==SALARIOS_OFICIALES[p.nombre]){
       p.salarioBase=SALARIOS_OFICIALES[p.nombre];
       cambio=true;
-      STATE.empleados.filter(e=>e.activo&&e.plaza===p.nombre&&e.departamento===p.departamento).forEach(emp=>{
-        if(emp.salarioBase!==p.salarioBase){
-          const anterior=emp.salarioBase;
-          const reg={id:'HS'+uid(),empleadoId:emp.id,fecha:new Date().toISOString(),anterior,nuevo:p.salarioBase,motivo:'Actualización de tarifa oficial de plaza '+p.nombre};
-          if(!STATE.historialSalarios)STATE.historialSalarios=[];
-          STATE.historialSalarios.push(reg);
-          emp.salarioBase=p.salarioBase;
-          pushToSheets('empleados','actualizar',emp,emp.id);
-        }
-      });
     }
     if(cambio){pushToSheets('plazas','actualizar',p,p.id);actualizadas++;}
   });
+  // Propagar salarios oficiales a empleados por nombre de plaza (sin filtro de departamento)
+  Object.entries(SALARIOS_OFICIALES).forEach(([nombrePlaza,salario])=>{
+    STATE.empleados.filter(e=>e.activo&&e.plaza===nombrePlaza&&Number(e.salarioBase)!==salario).forEach(emp=>{
+      const anterior=emp.salarioBase;
+      if(!STATE.historialSalarios)STATE.historialSalarios=[];
+      STATE.historialSalarios.push({id:'HS'+uid(),empleadoId:emp.id,fecha:new Date().toISOString(),anterior,nuevo:salario,motivo:'Tarifa oficial de plaza '+nombrePlaza});
+      emp.salarioBase=salario;
+      pushToSheets('empleados','actualizar',emp,emp.id);
+      actualizadas++;
+    });
+  });
   if(actualizadas>0){
     saveState();
-    showToast(`Plazas actualizadas (funciones/salarios): ${actualizadas} ✅`,'success');
+    showToast(`Plazas/empleados actualizados (salarios): ${actualizadas} ✅`,'success');
   }
 }
 
