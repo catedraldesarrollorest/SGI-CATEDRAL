@@ -2507,7 +2507,7 @@ function verFicha(id, tabInicial){
     ${currentRole==='admin'?`<button class="btn btn-gold btn-sm" onclick="fichaEditarSalario('${id}')">💰 Salario</button>`:''}
     ${canContract?`<button class="btn btn-primary btn-sm" onclick="previewContrato('${id}')">📄 Contrato</button>`:''}
     <button class="btn btn-secondary btn-sm" onclick="exportFichaExcel('${id}')">⬇️ Excel</button>
-    ${currentRole==='admin'&&e.activo?`<button class="btn btn-danger btn-sm" onclick="fichaDarBaja('${id}')">📤 Baja</button>`:''}
+    ${(currentRole==='admin'||currentRole==='rrhh')&&e.activo?`<button class="btn btn-danger btn-sm" onclick="fichaDarBaja('${id}')">📤 Baja</button>`:''}
     ${currentRole==='admin'&&!e.activo?`<button class="btn btn-success btn-sm" onclick="closeModal();restaurarEmpleado('${id}')">♻️ Restaurar</button>`:''}
     ${currentRole==='admin'?`<button class="btn btn-danger btn-sm" style="background:#555" onclick="fichaEliminarEmpleado('${id}')">🗑️ Eliminar</button>`:''}
   </div>`;
