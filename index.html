@@ -1105,18 +1105,36 @@ function precargarDescripcionesPlazas() {
     'Inventarista': `Planificar y ejecutar los inventarios periódicos de todas las áreas de la instalación\nVerificar la existencia física de los bienes, mercancías e insumos\nConciliar los resultados del inventario físico con los registros contables\nElaborar actas, informes y reportes de inventario con los resultados obtenidos\nDetectar y reportar faltantes, sobrantes o deterioros de los bienes\nVelar por la correcta clasificación y codificación de los activos inventariados\nCumplir con los procedimientos de control interno establecidos`
   };
 
+  const SALARIOS_OFICIALES = {
+    'Portero/a': 30000,
+  };
+
   let actualizadas=0;
   Object.values(STATE.plazas||{}).forEach(p=>{
-    if(p.descripcion&&p.descripcion.trim()) return; // ya tiene texto, no pisar
-    const funciones=FUNCIONES[p.nombre];
-    if(!funciones) return;
-    p.descripcion=funciones;
-    pushToSheets('plazas','actualizar',p,p.id);
-    actualizadas++;
+    let cambio=false;
+    if(!p.descripcion||!p.descripcion.trim()){
+      const funciones=FUNCIONES[p.nombre];
+      if(funciones){p.descripcion=funciones;cambio=true;}
+    }
+    if(SALARIOS_OFICIALES[p.nombre]!==undefined && p.salarioBase!==SALARIOS_OFICIALES[p.nombre]){
+      p.salarioBase=SALARIOS_OFICIALES[p.nombre];
+      cambio=true;
+      STATE.empleados.filter(e=>e.activo&&e.plaza===p.nombre&&e.departamento===p.departamento).forEach(emp=>{
+        if(emp.salarioBase!==p.salarioBase){
+          const anterior=emp.salarioBase;
+          const reg={id:'HS'+uid(),empleadoId:emp.id,fecha:new Date().toISOString(),anterior,nuevo:p.salarioBase,motivo:'Actualización de tarifa oficial de plaza '+p.nombre};
+          if(!STATE.historialSalarios)STATE.historialSalarios=[];
+          STATE.historialSalarios.push(reg);
+          emp.salarioBase=p.salarioBase;
+          pushToSheets('empleados','actualizar',emp,emp.id);
+        }
+      });
+    }
+    if(cambio){pushToSheets('plazas','actualizar',p,p.id);actualizadas++;}
   });
   if(actualizadas>0){
     saveState();
-    showToast(`Funciones precargadas para ${actualizadas} plaza(s) ✅`,'success');
+    showToast(`Plazas actualizadas (funciones/salarios): ${actualizadas} ✅`,'success');
   }
 }
 
