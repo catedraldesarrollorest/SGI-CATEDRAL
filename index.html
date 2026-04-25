@@ -2672,17 +2672,58 @@ function previewContrato(id){
     +'<button class="btn btn-primary" onclick="imprimirContrato()">🖨️ Imprimir / PDF</button>','xl');
 }
 
+// Genera el toolbar HTML con botones de imprimir, compartir y cerrar
+// Se embebe en cada documento Blob (contrato, ficha, funciones)
+function _docToolbar(titulo){
+  const t=titulo.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  return `<div class="doc-toolbar no-print" style="background:#f5f0e8;border-bottom:2px solid #c8a96e;padding:12px;display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap">
+    <button onclick="window.print()" style="background:#6B1A1A;color:#fff;border:none;padding:10px 22px;border-radius:4px;font-size:14px;cursor:pointer;font-weight:600">🖨️ Imprimir / PDF</button>
+    <button id="btn-share-doc" onclick="compartirDoc()" style="background:#25D366;color:#fff;border:none;padding:10px 22px;border-radius:4px;font-size:14px;cursor:pointer;font-weight:600">📤 Compartir</button>
+    <button onclick="window.close()" style="background:#888;color:#fff;border:none;padding:10px 18px;border-radius:4px;font-size:14px;cursor:pointer;font-weight:600">✕ Cerrar</button>
+  </div>
+  <script>
+  async function compartirDoc(){
+    var titulo='${t}';
+    var html='<!DOCTYPE html>'+document.documentElement.outerHTML;
+    var blob=new Blob([html],{type:'text/html;charset=utf-8'});
+    var file=new File([blob],titulo+'.html',{type:'text/html'});
+    if(navigator.share){
+      var canShareFile=false;
+      try{canShareFile=navigator.canShare&&navigator.canShare({files:[file]});}catch(e){}
+      if(canShareFile){
+        try{await navigator.share({files:[file],title:titulo});return;}
+        catch(e){if(e.name==='AbortError')return;}
+      } else {
+        try{await navigator.share({title:titulo,text:'Documento: '+titulo});return;}
+        catch(e){if(e.name==='AbortError')return;}
+      }
+    }
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url;a.download=titulo+'.html';
+    document.body.appendChild(a);a.click();
+    setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url);},1000);
+  }
+  window.addEventListener('load',function(){
+    var btn=document.getElementById('btn-share-doc');
+    if(btn&&!navigator.share){btn.textContent='💾 Descargar';}
+  });
+  <\/script>`;
+}
 
 function imprimirContrato(){
   const content=document.getElementById('contract-content');
   if(!content)return;
-  const w=window.open('','_blank','width=900,height=700');
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Contrato — La Catedral</title>
-  <style>body{font-family:'Times New Roman',serif;font-size:13px;line-height:1.8;color:#000;padding:40px;max-width:800px;margin:0 auto}h1{text-align:center;font-size:16px;font-weight:bold;margin-bottom:24px;text-transform:uppercase}p{margin-bottom:12px;text-align:justify}.contract-section-title{font-weight:bold;margin:18px 0 8px;text-transform:uppercase}.sign-area{display:flex;justify-content:space-between;margin-top:60px}.sign-line{text-align:center;width:45%}.sign-line div{border-top:1px solid #000;padding-top:8px;margin-top:40px}ul{padding-left:24px;margin-bottom:12px}ul li{margin-bottom:6px}.contract-field{font-weight:bold;text-decoration:underline}@media print{@page{size:8.5in 11in;margin:2cm}body{padding:0;font-size:12px;line-height:1.7}.no-print{display:none}}</style></head><body>`);
-  w.document.write('<div class="no-print" style="text-align:center;padding:12px;background:#f5f0e8;border-bottom:1px solid #ccc;margin-bottom:20px"><button onclick="window.print()" style="background:#6B1A1A;color:#fff;border:none;padding:8px 20px;border-radius:4px;font-size:14px;cursor:pointer;margin-right:10px">🖨️ Imprimir / Guardar PDF</button><button onclick="window.close()" style="background:#888;color:#fff;border:none;padding:8px 20px;border-radius:4px;font-size:14px;cursor:pointer">✕ Cerrar</button></div>');
-  w.document.write(content.innerHTML);
-  w.document.write('</body></html>');
-  w.document.close();
+  const empName=(content.querySelector('.contract-field')||{}).textContent||'Contrato';
+  const titulo='Contrato — La Catedral';
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${titulo}</title>
+  <style>body{font-family:'Times New Roman',serif;font-size:13px;line-height:1.8;color:#000;padding:40px;max-width:800px;margin:0 auto}h1{text-align:center;font-size:16px;font-weight:bold;margin-bottom:24px;text-transform:uppercase}p{margin-bottom:12px;text-align:justify}.contract-section-title{font-weight:bold;margin:18px 0 8px;text-transform:uppercase}.sign-area{display:flex;justify-content:space-between;margin-top:60px}.sign-line{text-align:center;width:45%}.sign-line div{border-top:1px solid #000;padding-top:8px;margin-top:40px}ul{padding-left:24px;margin-bottom:12px}ul li{margin-bottom:6px}.contract-field{font-weight:bold;text-decoration:underline}@media print{@page{size:8.5in 11in;margin:2cm}body{padding:0;font-size:12px;line-height:1.7}.no-print{display:none}}</style>
+  </head><body>
+  ${_docToolbar(titulo)}
+  ${content.innerHTML}
+  </body></html>`;
+  const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+  window.open(URL.createObjectURL(blob),'_blank');
 }
 
 // ══════════════════════════════════════════════════
@@ -3871,12 +3912,9 @@ function imprimirFichaPlazaDirecta(plazaId){
     ul{padding-left:22px;margin:0 0 20px}
     li{margin-bottom:6px;font-size:13px;line-height:1.6}
     .pie{margin-top:40px;font-size:11px;color:#888;text-align:center;border-top:1px solid #ddd;padding-top:10px}
-    @media print{.toolbar{display:none!important}.doc{padding:20px 30px 40px}}
+    @media print{.toolbar,.doc-toolbar{display:none!important}.doc{padding:20px 30px 40px}}
   </style></head><body>
-  <div class="toolbar">
-    <button class="btn-p" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
-    <button class="btn-c" onclick="window.close()">✕ Cerrar</button>
-  </div>
+  ${_docToolbar('Funciones — '+p.nombre)}
   <div class="doc">
     <div class="header"><h1>${empresa}</h1><h2>GESTIÓN DE RECURSOS HUMANOS</h2></div>
     <div class="titulo"><h3>Descripción de Funciones del Puesto</h3></div>
@@ -3960,15 +3998,12 @@ function imprimirFichaPlaza(empId){
     .pie{margin-top:40px;font-size:11px;color:#888;text-align:center;border-top:1px solid #ddd;padding-top:10px}
     @media print{
       @page{size:8.5in 11in;margin:2cm}
-      .toolbar{display:none!important}
+      .toolbar,.doc-toolbar{display:none!important}
       html,body{background:#fff}
       .doc{padding:20px 30px 40px}
     }
   </style></head><body>
-  <div class="toolbar">
-    <button class="btn-p" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
-    <button class="btn-c" onclick="window.close()">✕ Cerrar</button>
-  </div>
+  ${_docToolbar('Anexo No.1 — '+e.nombres+' '+e.apellidos)}
   <div class="doc">
     <div class="header">
       <h1>${empresa}</h1>
