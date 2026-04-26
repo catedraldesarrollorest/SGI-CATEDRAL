@@ -2270,7 +2270,7 @@ function renderDashboard(container){
 function renderEmpleados(container){
   const canEdit=currentRole==='admin'||currentRole==='rrhh';
   const showSalary=currentRole==='admin'||currentRole==='contabilidad';
-  document.getElementById('topbar-actions').innerHTML=canEdit?`<button class="btn btn-primary btn-sm" onclick="navigateTo('alta')">+ Nuevo Empleado</button>`:``;
+  document.getElementById('topbar-actions').innerHTML='';
 
   container.innerHTML=`<div class="card">
     <div class="filters-bar">
@@ -3297,7 +3297,7 @@ function exportExpedientes(){
 // TRASLADOS
 // ══════════════════════════════════════════════════
 function renderTraslados(container){
-  document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-primary btn-sm" onclick="openModalTraslado()">➕ Registrar Traslado</button>`;
+  document.getElementById('topbar-actions').innerHTML='';
   const lista=STATE.traslados.slice().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
   container.innerHTML=`<div class="card"><div class="table-wrap resp-table"><table>
     <thead><tr><th>Empleado</th><th>Fecha</th><th>Dept.Anterior</th><th>Dept.Nuevo</th><th>Plaza Nueva</th><th>Motivo</th></tr></thead>
