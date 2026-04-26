@@ -2270,9 +2270,7 @@ function renderDashboard(container){
 function renderEmpleados(container){
   const canEdit=currentRole==='admin'||currentRole==='rrhh';
   const showSalary=currentRole==='admin'||currentRole==='contabilidad';
-  document.getElementById('topbar-actions').innerHTML=`
-    <button class="btn btn-secondary btn-sm" onclick="exportEmpleados()">⬇️ Excel</button>
-    ${canEdit?`<button class="btn btn-primary btn-sm" onclick="navigateTo('alta')">+ Nuevo Empleado</button>`:''}`;
+  document.getElementById('topbar-actions').innerHTML=canEdit?`<button class="btn btn-primary btn-sm" onclick="navigateTo('alta')">+ Nuevo Empleado</button>`:``;
 
   container.innerHTML=`<div class="card">
     <div class="filters-bar">
@@ -3178,7 +3176,7 @@ function dataURLtoFile(dataurl, filename) {
 // ══════════════════════════════════════════════════
 function renderExpedientes(container){
   const activos=STATE.empleados;
-  document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-secondary btn-sm" onclick="exportExpedientes()">⬇️ Exportar</button>`;
+  document.getElementById('topbar-actions').innerHTML='';
   container.innerHTML=`<div class="card">
     <div class="filters-bar">
       <input type="text" id="exp-q" placeholder="🔍 Buscar por nombre o número de carnet..." style="min-width:300px" oninput="filtrarExpedientes()">
@@ -3423,7 +3421,7 @@ function guardarTraslado(){
 // ══════════════════════════════════════════════════
 function renderBajas(container){
   const canReg=currentRole==='admin'||currentRole==='rrhh';
-  document.getElementById('topbar-actions').innerHTML=`${canReg?`<button class="btn btn-primary btn-sm" onclick="openModalBaja()">📤 Registrar Baja</button>`:''}<button class="btn btn-secondary btn-sm" onclick="exportBajas()">⬇️ Excel</button>`;
+  document.getElementById('topbar-actions').innerHTML='';
   container.innerHTML=`<div class="card"><div class="table-wrap resp-table"><table>
     <thead><tr><th>Empleado</th><th>Fecha Baja</th><th>Motivo</th><th>Registrado por</th><th>Documento</th>${currentRole==='admin'?'<th>Acciones</th>':''}</tr></thead>
     <tbody>${STATE.bajas.length?STATE.bajas.slice().reverse().map(b=>{
@@ -3860,9 +3858,7 @@ function eliminarPlaza(plazaId){
 // ══════════════════════════════════════════════════
 function renderContratos(container){
   const canEdit=currentRole==='juridico'||currentRole==='admin';
-  document.getElementById('topbar-actions').innerHTML=canEdit
-    ?'<button class="btn btn-primary btn-sm" onclick="openModalFechaContrato()">📝 Registrar Contrato Firmado</button>'
-    :'';
+  document.getElementById('topbar-actions').innerHTML='';
   const lista=STATE.empleados;
   let rowsHtml='';
   lista.forEach(function(e){
@@ -4177,7 +4173,7 @@ function selContrEmp(){
 // ══════════════════════════════════════════════════
 function renderSanciones(container){
   const canAdd=currentRole==='juridico'||currentRole==='admin';
-  document.getElementById('topbar-actions').innerHTML=`${canAdd?`<button class="btn btn-primary btn-sm" onclick="openModalSancion()">⚠️ Nueva Sanción</button>`:''}<button class="btn btn-secondary btn-sm" onclick="exportSanciones()">⬇️ Excel</button>`;
+  document.getElementById('topbar-actions').innerHTML=canAdd?`<button class="btn btn-primary btn-sm" onclick="openModalSancion()">⚠️ Nueva Sanción</button>`:``;
   container.innerHTML=`<div class="card"><div class="table-wrap resp-table"><table>
     <thead><tr><th>Empleado</th><th>Fecha</th><th>Tipo</th><th>Motivo</th><th>Documento</th>${currentRole==='admin'?'<th>Eliminar</th>':''}</tr></thead>
     <tbody>${STATE.sanciones.length?STATE.sanciones.slice().reverse().map(s=>{
@@ -4244,7 +4240,7 @@ function exportSanciones(){
 // ══════════════════════════════════════════════════
 function renderNomina(container){
   const now=new Date();const mes=now.getMonth()+1;const ano=now.getFullYear();
-  document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-secondary btn-sm" onclick="exportNominaActual()">⬇️ Exportar</button>`;
+  document.getElementById('topbar-actions').innerHTML='';
   container.innerHTML=`<div class="tabs">
     <div class="tab active" onclick="switchNominaTab('nueva',this)">📋 Nómina del Mes</div>
     <div class="tab" onclick="switchNominaTab('asistencia',this)">📅 Revisar Asistencia</div>
@@ -5038,7 +5034,7 @@ function updateVacNomina(nomId,empId){
 }
 
 function renderVacaciones(container){
-  document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-secondary btn-sm" onclick="exportVacaciones()">⬇️ Excel</button>`;
+  document.getElementById('topbar-actions').innerHTML='';
   const activos=getEmpleadosActivos().slice().sort((a,b)=>(a.departamento||'').localeCompare(b.departamento||'')||`${a.nombres} ${a.apellidos}`.localeCompare(`${b.nombres} ${b.apellidos}`));
   const anoActual=new Date().getFullYear();
   const periodoActual=getVacPeriodoActual();
@@ -5296,7 +5292,7 @@ function guardarConfiguracion(){
 // ══════════════════════════════════════════════════
 function renderAuditoria(container){
   if(currentRole!=='admin'){container.innerHTML='<div class="empty-state"><div class="empty-icon">🔒</div><h4>Solo Administración</h4></div>';return}
-  document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-secondary btn-sm" onclick="exportAuditoria()">⬇️ Exportar</button>`;
+  document.getElementById('topbar-actions').innerHTML='';
   container.innerHTML=`<div class="card">
     <div class="filters-bar"><input type="text" id="aud-q" placeholder="🔍 Buscar..." style="min-width:260px" oninput="filtrarAuditoria()"></div>
     <div class="table-wrap resp-table"><table>
@@ -5907,8 +5903,7 @@ async function subirAsistenciaLocal(){
 }
 function renderHistorialAsistencia(container){
   document.getElementById('topbar-actions').innerHTML =
-    '<button class="btn btn-primary btn-sm" onclick="subirAsistenciaLocal()" title="Sube registros cerrados del dispositivo actual a la nube">☁️ Subir local</button> '+
-    '<button class="btn btn-secondary btn-sm" onclick="exportAsistencia()">⬇️ Excel</button>';
+    '<button class="btn btn-primary btn-sm" onclick="subirAsistenciaLocal()" title="Sube registros cerrados del dispositivo actual a la nube">☁️ Subir local</button>';
 
   // Fetch first, render once — avoids race condition where double-render shifts rows under a tap
   container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-mid)">⏳ Cargando historial...</div>';
@@ -6147,8 +6142,7 @@ function renderDocsLegales(container){
 
   document.getElementById('topbar-actions').innerHTML = canEdit
     ? '<button class="btn btn-primary btn-sm" onclick="openModalDocLegal()">🗂️ Registrar Documento</button>'
-      +'<button class="btn btn-secondary btn-sm" onclick="exportDocsLegales()">⬇️ Excel</button>'
-    : '<button class="btn btn-secondary btn-sm" onclick="exportDocsLegales()">⬇️ Excel</button>';
+    : '';
 
   if(!STATE.docsLegales.length){
     container.innerHTML = '<div class="empty-state"><div class="empty-icon">🗂️</div><h4>Sin documentos registrados</h4><p class="text-muted">Los documentos legales recibidos en papel quedarán registrados aquí.</p></div>';
