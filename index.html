@@ -3856,17 +3856,14 @@ function eliminarPlaza(plazaId){
 // ══════════════════════════════════════════════════
 // CONTRATOS
 // ══════════════════════════════════════════════════
-function renderContratos(container){
-  const canEdit=currentRole==='juridico'||currentRole==='admin';
-  document.getElementById('topbar-actions').innerHTML='';
-  const lista=STATE.empleados;
-  let rowsHtml='';
-  lista.forEach(function(e){
+function renderContratosRows(lista){
+  if(!lista.length) return '<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text-light)">Sin resultados</td></tr>';
+  return lista.map(function(e){
     const doc=STATE.documentos[e.id]||{};
     const estadoBadge=doc.contratoFecha
       ?'<span class="badge badge-approved" style="font-size:11px;">✅ Firmado '+fmtDate(doc.contratoFecha)+'</span>'
       :'<span class="badge badge-draft" style="font-size:11px;">⏳ Pendiente</span>';
-    rowsHtml+='<tr onclick="previewContrato(\''+e.id+'\')" style="cursor:pointer" onmouseover="this.style.background=\'#f5f0e8\'" onmouseout="this.style.background=\'\'">'
+    return '<tr onclick="previewContrato(\''+e.id+'\')" style="cursor:pointer" onmouseover="this.style.background=\'#f5f0e8\'" onmouseout="this.style.background=\'\'">'
       +'<td data-label="Empleado"><b>'+e.nombres+' '+e.apellidos+'</b> <span class="badge '+(e.activo?'badge-active':'badge-inactive')+'">'+(e.activo?'Activo':'Baja')+'</span></td>'
       +'<td data-label="Departamento">'+e.departamento+'</td>'
       +'<td data-label="Plaza">'+e.plaza+'</td>'
@@ -3875,15 +3872,35 @@ function renderContratos(container){
       +'<td data-label="Contrato">'+estadoBadge
       +(e.contratoId?'<br><small class="text-muted">📄 En Drive</small>':'<br><small class="text-muted">📄 Archivado en papel</small>')
       +'</td>'
-      +'<td class="td-act" onclick="event.stopPropagation()"><div class="btn-wrap">'
-      +(canEdit?('<button class="btn btn-gold btn-xs" onclick="openModalFechaContratoEmp(\''+e.id+'\')">✏️ Firma</button>'):'')
-      +'</div></td>'
       +'</tr>';
-  });
-  container.innerHTML='<div class="card"><div class="table-wrap resp-table"><table>'
-    +'<thead><tr><th>Empleado</th><th>Departamento</th><th>Plaza</th><th>Tipo Contrato</th><th>Fecha Alta</th><th>Contrato</th><th>Acciones</th></tr></thead>'
-    +'<tbody>'+rowsHtml+'</tbody>'
-    +'</table></div></div>';
+  }).join('');
+}
+function filtrarContratos(){
+  const q=(document.getElementById('cont-q').value||'').toLowerCase().trim();
+  const dept=document.getElementById('cont-dept').value;
+  const firma=document.getElementById('cont-firma').value;
+  let lista=STATE.empleados.slice().sort((a,b)=>(`${a.nombres} ${a.apellidos}`).localeCompare(`${b.nombres} ${b.apellidos}`));
+  if(q) lista=lista.filter(e=>(`${e.nombres} ${e.apellidos}`).toLowerCase().includes(q)||(e.departamento||'').toLowerCase().includes(q)||(e.plaza||'').toLowerCase().includes(q));
+  if(dept) lista=lista.filter(e=>e.departamento===dept);
+  if(firma==='firmado') lista=lista.filter(e=>!!(STATE.documentos[e.id]||{}).contratoFecha);
+  if(firma==='pendiente') lista=lista.filter(e=>!(STATE.documentos[e.id]||{}).contratoFecha);
+  document.getElementById('cont-tbody').innerHTML=renderContratosRows(lista);
+}
+function renderContratos(container){
+  document.getElementById('topbar-actions').innerHTML='';
+  const sorted=STATE.empleados.slice().sort((a,b)=>(`${a.nombres} ${a.apellidos}`).localeCompare(`${b.nombres} ${b.apellidos}`));
+  const deptos=[...new Set(sorted.map(e=>e.departamento).filter(Boolean))].sort();
+  container.innerHTML=`<div class="card">
+    <div class="filters-bar">
+      <div class="filter-group" style="flex:1"><input type="text" class="search-input" id="cont-q" placeholder="🔍 Buscar por nombre, departamento o plaza..." oninput="filtrarContratos()"></div>
+      <div class="filter-group"><label>Dpto</label><select id="cont-dept" onchange="filtrarContratos()"><option value="">Todos</option>${deptos.map(d=>`<option>${d}</option>`).join('')}</select></div>
+      <div class="filter-group"><label>Contrato</label><select id="cont-firma" onchange="filtrarContratos()"><option value="">Todos</option><option value="firmado">Firmado</option><option value="pendiente">Pendiente</option></select></div>
+    </div>
+    <div class="table-wrap resp-table"><table>
+      <thead><tr><th>Empleado</th><th>Departamento</th><th>Plaza</th><th>Tipo Contrato</th><th>Fecha Alta</th><th>Contrato</th></tr></thead>
+      <tbody id="cont-tbody">${renderContratosRows(sorted)}</tbody>
+    </table></div>
+  </div>`;
 }
 
 // Imprimir funciones de una plaza directamente (sin empleado específico — para Jurídico)
