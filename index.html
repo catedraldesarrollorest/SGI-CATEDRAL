@@ -93,13 +93,16 @@
   .sidebar-footer .btn{width:100%;font-size:13px;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.12)}
   .sidebar-footer .btn:hover{background:rgba(255,255,255,0.15);color:var(--white)}
   #main{margin-left:var(--sidebar-w);flex:1;display:flex;flex-direction:column;min-height:100vh}
-  .topbar{height:60px;background:var(--white);border-bottom:1px solid var(--border-light);display:flex;align-items:center;padding:0 24px;gap:12px;position:sticky;top:0;z-index:50;box-shadow:0 1px 6px rgba(0,0,0,0.07)}
-  .topbar h2{font-family:'Playfair Display',serif;font-size:19px;color:var(--burgundy);font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .topbar{height:58px;background:var(--white);border-bottom:1px solid var(--border-light);display:flex;align-items:center;padding:0 20px 0 0;gap:0;position:sticky;top:0;z-index:50;box-shadow:0 1px 4px rgba(0,0,0,0.06)}
+  .topbar-back{background:none;border:none;border-right:1px solid var(--border-light);color:var(--text-light);font-size:13px;font-family:'Crimson Pro',serif;font-weight:600;cursor:pointer;padding:0 18px;height:58px;display:flex;align-items:center;gap:6px;transition:color 0.15s,background 0.15s;flex-shrink:0;white-space:nowrap}
+  .topbar-back:hover{color:var(--burgundy);background:var(--cream)}
+  .topbar h2{font-family:'Playfair Display',serif;font-size:18px;color:var(--burgundy);font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 16px}
   .topbar-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
-  .topbar-actions .btn{width:auto;flex-shrink:0;padding:7px 14px;font-size:13px;border-radius:6px}
-  .topbar-actions .btn-primary{background:var(--burgundy);color:var(--white)}
-  .topbar-actions .btn-secondary{background:transparent;color:var(--text-mid);border:1.5px solid var(--border);padding:6px 13px}
-  .topbar-actions .btn-secondary:hover{background:var(--cream-dark);color:var(--text-dark)}
+  .topbar-actions .btn{width:auto;flex-shrink:0;font-size:13px;padding:7px 14px;border-radius:6px;gap:5px}
+  .topbar-actions .btn-primary{background:var(--burgundy);color:var(--white);border:none}
+  .topbar-actions .btn-primary:hover{background:var(--burgundy-dark)}
+  .topbar-actions .btn-secondary{background:none;color:var(--text-mid);border:1px solid var(--border);padding:6px 13px}
+  .topbar-actions .btn-secondary:hover{background:var(--cream);border-color:var(--burgundy-light);color:var(--burgundy)}
   .content{padding:28px;flex:1}
 
   /* CARDS */
@@ -374,11 +377,11 @@
     .form-grid{grid-template-columns:1fr}
     .chart-grid{grid-template-columns:1fr}
     .stats-grid{grid-template-columns:1fr 1fr}
-    .topbar{padding:0 10px;gap:6px}
-    .topbar h2{font-size:15px;margin-left:4px!important}
-    .topbar-actions{gap:4px}
-    .topbar-actions .btn-sm{padding:6px 10px;font-size:12px}
-    .topbar-actions .btn-xs{padding:6px 8px;font-size:12px}
+    .topbar{padding:0 8px 0 0}
+    .topbar-back{padding:0 12px;font-size:12px}
+    .topbar h2{font-size:15px;padding:0 10px}
+    .topbar-actions{gap:5px}
+    .topbar-actions .btn{padding:6px 10px;font-size:12px}
     .modal-overlay{padding:0;align-items:flex-end}
     .modal,.modal.modal-sm,.modal.modal-lg,.modal.modal-xl{max-width:100%;border-radius:var(--radius-lg) var(--radius-lg) 0 0;max-height:92vh}
     #toast-container{right:8px;left:8px;top:auto;bottom:72px}
@@ -501,8 +504,8 @@
   <div id="main">
     <div class="topbar">
       <button id="hamburger-btn" onclick="toggleSidebar()" title="Menú">☰</button>
-      <button class="btn btn-secondary btn-sm" onclick="navigateTo('dashboard')" style="display:flex;align-items:center;gap:6px;padding:6px 14px;font-size:13px;" title="Volver al inicio">🏠 Inicio</button>
-      <h2 id="page-title" style="flex:1;margin-left:12px;">Dashboard</h2>
+      <button class="topbar-back" onclick="navigateTo('dashboard')" title="Volver al inicio">🏠 Inicio</button>
+      <h2 id="page-title">Dashboard</h2>
       <div class="topbar-actions" id="topbar-actions"></div>
     </div>
     <div class="content" id="app-content"></div>
