@@ -1232,6 +1232,11 @@ async function sincronizarDesdeSheets() {
             if (!STATE.documentos[r.id]) STATE.documentos[r.id] = {};
             STATE.documentos[r.id].certMedicoFecha = r.certMedicoFecha;
           }
+          if (r.contratoFechaFirma) {
+            if (!STATE.documentos[r.id]) STATE.documentos[r.id] = {};
+            STATE.documentos[r.id].contratoFecha = r.contratoFechaFirma;
+            if (r.contratoObs) STATE.documentos[r.id].contratoObs = r.contratoObs;
+          }
           return empData;
         });
         // Aplicar salarios oficiales: corrige en memoria y encola actualización a Supabase
