@@ -2609,7 +2609,8 @@ function previewContrato(id){
   const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   const mes=meses[hoy.getMonth()];
   const ano=hoy.getFullYear();
-  const salLabel=e.salarioBase?fmtMoney(e.salarioBase):'_________________';
+  const salBase=e.salarioBase||Object.values(STATE.plazas||{}).find(p=>p.nombre===e.plaza&&p.departamento===e.departamento)?.salarioBase||null;
+  const salLabel=salBase?fmtMoney(salBase):'_________________';
   const grupo=getGrupoContrato(e.plaza);
   const preforma=getPreformaBase(grupo);
   const clausulaSST=CLAUSULA_SST_GRUPO[grupo]||CLAUSULA_SST_GRUPO['SALA'];
