@@ -5632,8 +5632,12 @@ function _updateCountersJT(){
 
 function autoGuardarTurnoJT(){
   let reg=STATE.asistencia.find(a=>a.fecha===_jt_hoy);
-  const lineas=_jt_emps.filter(e=>_jt_estados[e.id]).map(e=>({
-    empleadoId:e.id, estado:_jt_estados[e.id].estado, motivo:_jt_estados[e.id].motivo||''
+  // Incluir TODOS los empleados del turno, incluso sin asignar (estado:'')
+  // para que la nómina los trate como 0 días y no como jornada completa
+  const lineas=_jt_emps.map(e=>({
+    empleadoId:e.id,
+    estado:(_jt_estados[e.id]||{}).estado||'',
+    motivo:(_jt_estados[e.id]||{}).motivo||''
   }));
   if(!reg){reg={id:'AS'+uid(),fecha:_jt_hoy,cerrado:false,registradoPor:_jt_nombre||getRoleName(currentRole),lineas};STATE.asistencia.push(reg);}
   else reg.lineas=lineas;
