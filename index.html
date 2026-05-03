@@ -4333,27 +4333,19 @@ function cargarNomina(){
   // Verificar si hay asistencia registrada en el período
   const hayAsistencia=STATE.asistencia.some(a=>a.cerrado&&a.fecha.startsWith(periodoKey));
   // Días del mes con registro de asistencia cerrado
-  const diasConRegistro=STATE.asistencia.filter(a=>a.cerrado&&a.fecha.startsWith(periodoKey)).length;
-
-  // Días trabajados: admin→jornada completa; otros→presentes reales solo si el empleado
-  // aparece en alguna linea del mes. Los días SIN registro se cuentan como presentes
-  // (presunción de asistencia: solo se descuenta lo que se registró como D/A/I).
+  // Días trabajados: admin/logística→jornada completa automática;
+  // demás departamentos→días presentes reales según asistencia del JT.
+  // Si no hay asistencia → jornada completa como base editable.
   const empApareceMes=(empId)=>STATE.asistencia.some(a=>
     a.cerrado&&a.fecha.startsWith(periodoKey)&&(a.lineas||[]).some(l=>l.empleadoId===empId)
   );
   const getDiasTrab=(e)=>{
     if(esDeptoAdmin(e.departamento)) return getDiasJornada(e.jornada);
-    const jornadaDias=getDiasJornada(e.jornada);
     if(hayAsistencia){
-      if(empApareceMes(e.id)){
-        const presentes=getDiasPresentesMes(e.id,periodoKey);
-        // Días del mes sin registro → crédito automático como presente
-        const diasSinRegistro=Math.max(0,jornadaDias-diasConRegistro);
-        return Math.min(jornadaDias,presentes+diasSinRegistro);
-      }
-      return jornadaDias; // hay asistencia pero este empleado no fue incluido → jornada
+      if(empApareceMes(e.id)) return getDiasPresentesMes(e.id,periodoKey);
+      return getDiasJornada(e.jornada); // no aparece en ningún turno → jornada completa
     }
-    return jornadaDias;
+    return getDiasJornada(e.jornada);
   };
 
   if(!nomina){
@@ -4535,7 +4527,6 @@ async function calcularNomina(nomId){
   // Actualizar días desde asistencia usando misma lógica que getDiasTrab en cargarNomina
   const periodo=nomina.periodo;
   const hayAsis=STATE.asistencia.some(a=>a.cerrado&&a.fecha.startsWith(periodo));
-  const diasConReg=STATE.asistencia.filter(a=>a.cerrado&&a.fecha.startsWith(periodo)).length;
   const empEnLineas=(empId)=>STATE.asistencia.some(a=>
     a.cerrado&&a.fecha.startsWith(periodo)&&(a.lineas||[]).some(l=>l.empleadoId===empId)
   );
@@ -4543,10 +4534,7 @@ async function calcularNomina(nomId){
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);if(!e)return;
     if(!esDeptoAdmin(e.departamento)&&hayAsis){
       if(empEnLineas(e.id)){
-        const jornadaDias=getDiasJornada(e.jornada);
-        const presentes=getDiasPresentesMes(e.id,periodo);
-        const diasSinRegistro=Math.max(0,jornadaDias-diasConReg);
-        l.diasTrabajados=Math.min(jornadaDias,presentes+diasSinRegistro);
+        l.diasTrabajados=getDiasPresentesMes(e.id,periodo);
       }
       // si hay asistencia pero el empleado nunca aparece → no tocar diasTrabajados (conserva jornada)
     }
