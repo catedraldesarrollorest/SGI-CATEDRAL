@@ -4261,6 +4261,7 @@ function exportSanciones(){
 // ══════════════════════════════════════════════════
 function renderNomina(container){
   const now=new Date();const mes=now.getMonth()+1;const ano=now.getFullYear();
+  const mesNombreLabel=new Date(ano,mes-1).toLocaleString('es-ES',{month:'long',year:'numeric'});
   document.getElementById('topbar-actions').innerHTML='';
   container.innerHTML=`<div class="tabs">
     <div class="tab active" onclick="switchNominaTab('nueva',this)">📋 Nómina del Mes</div>
@@ -4268,12 +4269,8 @@ function renderNomina(container){
     <div class="tab" onclick="switchNominaTab('historico',this)">📚 Histórico</div>
   </div>
   <div id="nomina-nueva">
-    <div class="card" style="margin-bottom:16px"><div class="card-body" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
-      <div class="form-group"><label class="field-label">Mes</label>
-        <select id="nom-mes">${[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}" ${m===mes?'selected':''}>${new Date(2000,m-1).toLocaleString('es-ES',{month:'long'})}</option>`).join('')}</select></div>
-      <div class="form-group"><label class="field-label">Año</label><input type="number" id="nom-ano" value="${ano}" style="width:100px"></div>
-      <button class="btn btn-primary" onclick="cargarNomina()">🔄 Cargar</button>
-    </div></div>
+    <input type="hidden" id="nom-mes" value="${mes}">
+    <input type="hidden" id="nom-ano" value="${ano}">
     <div id="nomina-content"></div>
   </div>
   <div id="nomina-asistencia" style="display:none">
