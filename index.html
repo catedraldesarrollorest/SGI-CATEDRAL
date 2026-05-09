@@ -5709,7 +5709,8 @@ function cerrarTurnoJT(){
   const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
   const D=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='D').length;
   const sinAsignar=_jt_emps.length-P-D;
-  confirmAction('¿Confirmar cierre del turno? <b>'+P+' trabajan</b>, <b>'+D+' descansan</b>, '+sinAsignar+' sin marcar (Contabilidad gestionará). <b>No se podrá modificar.</b>',async function(){
+
+  const doClose=async function(){
     if(_jt_autoCloseTimer){clearInterval(_jt_autoCloseTimer);_jt_autoCloseTimer=null;}
     reg.cerrado=true;
     reg.horaCierre=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
@@ -5721,7 +5722,26 @@ function cerrarTurnoJT(){
     document.getElementById('topbar-actions').innerHTML='<span class="badge badge-approved" style="padding:8px 16px;font-size:13px;">✅ Turno cerrado</span>';
     const c=document.getElementById('app-content');
     if(c) renderListaJT(c);
-  });
+  };
+
+  if(sinAsignar>0){
+    // Show exactly who is unmarked — JT must decide before closing
+    const sinMarcarNombres=_jt_emps
+      .filter(e=>!(_jt_estados[e.id]||{}).estado)
+      .map(e=>'<li style="padding:3px 0;border-bottom:1px solid #FEE2E2;font-size:13px"><b>'+e.nombres+' '+e.apellidos+'</b> <span style="color:#6B7280;font-size:11px">'+e.departamento+'</span></li>')
+      .join('');
+    openModal('⚠️ Empleados sin marcar',
+      '<div style="background:#FEF2F2;border:2px solid #F87171;border-radius:10px;padding:14px;margin-bottom:14px">'
+      +'<div style="font-weight:800;color:#B91C1C;font-size:15px;margin-bottom:6px">⚠️ '+sinAsignar+' empleado'+(sinAsignar>1?'s están':'  está')+' sin marcar</div>'
+      +'<div style="font-size:12px;color:#7F1D1D">Estos días <b>NO contarán</b> para su salario si cierras ahora. Revisa que hayas marcado a todos.</div>'
+      +'</div>'
+      +'<ul style="list-style:none;padding:0;max-height:300px;overflow-y:auto;margin:0">'+sinMarcarNombres+'</ul>',
+      '<button class="btn btn-secondary" onclick="closeModal()">← Volver y completar</button>'
+      +'<button class="btn btn-danger" onclick="closeModal();_confirmedCloseJT()">Cerrar de todas formas</button>');
+    window._confirmedCloseJT=doClose;
+  } else {
+    confirmAction('✅ Todos los empleados están marcados.<br><b>'+P+' trabajan</b> · <b>'+D+' descansan</b>. <b>No se podrá modificar.</b>',doClose);
+  }
 }
 
 function renderAsistencia(container){
