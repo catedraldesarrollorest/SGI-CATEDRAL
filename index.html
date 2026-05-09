@@ -6125,13 +6125,30 @@ function corregirAsistencia(regId){
       +'</td>'
       +'</tr>';
   }).join('');
-  const body='<div style="font-size:12px;color:var(--text-mid);margin-bottom:12px;background:#FEF3C7;border-radius:8px;padding:10px 14px">⚠️ Corrigiendo registro cerrado. Los cambios se guardan en la nube y actualizan la pre-nómina al recalcular.</div>'
-    +'<div class="table-wrap" style="max-height:55vh;overflow-y:auto"><table>'
+  const sinAsignarCount=lineas.filter(l=>!l.estado).length;
+  const body='<div style="margin-bottom:12px">'
+    +(sinAsignarCount>0
+      ?'<div style="background:#FEF2F2;border:2px solid #F87171;border-radius:8px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:12px">'
+        +'<div><div style="font-weight:700;color:#B91C1C;font-size:13px">'+sinAsignarCount+' empleados sin marcar</div>'
+        +'<div style="font-size:11px;color:#7F1D1D">Si el sistema falló y no sabes quiénes faltaron, usa el botón →</div></div>'
+        +'<button onclick="marcarTodosSinAsignarPresente(\''+regId+'\')" style="flex-shrink:0;padding:8px 14px;background:#22C55E;color:white;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">✅ Todos presentes</button>'
+        +'</div>'
+      :'<div style="background:#DCFCE7;border-radius:8px;padding:8px 14px;margin-bottom:8px;font-size:12px;color:#166534">✅ Todos los empleados están marcados.</div>')
+    +'<div style="font-size:11px;color:var(--text-mid);background:#FEF3C7;border-radius:6px;padding:6px 10px">⚠️ Corrección de registro cerrado. Los cambios actualizan la pre-nómina al recalcular.</div>'
+    +'</div>'
+    +'<div class="table-wrap" style="max-height:50vh;overflow-y:auto"><table>'
     +'<thead><tr><th>Empleado</th><th>Depto</th><th>Estado</th></tr></thead>'
     +'<tbody id="corr-tbody">'+rows+'</tbody></table></div>';
   openModal('✏️ Corregir Asistencia: '+fechaFmt,body,
     '<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>'
     +'<button class="btn btn-success" onclick="guardarCorreccionAsistencia(\''+regId+'\')">💾 Guardar Corrección</button>','lg');
+}
+
+function marcarTodosSinAsignarPresente(regId){
+  const reg=STATE.asistencia.find(a=>a.id===regId);if(!reg)return;
+  reg.lineas.forEach(l=>{if(!l.estado)l.estado='P';});
+  // Refresh all button states in the modal
+  reg.lineas.forEach(l=>{if(l.estado==='P')setCorrEst(regId,l.empleadoId,'P');});
 }
 
 function setCorrEst(regId,empId,newEst){
