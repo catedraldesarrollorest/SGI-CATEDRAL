@@ -6107,12 +6107,23 @@ function corregirAsistencia(fechaOrId){
     if(dd!==0)return dd;
     return (ea.nombres+' '+ea.apellidos).localeCompare(eb.nombres+' '+eb.apellidos);
   });
+  // Build map: empId → últimos 4 días con estado para contexto
+  const cercanos=STATE.asistencia.filter(a=>a.cerrado&&a.fecha!==reg.fecha)
+    .sort((a,b)=>b.fecha.localeCompare(a.fecha)).slice(0,10);
   const rows=lineas.map(l=>{
     const emp=activos.find(e=>e.id===l.empleadoId);if(!emp)return '';
     const st=l.estado||'';
-    return '<tr>'
-      +'<td style="font-weight:600;font-size:13px">'+emp.nombres+' '+emp.apellidos+'</td>'
-      +'<td style="font-size:12px;color:var(--text-mid)">'+emp.departamento+'</td>'
+    // Mostrar hasta 4 días cercanos para inferir patrón
+    const pistas=cercanos.slice(0,5).map(a=>{
+      const ll=(a.lineas||[]).find(x=>x.empleadoId===l.empleadoId);
+      const s=ll?ll.estado:'';
+      const d=new Date(a.fecha+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'short'});
+      return '<span style="font-size:10px;padding:1px 5px;border-radius:8px;margin-right:2px;'
+        +(s==='P'?'background:#DCFCE7;color:#166534':s==='D'?'background:#DBEAFE;color:#1D4ED8':'background:#F3F4F6;color:#9CA3AF')+'">'+d+(s==='P'?'✅':s==='D'?'💤':'?')+'</span>';
+    }).join('');
+    return '<tr style="background:'+(st===''?'#FFFBEB':'white')+'">'
+      +'<td style="font-weight:'+(st===''?'800':'600')+';font-size:13px;color:'+(st===''?'#92400E':'inherit')+'">'+emp.nombres+' '+emp.apellidos+'</td>'
+      +'<td style="font-size:11px;color:var(--text-mid)"><div>'+emp.departamento+'</div><div style="margin-top:2px">'+pistas+'</div></td>'
       +'<td style="white-space:nowrap">'
         +'<button onclick="setCorrEst(\''+reg.fecha+'\',\''+l.empleadoId+'\',\'P\')" id="corr-p-'+l.empleadoId+'" style="'
           +'padding:5px 10px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;margin-right:4px;'
@@ -6122,7 +6133,7 @@ function corregirAsistencia(fechaOrId){
           +'border:2px solid '+(st==='D'?'#3B82F6':'#BFDBFE')+';background:'+(st==='D'?'#3B82F6':'#EFF6FF')+';color:'+(st==='D'?'white':'#1D4ED8')+'">💤 D</button>'
         +'<button onclick="setCorrEst(\''+reg.fecha+'\',\''+l.empleadoId+'\',\'\')" id="corr-n-'+l.empleadoId+'" style="'
           +'padding:5px 10px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;'
-          +'border:2px solid '+(st===''?'#6B7280':'#E5E7EB')+';background:'+(st===''?'#6B7280':'#F9FAFB')+';color:'+(st===''?'white':'#9CA3AF')+'">— N</button>'
+          +'border:2px solid '+(st===''?'#F59E0B':'#E5E7EB')+';background:'+(st===''?'#FEF3C7':'#F9FAFB')+';color:'+(st===''?'#92400E':'#9CA3AF')+'">?</button>'
       +'</td>'
       +'</tr>';
   }).join('');
