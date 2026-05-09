@@ -4357,12 +4357,17 @@ function cargarNomina(){
 
   // Verificar si hay asistencia registrada en el período
   const hayAsistencia=STATE.asistencia.some(a=>a.cerrado&&a.fecha.startsWith(periodoKey));
-  // Días del mes con registro de asistencia cerrado
-  // Días trabajados: admin/logística→jornada completa automática;
-  // demás departamentos→días presentes reales según asistencia del JT.
-  // Si no hay asistencia para el período → jornada completa como base editable.
+  // Turnos cerrados en el período — se usa para admin/logística también
+  const turnosCerrados=STATE.asistencia.filter(a=>a.cerrado&&a.fecha.startsWith(periodoKey)).length;
+  // Días trabajados:
+  //   admin/logística → min(jornada, turnos cerrados) — comparte el mismo calendario que el resto
+  //   demás → días presentes reales según asistencia del JT
+  //   sin asistencia → jornada completa como base editable
   const getDiasTrab=(e)=>{
-    if(esDeptoAdmin(e.departamento)) return getDiasJornada(e.jornada);
+    if(esDeptoAdmin(e.departamento)){
+      if(hayAsistencia) return Math.min(getDiasJornada(e.jornada), turnosCerrados);
+      return getDiasJornada(e.jornada);
+    }
     if(hayAsistencia) return getDiasPresentesMes(e.id,periodoKey);
     return getDiasJornada(e.jornada);
   };
@@ -4547,9 +4552,12 @@ async function calcularNomina(nomId){
   // Actualizar días desde asistencia usando misma lógica que getDiasTrab en cargarNomina
   const periodo=nomina.periodo;
   const hayAsis=STATE.asistencia.some(a=>a.cerrado&&a.fecha.startsWith(periodo));
+  const turnosCerr=STATE.asistencia.filter(a=>a.cerrado&&a.fecha.startsWith(periodo)).length;
   nomina.lineas.forEach(l=>{
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);if(!e)return;
-    if(!esDeptoAdmin(e.departamento)&&hayAsis){
+    if(esDeptoAdmin(e.departamento)){
+      if(hayAsis) l.diasTrabajados=Math.min(getDiasJornada(e.jornada),turnosCerr);
+    } else if(hayAsis){
       l.diasTrabajados=getDiasPresentesMes(e.id,periodo);
     }
     const dtEl=document.getElementById('dt-'+e.id);if(dtEl)dtEl.value=l.diasTrabajados;
