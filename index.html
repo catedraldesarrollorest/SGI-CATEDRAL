@@ -4284,7 +4284,7 @@ function renderNomina(container){
   <div id="nomina-nueva">
     <input type="hidden" id="nom-mes" value="${mes}">
     <input type="hidden" id="nom-ano" value="${ano}">
-    <div id="nomina-content"></div>
+    <div id="nomina-content"><div style="text-align:center;padding:40px;color:var(--text-mid)">⏳ Sincronizando asistencia...</div></div>
   </div>
   <div id="nomina-asistencia" style="display:none">
     <div class="card" style="margin-bottom:16px"><div class="card-body" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
@@ -4301,7 +4301,19 @@ function renderNomina(container){
       <tbody id="hist-tbody"></tbody>
     </table></div></div>
   </div>`;
-  cargarNomina();
+  // Sync attendance before calculating so días match what JT recorded
+  (async()=>{
+    try{
+      const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000));
+      const fetchAsist=sbLeer('asistencia');
+      const dataAsist=await Promise.race([fetchAsist,timeout]);
+      if(Array.isArray(dataAsist)&&dataAsist.length>0){
+        STATE.asistencia=mergeAsistenciaRemota(dataAsist);
+        saveState();
+      }
+    }catch(e){}
+    if(document.getElementById('nom-mes')) cargarNomina();
+  })();
 }
 
 function switchNominaTab(tab,el){
@@ -4525,7 +4537,8 @@ async function calcularNomina(nomId){
   // Sincronizar asistencia desde Supabase antes de calcular para tener datos de todos los dispositivos
   showToast('Sincronizando asistencia...','info',2000);
   try{
-    const dataAsist=await sbLeer('asistencia');
+    const _tout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000));
+    const dataAsist=await Promise.race([sbLeer('asistencia'),_tout]);
     if(Array.isArray(dataAsist)&&dataAsist.length>0){
       STATE.asistencia=mergeAsistenciaRemota(dataAsist);
       saveState();
@@ -5942,7 +5955,8 @@ function renderHistorialAsistencia(container){
   container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-mid)">⏳ Cargando historial...</div>';
   (async()=>{
     try{
-      const dataAsist=await sbLeer('asistencia');
+      const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000));
+      const dataAsist=await Promise.race([sbLeer('asistencia'),timeout]);
       if(Array.isArray(dataAsist)&&dataAsist.length>0){
         STATE.asistencia=mergeAsistenciaRemota(dataAsist);
         saveState();
