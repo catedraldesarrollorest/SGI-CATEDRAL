@@ -1217,6 +1217,7 @@ async function sincronizarDesdeSheets() {
           else if (jornada === 15 || jornada === '15') jornada = '12x15';
           else if (!jornada || !JORNADAS[jornada]) jornada = '8x24';
           const empData = { ...r, jornada,
+            departamento: normalizarDepartamento(r.departamento),
             fechaAlta: normalizarFecha(r.fechaAlta),
             fechaNacimiento: normalizarFecha(r.fechaNacimiento),
             certMedicoFecha: normalizarFecha(r.certMedicoFecha)||'',
@@ -1845,6 +1846,18 @@ const PLAZAS={
   'LOGÍSTICA':['Gerente de logística','Chofer','Estibador','Custodio','Mantenimiento'],
   'ADMINISTRACIÓN':['Gerente general','Gerente de RRHH','Gerente jurídico','Gerente financiero','Comercial','Inventarista']
 };
+const _DEPT_MAP={
+  'ALMACEN':'ALMACÉN','ALMACEN ':'ALMACÉN',
+  'CARNICERIA':'CARNICERÍA','CARNICERIA ':'CARNICERÍA',
+  'ADMINISTRACION':'ADMINISTRACIÓN','ADMINISTRACIÓN ':'ADMINISTRACIÓN',
+  'LOGISTICA':'LOGÍSTICA','LOGISTICA ':'LOGÍSTICA',
+  'SALA ':'SALA','TIENDA ':'TIENDA','COCINA ':'COCINA'
+};
+function normalizarDepartamento(d){
+  if(!d)return '';
+  const t=d.trim().toUpperCase();
+  return _DEPT_MAP[t]||t;
+}
 
 
 // ═══════════════════════════════════════
@@ -5464,8 +5477,12 @@ function renderAsistenciaJefeTurno(container, hoy, activos, registroHoy, yaGuard
 
 function renderListaJT(container){
   const fechaLabel=new Date(_jt_hoy+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-  const tab=JT_TABS.find(t=>t.id===_jt_tab)||JT_TABS[0];
-  const tabEmps=_jt_emps.filter(e=>tab.depts.includes(e.departamento));
+  // Build effective tab list: fixed tabs + catch-all "Otros" for any unmatched dept
+  const allCoveredDepts=JT_TABS.flatMap(t=>t.depts);
+  const otrosEmps=_jt_emps.filter(e=>!allCoveredDepts.includes(e.departamento));
+  const effectiveTabs=[...JT_TABS,...(otrosEmps.length?[{id:'otros',label:'Otros',depts:otrosEmps.map(e=>e.departamento)}]:[])];
+  const tab=effectiveTabs.find(t=>t.id===_jt_tab)||effectiveTabs[0];
+  const tabEmps=tab.id==='otros'?otrosEmps:_jt_emps.filter(e=>tab.depts.includes(e.departamento));
   const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
   const D=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='D').length;
   const sinAsignar=_jt_emps.length-P-D;
@@ -5480,8 +5497,8 @@ function renderListaJT(container){
 
   // Pestañas por grupo
   html+='<div style="display:flex;gap:6px;margin-bottom:12px;overflow-x:auto;padding-bottom:2px">';
-  JT_TABS.forEach(t=>{
-    const te=_jt_emps.filter(e=>t.depts.includes(e.departamento));
+  effectiveTabs.forEach(t=>{
+    const te=t.id==='otros'?otrosEmps:_jt_emps.filter(e=>t.depts.includes(e.departamento));
     const td=te.filter(e=>_jt_estados[e.id]).length;
     const complete=te.length>0&&td===te.length;
     const active=t.id===_jt_tab;
@@ -5593,10 +5610,13 @@ function _updateRowJT(empId){
 }
 
 function _updateTabsJT(){
-  JT_TABS.forEach(t=>{
+  const allCovD=JT_TABS.flatMap(t=>t.depts);
+  const otrosE=_jt_emps.filter(e=>!allCovD.includes(e.departamento));
+  const eTabs=[...JT_TABS,...(otrosE.length?[{id:'otros',label:'Otros',depts:otrosE.map(e=>e.departamento)}]:[])];
+  eTabs.forEach(t=>{
     const el=document.getElementById('jt-tab-'+t.id);
     if(!el)return;
-    const te=_jt_emps.filter(e=>t.depts.includes(e.departamento));
+    const te=t.id==='otros'?otrosE:_jt_emps.filter(e=>t.depts.includes(e.departamento));
     const td=te.filter(e=>_jt_estados[e.id]).length;
     const complete=te.length>0&&td===te.length;
     const active=t.id===_jt_tab;
