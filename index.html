@@ -4275,7 +4275,7 @@ function exportSanciones(){
 function renderNomina(container){
   const now=new Date();const mes=now.getMonth()+1;const ano=now.getFullYear();
   const mesNombreLabel=new Date(ano,mes-1).toLocaleString('es-ES',{month:'long',year:'numeric'});
-  document.getElementById('topbar-actions').innerHTML='';
+  const tb=document.getElementById('topbar-actions');if(tb)tb.innerHTML='';
   container.innerHTML=`<div class="tabs">
     <div class="tab active" onclick="switchNominaTab('nueva',this)">📋 Nómina del Mes</div>
     <div class="tab" onclick="switchNominaTab('asistencia',this)">📅 Revisar Asistencia</div>
@@ -4312,7 +4312,13 @@ function renderNomina(container){
         saveState();
       }
     }catch(e){}
-    if(document.getElementById('nom-mes')) cargarNomina();
+    if(document.getElementById('nom-mes')){
+      try{ cargarNomina(); }
+      catch(err){
+        const nc=document.getElementById('nomina-content');
+        if(nc) nc.innerHTML='<div style="padding:30px;text-align:center;color:#B91C1C;background:#FEF2F2;border-radius:10px;margin:16px">⚠️ Error al cargar la pre-nómina: '+String(err.message||err).slice(0,200)+'<br><br><button class="btn btn-primary" onclick="cargarNomina()">Reintentar</button></div>';
+      }
+    }
   })();
 }
 
@@ -4507,7 +4513,7 @@ function cargarNomina(){
     </div>`;
   }
   html+=`</div>`;
-  document.getElementById('nomina-content').innerHTML=html;
+  const nc=document.getElementById('nomina-content');if(nc)nc.innerHTML=html;
 }
 
 function updateNominaLine(nomId,empId){
