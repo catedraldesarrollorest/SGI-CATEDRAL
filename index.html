@@ -6058,9 +6058,88 @@ function verDetalleAsistencia(regId){
         +'<tbody>'+rowsHtml+'</tbody>'
         +'</table></div>');
 
+  const canCorrect=currentRole==='admin'||currentRole==='rrhh';
   openModal('📋 Asistencia: '+fechaFmt, body,
     '<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>'
+    +(canCorrect?'<button class="btn btn-warning btn-sm" onclick="corregirAsistencia(\''+regId+'\')">✏️ Corregir</button>':'')
     +'<button class="btn btn-gold btn-sm" onclick="exportDetalleAsistencia(\''+regId+'\')">⬇️ Excel</button>','lg');
+}
+
+function corregirAsistencia(regId){
+  const reg=STATE.asistencia.find(a=>a.id===regId);
+  if(!reg)return;
+  const fechaFmt=new Date(reg.fecha+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  // Asegurar que todos los empleados activos (no admin) tienen una línea
+  const activos=getEmpleadosActivos().filter(e=>!DEPTS_EXCLUIDOS_JEFE_TURNO.includes(e.departamento));
+  activos.forEach(e=>{
+    if(!reg.lineas.find(l=>l.empleadoId===e.id)){
+      reg.lineas.push({empleadoId:e.id,estado:'',motivo:''});
+    }
+  });
+  // Ordenar por departamento, luego nombre
+  const lineas=[...reg.lineas].filter(l=>activos.find(e=>e.id===l.empleadoId));
+  lineas.sort((a,b)=>{
+    const ea=activos.find(e=>e.id===a.empleadoId);const eb=activos.find(e=>e.id===b.empleadoId);
+    if(!ea||!eb)return 0;
+    const di=DEPT_ORDER_JT.indexOf(ea.departamento);const dj=DEPT_ORDER_JT.indexOf(eb.departamento);
+    const dd=(di<0?99:di)-(dj<0?99:dj);
+    if(dd!==0)return dd;
+    return (ea.nombres+' '+ea.apellidos).localeCompare(eb.nombres+' '+eb.apellidos);
+  });
+  const rows=lineas.map(l=>{
+    const emp=activos.find(e=>e.id===l.empleadoId);if(!emp)return '';
+    const st=l.estado||'';
+    return '<tr>'
+      +'<td style="font-weight:600;font-size:13px">'+emp.nombres+' '+emp.apellidos+'</td>'
+      +'<td style="font-size:12px;color:var(--text-mid)">'+emp.departamento+'</td>'
+      +'<td style="white-space:nowrap">'
+        +'<button onclick="setCorrEst(\''+regId+'\',\''+l.empleadoId+'\',\'P\')" id="corr-p-'+l.empleadoId+'" style="'
+          +'padding:5px 10px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;margin-right:4px;'
+          +'border:2px solid '+(st==='P'?'#22C55E':'#BBF7D0')+';background:'+(st==='P'?'#22C55E':'#F0FDF4')+';color:'+(st==='P'?'white':'#166534')+'">✅ P</button>'
+        +'<button onclick="setCorrEst(\''+regId+'\',\''+l.empleadoId+'\',\'D\')" id="corr-d-'+l.empleadoId+'" style="'
+          +'padding:5px 10px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;margin-right:4px;'
+          +'border:2px solid '+(st==='D'?'#3B82F6':'#BFDBFE')+';background:'+(st==='D'?'#3B82F6':'#EFF6FF')+';color:'+(st==='D'?'white':'#1D4ED8')+'">💤 D</button>'
+        +'<button onclick="setCorrEst(\''+regId+'\',\''+l.empleadoId+'\',\'\')" id="corr-n-'+l.empleadoId+'" style="'
+          +'padding:5px 10px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;'
+          +'border:2px solid '+(st===''?'#6B7280':'#E5E7EB')+';background:'+(st===''?'#6B7280':'#F9FAFB')+';color:'+(st===''?'white':'#9CA3AF')+'">— N</button>'
+      +'</td>'
+      +'</tr>';
+  }).join('');
+  const body='<div style="font-size:12px;color:var(--text-mid);margin-bottom:12px;background:#FEF3C7;border-radius:8px;padding:10px 14px">⚠️ Corrigiendo registro cerrado. Los cambios se guardan en la nube y actualizan la pre-nómina al recalcular.</div>'
+    +'<div class="table-wrap" style="max-height:55vh;overflow-y:auto"><table>'
+    +'<thead><tr><th>Empleado</th><th>Depto</th><th>Estado</th></tr></thead>'
+    +'<tbody id="corr-tbody">'+rows+'</tbody></table></div>';
+  openModal('✏️ Corregir Asistencia: '+fechaFmt,body,
+    '<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>'
+    +'<button class="btn btn-success" onclick="guardarCorreccionAsistencia(\''+regId+'\')">💾 Guardar Corrección</button>','lg');
+}
+
+function setCorrEst(regId,empId,newEst){
+  const reg=STATE.asistencia.find(a=>a.id===regId);if(!reg)return;
+  let linea=reg.lineas.find(l=>l.empleadoId===empId);
+  if(!linea){linea={empleadoId:empId,estado:'',motivo:''};reg.lineas.push(linea);}
+  linea.estado=newEst;
+  // Update buttons
+  const stP=document.getElementById('corr-p-'+empId);
+  const stD=document.getElementById('corr-d-'+empId);
+  const stN=document.getElementById('corr-n-'+empId);
+  if(stP){stP.style.background=newEst==='P'?'#22C55E':'#F0FDF4';stP.style.color=newEst==='P'?'white':'#166534';stP.style.borderColor=newEst==='P'?'#22C55E':'#BBF7D0';}
+  if(stD){stD.style.background=newEst==='D'?'#3B82F6':'#EFF6FF';stD.style.color=newEst==='D'?'white':'#1D4ED8';stD.style.borderColor=newEst==='D'?'#3B82F6':'#BFDBFE';}
+  if(stN){stN.style.background=newEst===''?'#6B7280':'#F9FAFB';stN.style.color=newEst===''?'white':'#9CA3AF';stN.style.borderColor=newEst===''?'#6B7280':'#E5E7EB';}
+}
+
+async function guardarCorreccionAsistencia(regId){
+  const reg=STATE.asistencia.find(a=>a.id===regId);if(!reg)return;
+  saveState();
+  closeModal();
+  showToast('Guardando corrección...','info',2000);
+  try{
+    await sbUpsert('asistencia',{id:reg.id,fecha:reg.fecha,cerrado:reg.cerrado,registradoPor:reg.registradoPor,horaCierre:reg.horaCierre,lineas:reg.lineas});
+    addAuditLog('CORRECCION_ASISTENCIA',`Corrección de asistencia ${reg.fecha} por ${getRoleName(currentRole)}`);
+    showToast('Asistencia corregida y guardada en la nube ✅','success');
+  }catch(e){
+    showToast('Guardado local. Sincroniza para subir a la nube','warning');
+  }
 }
 
 function exportAsistencia(){
