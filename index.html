@@ -4274,7 +4274,6 @@ function exportSanciones(){
 // ══════════════════════════════════════════════════
 function renderNomina(container){
   const now=new Date();const mes=now.getMonth()+1;const ano=now.getFullYear();
-  const mesNombreLabel=new Date(ano,mes-1).toLocaleString('es-ES',{month:'long',year:'numeric'});
   const tb=document.getElementById('topbar-actions');if(tb)tb.innerHTML='';
   container.innerHTML=`<div class="tabs">
     <div class="tab active" onclick="switchNominaTab('nueva',this)">📋 Nómina del Mes</div>
@@ -4284,7 +4283,7 @@ function renderNomina(container){
   <div id="nomina-nueva">
     <input type="hidden" id="nom-mes" value="${mes}">
     <input type="hidden" id="nom-ano" value="${ano}">
-    <div id="nomina-content"><div style="text-align:center;padding:40px;color:var(--text-mid)">⏳ Sincronizando asistencia...</div></div>
+    <div id="nomina-content"></div>
   </div>
   <div id="nomina-asistencia" style="display:none">
     <div class="card" style="margin-bottom:16px"><div class="card-body" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
@@ -4301,24 +4300,26 @@ function renderNomina(container){
       <tbody id="hist-tbody"></tbody>
     </table></div></div>
   </div>`;
-  // Sync attendance before calculating so días match what JT recorded
+  // Show nomina immediately with local data — never leave a blank screen
+  try{ cargarNomina(); }catch(err){
+    const nc=document.getElementById('nomina-content');
+    if(nc) nc.innerHTML='<div style="padding:30px;text-align:center;color:#B91C1C;background:#FEF2F2;border-radius:10px;margin:16px">⚠️ Error: '+String(err.message||err).slice(0,300)+'<br><br><button class="btn btn-primary" onclick="cargarNomina()">Reintentar</button></div>';
+  }
+  // Then sync attendance in background and refresh if new data arrives
   (async()=>{
     try{
-      const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000));
-      const fetchAsist=sbLeer('asistencia');
-      const dataAsist=await Promise.race([fetchAsist,timeout]);
+      const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000));
+      const dataAsist=await Promise.race([sbLeer('asistencia'),timeout]);
       if(Array.isArray(dataAsist)&&dataAsist.length>0){
+        const antes=STATE.asistencia.length;
         STATE.asistencia=mergeAsistenciaRemota(dataAsist);
         saveState();
+        // Only re-render if we actually got new records
+        if(STATE.asistencia.length!==antes&&document.getElementById('nom-mes')){
+          try{ cargarNomina(); }catch(e){}
+        }
       }
     }catch(e){}
-    if(document.getElementById('nom-mes')){
-      try{ cargarNomina(); }
-      catch(err){
-        const nc=document.getElementById('nomina-content');
-        if(nc) nc.innerHTML='<div style="padding:30px;text-align:center;color:#B91C1C;background:#FEF2F2;border-radius:10px;margin:16px">⚠️ Error al cargar la pre-nómina: '+String(err.message||err).slice(0,200)+'<br><br><button class="btn btn-primary" onclick="cargarNomina()">Reintentar</button></div>';
-      }
-    }
   })();
 }
 
