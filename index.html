@@ -913,16 +913,29 @@ function normalizeAsistencia(r) {
 // Merge remote asistencia records with local STATE, keeping the richer record per date
 function mergeAsistenciaRemota(remote) {
   const byFecha = {};
-  STATE.asistencia.forEach(r => { byFecha[r.fecha] = r; });
+  // Build local index: if two local records share the same fecha, keep the richer one
+  STATE.asistencia.forEach(r => {
+    const ex = byFecha[r.fecha];
+    if (!ex) { byFecha[r.fecha] = r; return; }
+    const rRich = r.cerrado && r.lineas && r.lineas.length > 0;
+    const exRich = ex.cerrado && ex.lineas && ex.lineas.length > 0;
+    if (rRich && !exRich) byFecha[r.fecha] = r;
+  });
   remote.forEach(r => {
     r = normalizeAsistencia(r);
     const local = byFecha[r.fecha];
     if (!local) { byFecha[r.fecha] = r; return; }
     const remoteRich = r.cerrado && r.lineas && r.lineas.length > 0;
     const localRich  = local.cerrado && local.lineas && local.lineas.length > 0;
+    if (local.id === r.id) {
+      // Same record: remote wins if richer
+      if (remoteRich && !localRich) byFecha[r.fecha] = r;
+      return;
+    }
+    // Different ID, same fecha: keep whichever is richer; prefer closed+lineas
     if (remoteRich && !localRich) byFecha[r.fecha] = r;
     else if (!localRich && !remoteRich && r.cerrado) byFecha[r.fecha] = r;
-    // else keep local (has more data or equal)
+    // else keep local
   });
   return Object.values(byFecha);
 }
@@ -954,6 +967,17 @@ async function pushToSheets(tabla, accion, valores, id) {
     }
     if (!ok) {
       DB_ONLINE = false; updateSyncBadge(false);
+      // Dedup: remove any existing pending op for the same record before enqueuing
+      const _recId = (Array.isArray(valores)?valores[0]:valores)?.id || id;
+      const _recFecha = (Array.isArray(valores)?valores[0]:valores)?.fecha;
+      DB_PENDING_OPS = DB_PENDING_OPS.filter(op => {
+        if (op.tabla !== tabla) return true;
+        const opId = (Array.isArray(op.valores)?op.valores[0]:op.valores)?.id || op.id;
+        const opFecha = (Array.isArray(op.valores)?op.valores[0]:op.valores)?.fecha;
+        if (_recId && opId && _recId === opId) return false;
+        if (_recFecha && opFecha && _recFecha === opFecha && tabla === 'asistencia') return false;
+        return true;
+      });
       DB_PENDING_OPS.push({ tabla, accion, valores, id });
       showSyncIndicator('⚠️ Guardado local (BD no disponible)', 'offline');
     }
@@ -1217,6 +1241,7 @@ async function sincronizarDesdeSheets() {
           else if (jornada === 15 || jornada === '15') jornada = '12x15';
           else if (!jornada || !JORNADAS[jornada]) jornada = '8x24';
           const empData = { ...r, jornada,
+            departamento: normalizarDepartamento(r.departamento),
             fechaAlta: normalizarFecha(r.fechaAlta),
             fechaNacimiento: normalizarFecha(r.fechaNacimiento),
             certMedicoFecha: normalizarFecha(r.certMedicoFecha)||'',
@@ -1373,14 +1398,14 @@ async function sincronizarDesdeSheets() {
   }
 }
 let _syncTick = 0;
-// Intervalo rápido (5s): reconecta agresivamente cuando hay ops pendientes offline
+// Intervalo rápido (5s): reconecta siempre que esté offline (no solo con pending ops)
 setInterval(async () => {
-  if (!DB_ONLINE && DB_PENDING_OPS.length > 0) {
+  if (!DB_ONLINE) {
     try {
       await sbFetch('GET', 'empleados', null, 'select=id&limit=1');
       DB_ONLINE = true; updateSyncBadge(true);
       showSyncIndicator('✅ Reconectado', 'ok');
-      await flushPendingOps();
+      if (DB_PENDING_OPS.length > 0) await flushPendingOps();
     } catch(e) {}
   }
 }, 5000);
@@ -1845,6 +1870,18 @@ const PLAZAS={
   'LOGÍSTICA':['Gerente de logística','Chofer','Estibador','Custodio','Mantenimiento'],
   'ADMINISTRACIÓN':['Gerente general','Gerente de RRHH','Gerente jurídico','Gerente financiero','Comercial','Inventarista']
 };
+const _DEPT_MAP={
+  'ALMACEN':'ALMACÉN','ALMACEN ':'ALMACÉN',
+  'CARNICERIA':'CARNICERÍA','CARNICERIA ':'CARNICERÍA',
+  'ADMINISTRACION':'ADMINISTRACIÓN','ADMINISTRACIÓN ':'ADMINISTRACIÓN',
+  'LOGISTICA':'LOGÍSTICA','LOGISTICA ':'LOGÍSTICA',
+  'SALA ':'SALA','TIENDA ':'TIENDA','COCINA ':'COCINA'
+};
+function normalizarDepartamento(d){
+  if(!d)return '';
+  const t=d.trim().toUpperCase();
+  return _DEPT_MAP[t]||t;
+}
 
 
 // ═══════════════════════════════════════
@@ -4261,8 +4298,7 @@ function exportSanciones(){
 // ══════════════════════════════════════════════════
 function renderNomina(container){
   const now=new Date();const mes=now.getMonth()+1;const ano=now.getFullYear();
-  const mesNombreLabel=new Date(ano,mes-1).toLocaleString('es-ES',{month:'long',year:'numeric'});
-  document.getElementById('topbar-actions').innerHTML='';
+  const tb=document.getElementById('topbar-actions');if(tb)tb.innerHTML='';
   container.innerHTML=`<div class="tabs">
     <div class="tab active" onclick="switchNominaTab('nueva',this)">📋 Nómina del Mes</div>
     <div class="tab" onclick="switchNominaTab('asistencia',this)">📅 Revisar Asistencia</div>
@@ -4288,7 +4324,27 @@ function renderNomina(container){
       <tbody id="hist-tbody"></tbody>
     </table></div></div>
   </div>`;
-  cargarNomina();
+  // Show nomina immediately with local data — never leave a blank screen
+  try{ cargarNomina(); }catch(err){
+    const nc=document.getElementById('nomina-content');
+    if(nc) nc.innerHTML='<div style="padding:30px;text-align:center;color:#B91C1C;background:#FEF2F2;border-radius:10px;margin:16px">⚠️ Error: '+String(err.message||err).slice(0,300)+'<br><br><button class="btn btn-primary" onclick="cargarNomina()">Reintentar</button></div>';
+  }
+  // Then sync attendance in background and refresh if new data arrives
+  (async()=>{
+    try{
+      const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000));
+      const dataAsist=await Promise.race([sbLeer('asistencia'),timeout]);
+      if(Array.isArray(dataAsist)&&dataAsist.length>0){
+        const antes=STATE.asistencia.length;
+        STATE.asistencia=mergeAsistenciaRemota(dataAsist);
+        saveState();
+        // Only re-render if we actually got new records
+        if(STATE.asistencia.length!==antes&&document.getElementById('nom-mes')){
+          try{ cargarNomina(); }catch(e){}
+        }
+      }
+    }catch(e){}
+  })();
 }
 
 function switchNominaTab(tab,el){
@@ -4332,12 +4388,17 @@ function cargarNomina(){
 
   // Verificar si hay asistencia registrada en el período
   const hayAsistencia=STATE.asistencia.some(a=>a.cerrado&&a.fecha.startsWith(periodoKey));
-  // Días del mes con registro de asistencia cerrado
-  // Días trabajados: admin/logística→jornada completa automática;
-  // demás departamentos→días presentes reales según asistencia del JT.
-  // Si no hay asistencia para el período → jornada completa como base editable.
+  // Turnos cerrados en el período — se usa para admin/logística también
+  const turnosCerrados=STATE.asistencia.filter(a=>a.cerrado&&a.fecha.startsWith(periodoKey)).length;
+  // Días trabajados:
+  //   admin/logística → min(jornada, turnos cerrados) — comparte el mismo calendario que el resto
+  //   demás → días presentes reales según asistencia del JT
+  //   sin asistencia → jornada completa como base editable
   const getDiasTrab=(e)=>{
-    if(esDeptoAdmin(e.departamento)) return getDiasJornada(e.jornada);
+    if(esDeptoAdmin(e.departamento)){
+      if(hayAsistencia) return Math.min(getDiasJornada(e.jornada), turnosCerrados);
+      return getDiasJornada(e.jornada);
+    }
     if(hayAsistencia) return getDiasPresentesMes(e.id,periodoKey);
     return getDiasJornada(e.jornada);
   };
@@ -4477,7 +4538,7 @@ function cargarNomina(){
     </div>`;
   }
   html+=`</div>`;
-  document.getElementById('nomina-content').innerHTML=html;
+  const nc=document.getElementById('nomina-content');if(nc)nc.innerHTML=html;
 }
 
 function updateNominaLine(nomId,empId){
@@ -4512,7 +4573,8 @@ async function calcularNomina(nomId){
   // Sincronizar asistencia desde Supabase antes de calcular para tener datos de todos los dispositivos
   showToast('Sincronizando asistencia...','info',2000);
   try{
-    const dataAsist=await sbLeer('asistencia');
+    const _tout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000));
+    const dataAsist=await Promise.race([sbLeer('asistencia'),_tout]);
     if(Array.isArray(dataAsist)&&dataAsist.length>0){
       STATE.asistencia=mergeAsistenciaRemota(dataAsist);
       saveState();
@@ -4521,9 +4583,12 @@ async function calcularNomina(nomId){
   // Actualizar días desde asistencia usando misma lógica que getDiasTrab en cargarNomina
   const periodo=nomina.periodo;
   const hayAsis=STATE.asistencia.some(a=>a.cerrado&&a.fecha.startsWith(periodo));
+  const turnosCerr=STATE.asistencia.filter(a=>a.cerrado&&a.fecha.startsWith(periodo)).length;
   nomina.lineas.forEach(l=>{
     const e=STATE.empleados.find(x=>x.id===l.empleadoId);if(!e)return;
-    if(!esDeptoAdmin(e.departamento)&&hayAsis){
+    if(esDeptoAdmin(e.departamento)){
+      if(hayAsis) l.diasTrabajados=Math.min(getDiasJornada(e.jornada),turnosCerr);
+    } else if(hayAsis){
       l.diasTrabajados=getDiasPresentesMes(e.id,periodo);
     }
     const dtEl=document.getElementById('dt-'+e.id);if(dtEl)dtEl.value=l.diasTrabajados;
@@ -5464,8 +5529,12 @@ function renderAsistenciaJefeTurno(container, hoy, activos, registroHoy, yaGuard
 
 function renderListaJT(container){
   const fechaLabel=new Date(_jt_hoy+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-  const tab=JT_TABS.find(t=>t.id===_jt_tab)||JT_TABS[0];
-  const tabEmps=_jt_emps.filter(e=>tab.depts.includes(e.departamento));
+  // Build effective tab list: fixed tabs + catch-all "Otros" for any unmatched dept
+  const allCoveredDepts=JT_TABS.flatMap(t=>t.depts);
+  const otrosEmps=_jt_emps.filter(e=>!allCoveredDepts.includes(e.departamento));
+  const effectiveTabs=[...JT_TABS,...(otrosEmps.length?[{id:'otros',label:'Otros',depts:otrosEmps.map(e=>e.departamento)}]:[])];
+  const tab=effectiveTabs.find(t=>t.id===_jt_tab)||effectiveTabs[0];
+  const tabEmps=tab.id==='otros'?otrosEmps:_jt_emps.filter(e=>tab.depts.includes(e.departamento));
   const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
   const D=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='D').length;
   const sinAsignar=_jt_emps.length-P-D;
@@ -5480,8 +5549,8 @@ function renderListaJT(container){
 
   // Pestañas por grupo
   html+='<div style="display:flex;gap:6px;margin-bottom:12px;overflow-x:auto;padding-bottom:2px">';
-  JT_TABS.forEach(t=>{
-    const te=_jt_emps.filter(e=>t.depts.includes(e.departamento));
+  effectiveTabs.forEach(t=>{
+    const te=t.id==='otros'?otrosEmps:_jt_emps.filter(e=>t.depts.includes(e.departamento));
     const td=te.filter(e=>_jt_estados[e.id]).length;
     const complete=te.length>0&&td===te.length;
     const active=t.id===_jt_tab;
@@ -5549,6 +5618,14 @@ function renderListaJT(container){
       +'<div style="font-size:12px;opacity:0.75">Turno cerrado. Que descanses.</div>'
       +'</div>';
   } else {
+    if(sinAsignar>0){
+      const tabBreakdown=effectiveTabs.map(t=>{
+        const te=t.id==='otros'?otrosEmps:_jt_emps.filter(e=>t.depts.includes(e.departamento));
+        const sin=te.filter(e=>!(_jt_estados[e.id]||{}).estado).length;
+        return sin>0?t.label+': '+sin:null;
+      }).filter(Boolean).join(', ');
+      html+='<div style="background:#FEF2F2;border:1.5px solid #FCA5A5;border-radius:10px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#B91C1C;font-weight:600">⚠️ '+sinAsignar+' sin marcar — '+tabBreakdown+'</div>';
+    }
     html+='<button onclick="cerrarTurnoJT()" class="btn btn-success" style="width:100%;padding:13px;font-size:15px">🔒 Cerrar Turno</button>';
   }
 
@@ -5593,10 +5670,13 @@ function _updateRowJT(empId){
 }
 
 function _updateTabsJT(){
-  JT_TABS.forEach(t=>{
+  const allCovD=JT_TABS.flatMap(t=>t.depts);
+  const otrosE=_jt_emps.filter(e=>!allCovD.includes(e.departamento));
+  const eTabs=[...JT_TABS,...(otrosE.length?[{id:'otros',label:'Otros',depts:otrosE.map(e=>e.departamento)}]:[])];
+  eTabs.forEach(t=>{
     const el=document.getElementById('jt-tab-'+t.id);
     if(!el)return;
-    const te=_jt_emps.filter(e=>t.depts.includes(e.departamento));
+    const te=t.id==='otros'?otrosE:_jt_emps.filter(e=>t.depts.includes(e.departamento));
     const td=te.filter(e=>_jt_estados[e.id]).length;
     const complete=te.length>0&&td===te.length;
     const active=t.id===_jt_tab;
@@ -5633,29 +5713,31 @@ function autoGuardarTurnoJT(){
 }
 
 function iniciarAutoCloseJT(hoy){
-  if(_jt_autoCloseTimer) clearInterval(_jt_autoCloseTimer);
-  _jt_autoCloseTimer=setInterval(()=>{
-    const now=new Date();
-    if(now.getHours()>=20 && _jt_hoy===hoy && !_jt_readonly){
-      clearInterval(_jt_autoCloseTimer); _jt_autoCloseTimer=null;
-      autoGuardarTurnoJT();
-      const reg=STATE.asistencia.find(a=>a.fecha===_jt_hoy);
-      if(reg&&!reg.cerrado){
-        const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
-        const D=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='D').length;
-        reg.cerrado=true; reg.horaCierre='20:00'; reg.cierreAutomatico=true;
-        _jt_readonly=true; saveState();
-        pushToSheets('asistencia','insertar',reg).then(()=>{
-          showToast(DB_ONLINE?'✅ Turno cerrado automáticamente (20:00) — guardado en la nube':'⚠️ Turno cerrado (20:00) — guardado solo localmente',DB_ONLINE?'success':'warning',6000);
-        });
-        addAuditLog('ASISTENCIA','Turno '+hoy+' cerrado automáticamente a las 20:00. P:'+P+' D:'+D);
-        const tb=document.getElementById('topbar-actions');
-        if(tb) tb.innerHTML='<span class="badge badge-approved" style="padding:8px 16px;font-size:13px;">✅ Turno cerrado</span>';
-        const c=document.getElementById('app-content');
-        if(c&&currentRole==='jefe_turno') renderListaJT(c);
-      }
-    }
-  },30000); // revisa cada 30 segundos
+  if(_jt_autoCloseTimer){clearTimeout(_jt_autoCloseTimer);_jt_autoCloseTimer=null;}
+  const now=new Date();
+  const target=new Date(now);
+  target.setHours(20,0,0,0);
+  const ms=target-now;
+  if(ms<=0) return; // ya pasaron las 20:00
+  _jt_autoCloseTimer=setTimeout(()=>{
+    _jt_autoCloseTimer=null;
+    if(_jt_hoy!==hoy||_jt_readonly) return;
+    autoGuardarTurnoJT();
+    const reg=STATE.asistencia.find(a=>a.fecha===_jt_hoy);
+    if(!reg||reg.cerrado) return; // guard: ya cerrado por cierre manual
+    const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
+    const D=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='D').length;
+    reg.cerrado=true; reg.horaCierre='20:00'; reg.cierreAutomatico=true;
+    _jt_readonly=true; saveState();
+    pushToSheets('asistencia','insertar',reg).then(()=>{
+      showToast(DB_ONLINE?'✅ Turno cerrado automáticamente (20:00) — guardado en la nube':'⚠️ Turno cerrado (20:00) — guardado solo localmente',DB_ONLINE?'success':'warning',6000);
+    });
+    addAuditLog('ASISTENCIA','Turno '+hoy+' cerrado automáticamente a las 20:00. P:'+P+' D:'+D);
+    const tb=document.getElementById('topbar-actions');
+    if(tb) tb.innerHTML='<span class="badge badge-approved" style="padding:8px 16px;font-size:13px;">✅ Turno cerrado</span>';
+    const c=document.getElementById('app-content');
+    if(c&&currentRole==='jefe_turno') renderListaJT(c);
+  },ms);
 }
 
 function cerrarTurnoJT(){
@@ -5668,8 +5750,9 @@ function cerrarTurnoJT(){
   const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
   const D=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='D').length;
   const sinAsignar=_jt_emps.length-P-D;
-  confirmAction('¿Confirmar cierre del turno? <b>'+P+' trabajan</b>, <b>'+D+' descansan</b>, '+sinAsignar+' sin marcar (Contabilidad gestionará). <b>No se podrá modificar.</b>',async function(){
-    if(_jt_autoCloseTimer){clearInterval(_jt_autoCloseTimer);_jt_autoCloseTimer=null;}
+
+  const doClose=async function(){
+    if(_jt_autoCloseTimer){clearTimeout(_jt_autoCloseTimer);_jt_autoCloseTimer=null;}
     reg.cerrado=true;
     reg.horaCierre=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
     _jt_readonly=true; saveState();
@@ -5680,7 +5763,33 @@ function cerrarTurnoJT(){
     document.getElementById('topbar-actions').innerHTML='<span class="badge badge-approved" style="padding:8px 16px;font-size:13px;">✅ Turno cerrado</span>';
     const c=document.getElementById('app-content');
     if(c) renderListaJT(c);
-  });
+  };
+
+  if(sinAsignar>0){
+    // Build grouped list by tab so JT knows exactly where the gaps are
+    const _allCovDeptsM=JT_TABS.flatMap(t=>t.depts);
+    const _otrosM=_jt_emps.filter(e=>!_allCovDeptsM.includes(e.departamento));
+    const _effTabsM=[...JT_TABS,...(_otrosM.length?[{id:'otros',label:'Otros',depts:_otrosM.map(e=>e.departamento)}]:[])];
+    let sinMarcarHtml='';
+    _effTabsM.forEach(t=>{
+      const te=t.id==='otros'?_otrosM:_jt_emps.filter(e=>t.depts.includes(e.departamento));
+      const sinTab=te.filter(e=>!(_jt_estados[e.id]||{}).estado);
+      if(!sinTab.length) return;
+      sinMarcarHtml+='<div style="font-size:11px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:1px;margin:8px 0 3px;padding:0 4px">'+t.label+'</div>';
+      sinMarcarHtml+=sinTab.map(e=>'<li style="padding:3px 0;border-bottom:1px solid #FEE2E2;font-size:13px"><b>'+e.nombres+' '+e.apellidos+'</b> <span style="color:#6B7280;font-size:11px">'+e.departamento+'</span></li>').join('');
+    });
+    openModal('⚠️ Empleados sin marcar',
+      '<div style="background:#FEF2F2;border:2px solid #F87171;border-radius:10px;padding:14px;margin-bottom:14px">'
+      +'<div style="font-weight:800;color:#B91C1C;font-size:15px;margin-bottom:6px">⚠️ '+sinAsignar+' empleado'+(sinAsignar>1?'s están':' está')+' sin marcar</div>'
+      +'<div style="font-size:12px;color:#7F1D1D">Estos días <b>NO contarán</b> para su salario si cierras ahora. Revisa que hayas marcado a todos.</div>'
+      +'</div>'
+      +'<ul style="list-style:none;padding:0;max-height:300px;overflow-y:auto;margin:0">'+sinMarcarHtml+'</ul>',
+      '<button class="btn btn-secondary" onclick="closeModal()">← Volver y completar</button>'
+      +'<button class="btn btn-danger" onclick="closeModal();_confirmedCloseJT()">Cerrar de todas formas</button>');
+    window._confirmedCloseJT=doClose;
+  } else {
+    confirmAction('✅ Todos los empleados están marcados.<br><b>'+P+' trabajan</b> · <b>'+D+' descansan</b>. <b>No se podrá modificar.</b>',doClose);
+  }
 }
 
 function renderAsistencia(container){
@@ -5916,13 +6025,15 @@ async function subirAsistenciaLocal(){
 }
 function renderHistorialAsistencia(container){
   document.getElementById('topbar-actions').innerHTML =
-    '<button class="btn btn-primary btn-sm" onclick="subirAsistenciaLocal()" title="Sube registros cerrados del dispositivo actual a la nube">☁️ Subir local</button>';
+    '<button class="btn btn-secondary btn-sm" onclick="window._tblResMes=null;renderTablaResumenAsistencia(document.getElementById(\'app-content\'))">📊 Tabla</button>'
+    +'<button class="btn btn-primary btn-sm" onclick="subirAsistenciaLocal()" title="Sube registros cerrados del dispositivo actual a la nube">☁️ Subir local</button>';
 
   // Fetch first, render once — avoids race condition where double-render shifts rows under a tap
   container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-mid)">⏳ Cargando historial...</div>';
   (async()=>{
     try{
-      const dataAsist=await sbLeer('asistencia');
+      const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000));
+      const dataAsist=await Promise.race([sbLeer('asistencia'),timeout]);
       if(Array.isArray(dataAsist)&&dataAsist.length>0){
         STATE.asistencia=mergeAsistenciaRemota(dataAsist);
         saveState();
@@ -5955,14 +6066,17 @@ function _renderHistorialAsistenciaTabla(container){
       +'<td><span style="color:#1D4ED8;font-weight:700;">💤 '+D+'</span></td>'
       +'<td>'+(reg.registradoPor||'—')+'</td>'
       +'<td>'+(reg.horaCierre||'—')+'</td>'
-      +'<td><button class="btn btn-secondary btn-xs" onclick="verDetalleAsistencia(\''+reg.id+'\')">👁️ Ver</button></td>'
+      +'<td><button class="btn btn-secondary btn-xs" onclick="verDetalleAsistencia(\''+reg.fecha+'\')">👁️ Ver</button></td>'
       +'</tr>';
   });
 
   container.innerHTML =
     '<div class="card">'
     +'<div class="card-header" style="display:flex;justify-content:space-between;align-items:center"><h3>📅 Historial de Asistencia</h3>'
-    +'<span id="hist-sync-status" style="font-size:12px;color:var(--text-mid)">🔄 Actualizando...</span></div>'
+    +'<div style="display:flex;gap:8px;align-items:center">'
+    +'<button class="btn btn-secondary btn-sm" onclick="window._tblResMes=null;renderTablaResumenAsistencia(document.getElementById(\'app-content\'))">📊 Tabla</button>'
+    +'<span id="hist-sync-status" style="font-size:12px;color:var(--text-mid)">🔄 Actualizando...</span>'
+    +'</div></div>'
     +'<div class="table-wrap"><table>'
     +'<thead><tr><th>Fecha</th><th>Estado</th><th>Presentes</th><th>Descansan</th><th>Registrado por</th><th>Cierre</th><th>Ver</th></tr></thead>'
     +'<tbody>'+rowsHtml+'</tbody>'
@@ -5970,8 +6084,150 @@ function _renderHistorialAsistenciaTabla(container){
   setTimeout(()=>{const s=document.getElementById('hist-sync-status');if(s)s.textContent='';},3000);
 }
 
-function verDetalleAsistencia(regId){
-  const reg = STATE.asistencia.find(function(a){return a.id===regId;});
+// ─── Tabla Resumen Asistencia (empleados × días) ─────────────────────────────
+function renderTablaResumenAsistencia(container){
+  if(!window._tblResMes){const n=new Date();window._tblResMes=n.getMonth()+1;window._tblResAno=n.getFullYear();}
+  document.getElementById('topbar-actions').innerHTML=
+    '<button class="btn btn-secondary btn-sm" onclick="renderHistorialAsistencia(document.getElementById(\'app-content\'))">← Historial</button>'
+    +'<button class="btn btn-primary btn-sm" onclick="_syncTblRes()">🔄 Sync</button>'
+    +'<button class="btn btn-gold btn-sm" onclick="_exportTblRes()">⬇️ CSV</button>';
+  container.innerHTML=
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;background:white;border-radius:12px;padding:10px 14px;border:1px solid #E5E7EB">'
+    +'<button onclick="_tblResCambiarMes(-1)" style="width:32px;height:32px;border-radius:50%;border:1.5px solid #E5E7EB;background:#F9FAFB;font-size:16px;cursor:pointer;line-height:1">◀</button>'
+    +'<span id="tbl-mes-label" style="flex:1;text-align:center;font-size:15px;font-weight:800;color:#1B4332">'+_tblResLabel()+'</span>'
+    +'<button onclick="_tblResCambiarMes(1)" style="width:32px;height:32px;border-radius:50%;border:1.5px solid #E5E7EB;background:#F9FAFB;font-size:16px;cursor:pointer;line-height:1">▶</button>'
+    +'<span id="tbl-sync-ts" style="font-size:11px;color:#9CA3AF;margin-left:4px">⏳</span>'
+    +'</div>'
+    +'<div id="tbl-res-body"><div style="text-align:center;padding:40px;color:var(--text-mid)">⏳ Sincronizando con Supabase...</div></div>';
+  _syncTblRes();
+}
+
+function _tblResLabel(){
+  const l=new Date(window._tblResAno,window._tblResMes-1,1).toLocaleDateString('es-ES',{month:'long',year:'numeric'});
+  return l.charAt(0).toUpperCase()+l.slice(1);
+}
+
+async function _syncTblRes(){
+  const ts=document.getElementById('tbl-sync-ts');
+  if(ts)ts.textContent='⏳ Cargando...';
+  try{
+    const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000));
+    const data=await Promise.race([sbLeer('asistencia'),timeout]);
+    if(Array.isArray(data)&&data.length>0){STATE.asistencia=mergeAsistenciaRemota(data);saveState();}
+    if(ts)ts.textContent='✅ '+new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+  }catch(e){
+    if(ts)ts.textContent='⚠️ Solo local';
+  }
+  _renderTblResBody();
+}
+
+function _tblResCambiarMes(delta){
+  let m=window._tblResMes+delta,a=window._tblResAno;
+  if(m>12){m=1;a++;}if(m<1){m=12;a--;}
+  window._tblResMes=m;window._tblResAno=a;
+  const lbl=document.getElementById('tbl-mes-label');
+  if(lbl)lbl.textContent=_tblResLabel();
+  _renderTblResBody();
+}
+
+function _renderTblResBody(){
+  const bodyEl=document.getElementById('tbl-res-body');
+  if(!bodyEl)return;
+  const mes=window._tblResMes,ano=window._tblResAno;
+  const prefix=ano+'-'+String(mes).padStart(2,'0');
+  const registros=STATE.asistencia.filter(r=>r.fecha&&r.fecha.startsWith(prefix)).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  const empleados=getEmpleadosActivos().sort((a,b)=>(a.departamento+a.apellidos).localeCompare(b.departamento+b.apellidos));
+
+  if(!registros.length){
+    bodyEl.innerHTML='<div style="text-align:center;padding:40px;background:white;border-radius:12px;color:var(--text-mid)">📭 Sin registros de asistencia para este mes.<br><span style="font-size:12px">Prueba sincronizando o cambia de mes.</span></div>';
+    return;
+  }
+
+  const fechas=registros.map(r=>r.fecha);
+  const bg={P:'#DCFCE7',D:'#DBEAFE',A:'#FEE2E2',T:'#FEF3C7','':'#F9FAFB'};
+  const fg={P:'#166534',D:'#1D4ED8',A:'#991B1B',T:'#92400E','':'#CBD5E1'};
+  const lbl2={P:'P',D:'D',A:'A',T:'T','':'·'};
+
+  let thead='<tr>'
+    +'<th style="position:sticky;left:0;z-index:3;background:#F8FAFC;min-width:150px;text-align:left;padding:8px 10px;font-size:12px;border-bottom:2px solid #E2E8F0">Empleado</th>';
+  fechas.forEach(f=>{
+    const d=new Date(f+'T12:00:00');
+    const dia=d.getDate();
+    const dow=d.toLocaleDateString('es-ES',{weekday:'short'}).replace('.','').toUpperCase().slice(0,2);
+    const reg=registros.find(r=>r.fecha===f);
+    const closed=reg&&reg.cerrado;
+    thead+='<th style="min-width:34px;text-align:center;padding:5px 2px;font-size:11px;border-bottom:2px solid #E2E8F0;color:'+(closed?'#1B4332':'#94A3B8')+'">'
+      +'<div style="font-weight:800">'+dia+'</div>'
+      +'<div style="font-size:9px;font-weight:400">'+dow+'</div>'
+      +(closed?'<div style="width:6px;height:6px;border-radius:50%;background:#22C55E;margin:2px auto 0"></div>':'<div style="width:6px;height:6px;margin:2px auto 0"></div>')
+      +'</th>';
+  });
+  thead+='<th style="position:sticky;right:0;z-index:3;background:#F8FAFC;min-width:48px;text-align:center;padding:8px 4px;font-size:11px;border-bottom:2px solid #E2E8F0;border-left:2px solid #E2E8F0">Días P</th></tr>';
+
+  let tbody='';
+  let prevDept=null;
+  empleados.forEach(emp=>{
+    if(emp.departamento!==prevDept){
+      tbody+='<tr><td colspan="'+(fechas.length+2)+'" style="background:#EEF2FF;font-size:10px;font-weight:700;color:#4338CA;text-transform:uppercase;letter-spacing:1px;padding:5px 10px">'+emp.departamento+'</td></tr>';
+      prevDept=emp.departamento;
+    }
+    let totalP=0;
+    let cells='';
+    fechas.forEach(f=>{
+      const reg=registros.find(r=>r.fecha===f);
+      const linea=reg?(reg.lineas||[]).find(l=>l.empleadoId===emp.id):null;
+      const est=(linea&&linea.estado)||'';
+      if(est==='P')totalP++;
+      cells+='<td style="text-align:center;padding:5px 2px;background:'+(bg[est]||bg[''])+';border-bottom:1px solid #F1F5F9">'
+        +'<span style="font-size:12px;font-weight:700;color:'+(fg[est]||fg[''])+'">'+lbl2[est]+'</span>'
+        +'</td>';
+    });
+    tbody+='<tr>'
+      +'<td style="position:sticky;left:0;z-index:2;background:white;padding:7px 10px;font-size:12px;font-weight:600;white-space:nowrap;border-bottom:1px solid #F1F5F9;max-width:150px;overflow:hidden;text-overflow:ellipsis">'+emp.nombres+' '+emp.apellidos+'</td>'
+      +cells
+      +'<td style="position:sticky;right:0;z-index:2;background:white;text-align:center;font-size:13px;font-weight:800;color:#166534;border-left:2px solid #E5E7EB;border-bottom:1px solid #F1F5F9">'+totalP+'</td>'
+      +'</tr>';
+  });
+
+  bodyEl.innerHTML=
+    '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid #E2E8F0;background:white;margin-bottom:10px">'
+    +'<table style="border-collapse:collapse;min-width:100%">'
+    +'<thead style="background:#F8FAFC">'+thead+'</thead>'
+    +'<tbody>'+tbody+'</tbody>'
+    +'</table></div>'
+    +'<div style="font-size:10px;color:#94A3B8;text-align:right;padding:0 4px">P=Trabaja · D=Descansa · A=Ausente · T=Tardanza · · = Sin registrar</div>';
+}
+
+function _exportTblRes(){
+  const mes=window._tblResMes,ano=window._tblResAno;
+  const prefix=ano+'-'+String(mes).padStart(2,'0');
+  const registros=STATE.asistencia.filter(r=>r.fecha&&r.fecha.startsWith(prefix)).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  const empleados=getEmpleadosActivos().sort((a,b)=>(a.departamento+a.apellidos).localeCompare(b.departamento+b.apellidos));
+  const fechas=registros.map(r=>r.fecha);
+  const hdrs=['Empleado','Departamento',...fechas.map(f=>{const d=new Date(f+'T12:00:00');return d.getDate()+'/'+(d.getMonth()+1);}),'Total P'];
+  let csv=hdrs.join(',')+'\n';
+  empleados.forEach(emp=>{
+    let total=0;
+    const cells=fechas.map(f=>{
+      const reg=registros.find(r=>r.fecha===f);
+      const linea=reg?(reg.lineas||[]).find(l=>l.empleadoId===emp.id):null;
+      const est=(linea&&linea.estado)||'';
+      if(est==='P')total++;
+      return est||'·';
+    });
+    csv+='"'+emp.nombres+' '+emp.apellidos+'","'+emp.departamento+'",'+cells.join(',')+','+total+'\n';
+  });
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='Asistencia_'+ano+'_'+String(mes).padStart(2,'0')+'.csv';a.click();
+  URL.revokeObjectURL(url);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+function verDetalleAsistencia(fechaOrId){
+  // Look up by fecha first (reliable), fall back to id for legacy calls
+  const reg = STATE.asistencia.find(a=>a.fecha===fechaOrId) || STATE.asistencia.find(a=>a.id===fechaOrId);
   if(!reg) return;
   const fechaFmt = new Date(reg.fecha+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   const estadoIcon = {P:'✅',D:'💤',A:'❌',T:'🕐'};
@@ -6016,9 +6272,114 @@ function verDetalleAsistencia(regId){
         +'<tbody>'+rowsHtml+'</tbody>'
         +'</table></div>');
 
+  const canCorrect=currentRole==='admin'||currentRole==='rrhh';
   openModal('📋 Asistencia: '+fechaFmt, body,
     '<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>'
-    +'<button class="btn btn-gold btn-sm" onclick="exportDetalleAsistencia(\''+regId+'\')">⬇️ Excel</button>','lg');
+    +(canCorrect?'<button class="btn btn-warning btn-sm" onclick="corregirAsistencia(\''+reg.fecha+'\')">✏️ Corregir</button>':'')
+    +'<button class="btn btn-gold btn-sm" onclick="exportDetalleAsistencia(\''+reg.fecha+'\')">⬇️ Excel</button>','lg');
+}
+
+function corregirAsistencia(fechaOrId){
+  const reg=STATE.asistencia.find(a=>a.fecha===fechaOrId)||STATE.asistencia.find(a=>a.id===fechaOrId);
+  if(!reg)return;
+  const fechaFmt=new Date(reg.fecha+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  // Asegurar que todos los empleados activos (no admin) tienen una línea
+  const activos=getEmpleadosActivos().filter(e=>!DEPTS_EXCLUIDOS_JEFE_TURNO.includes(e.departamento));
+  activos.forEach(e=>{
+    if(!reg.lineas.find(l=>l.empleadoId===e.id)){
+      reg.lineas.push({empleadoId:e.id,estado:'',motivo:''});
+    }
+  });
+  // Ordenar por departamento, luego nombre
+  const lineas=[...reg.lineas].filter(l=>activos.find(e=>e.id===l.empleadoId));
+  lineas.sort((a,b)=>{
+    const ea=activos.find(e=>e.id===a.empleadoId);const eb=activos.find(e=>e.id===b.empleadoId);
+    if(!ea||!eb)return 0;
+    const di=DEPT_ORDER_JT.indexOf(ea.departamento);const dj=DEPT_ORDER_JT.indexOf(eb.departamento);
+    const dd=(di<0?99:di)-(dj<0?99:dj);
+    if(dd!==0)return dd;
+    return (ea.nombres+' '+ea.apellidos).localeCompare(eb.nombres+' '+eb.apellidos);
+  });
+  // Build map: empId → últimos 4 días con estado para contexto
+  const cercanos=STATE.asistencia.filter(a=>a.cerrado&&a.fecha!==reg.fecha)
+    .sort((a,b)=>b.fecha.localeCompare(a.fecha)).slice(0,10);
+  const rows=lineas.map(l=>{
+    const emp=activos.find(e=>e.id===l.empleadoId);if(!emp)return '';
+    const st=l.estado||'';
+    // Mostrar hasta 4 días cercanos para inferir patrón
+    const pistas=cercanos.slice(0,5).map(a=>{
+      const ll=(a.lineas||[]).find(x=>x.empleadoId===l.empleadoId);
+      const s=ll?ll.estado:'';
+      const d=new Date(a.fecha+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'short'});
+      return '<span style="font-size:10px;padding:1px 5px;border-radius:8px;margin-right:2px;'
+        +(s==='P'?'background:#DCFCE7;color:#166534':s==='D'?'background:#DBEAFE;color:#1D4ED8':'background:#F3F4F6;color:#9CA3AF')+'">'+d+(s==='P'?'✅':s==='D'?'💤':'?')+'</span>';
+    }).join('');
+    return '<tr style="background:'+(st===''?'#FFFBEB':'white')+'">'
+      +'<td style="font-weight:'+(st===''?'800':'600')+';font-size:13px;color:'+(st===''?'#92400E':'inherit')+'">'+emp.nombres+' '+emp.apellidos+'</td>'
+      +'<td style="font-size:11px;color:var(--text-mid)"><div>'+emp.departamento+'</div><div style="margin-top:2px">'+pistas+'</div></td>'
+      +'<td style="white-space:nowrap">'
+        +'<button onclick="setCorrEst(\''+reg.fecha+'\',\''+l.empleadoId+'\',\'P\')" id="corr-p-'+l.empleadoId+'" style="'
+          +'padding:5px 10px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;margin-right:4px;'
+          +'border:2px solid '+(st==='P'?'#22C55E':'#BBF7D0')+';background:'+(st==='P'?'#22C55E':'#F0FDF4')+';color:'+(st==='P'?'white':'#166534')+'">✅ P</button>'
+        +'<button onclick="setCorrEst(\''+reg.fecha+'\',\''+l.empleadoId+'\',\'D\')" id="corr-d-'+l.empleadoId+'" style="'
+          +'padding:5px 10px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;margin-right:4px;'
+          +'border:2px solid '+(st==='D'?'#3B82F6':'#BFDBFE')+';background:'+(st==='D'?'#3B82F6':'#EFF6FF')+';color:'+(st==='D'?'white':'#1D4ED8')+'">💤 D</button>'
+        +'<button onclick="setCorrEst(\''+reg.fecha+'\',\''+l.empleadoId+'\',\'\')" id="corr-n-'+l.empleadoId+'" style="'
+          +'padding:5px 10px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;'
+          +'border:2px solid '+(st===''?'#F59E0B':'#E5E7EB')+';background:'+(st===''?'#FEF3C7':'#F9FAFB')+';color:'+(st===''?'#92400E':'#9CA3AF')+'">?</button>'
+      +'</td>'
+      +'</tr>';
+  }).join('');
+  const sinAsignarCount=lineas.filter(l=>!l.estado).length;
+  const body='<div style="margin-bottom:12px">'
+    +(sinAsignarCount>0
+      ?'<div style="background:#FEF2F2;border:2px solid #F87171;border-radius:8px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:12px">'
+        +'<div><div style="font-weight:700;color:#B91C1C;font-size:13px">'+sinAsignarCount+' empleados sin marcar</div>'
+        +'<div style="font-size:11px;color:#7F1D1D">Si el sistema falló y no sabes quiénes faltaron, usa el botón →</div></div>'
+        +'<button onclick="marcarTodosSinAsignarPresente(\''+reg.fecha+'\')" style="flex-shrink:0;padding:8px 14px;background:#22C55E;color:white;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">✅ Todos presentes</button>'
+        +'</div>'
+      :'<div style="background:#DCFCE7;border-radius:8px;padding:8px 14px;margin-bottom:8px;font-size:12px;color:#166534">✅ Todos los empleados están marcados.</div>')
+    +'<div style="font-size:11px;color:var(--text-mid);background:#FEF3C7;border-radius:6px;padding:6px 10px">⚠️ Corrección de registro cerrado. Los cambios actualizan la pre-nómina al recalcular.</div>'
+    +'</div>'
+    +'<div class="table-wrap" style="max-height:50vh;overflow-y:auto"><table>'
+    +'<thead><tr><th>Empleado</th><th>Depto</th><th>Estado</th></tr></thead>'
+    +'<tbody id="corr-tbody">'+rows+'</tbody></table></div>';
+  openModal('✏️ Corregir Asistencia: '+fechaFmt,body,
+    '<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>'
+    +'<button class="btn btn-success" onclick="guardarCorreccionAsistencia(\''+reg.fecha+'\')">💾 Guardar Corrección</button>','lg');
+}
+
+function marcarTodosSinAsignarPresente(fecha){
+  const reg=STATE.asistencia.find(a=>a.fecha===fecha)||STATE.asistencia.find(a=>a.id===fecha);if(!reg)return;
+  reg.lineas.forEach(l=>{if(!l.estado)l.estado='P';});
+  reg.lineas.forEach(l=>{if(l.estado==='P')setCorrEst(reg.fecha,l.empleadoId,'P');});
+}
+
+function setCorrEst(fecha,empId,newEst){
+  const reg=STATE.asistencia.find(a=>a.fecha===fecha)||STATE.asistencia.find(a=>a.id===fecha);if(!reg)return;
+  let linea=reg.lineas.find(l=>l.empleadoId===empId);
+  if(!linea){linea={empleadoId:empId,estado:'',motivo:''};reg.lineas.push(linea);}
+  linea.estado=newEst;
+  const stP=document.getElementById('corr-p-'+empId);
+  const stD=document.getElementById('corr-d-'+empId);
+  const stN=document.getElementById('corr-n-'+empId);
+  if(stP){stP.style.background=newEst==='P'?'#22C55E':'#F0FDF4';stP.style.color=newEst==='P'?'white':'#166534';stP.style.borderColor=newEst==='P'?'#22C55E':'#BBF7D0';}
+  if(stD){stD.style.background=newEst==='D'?'#3B82F6':'#EFF6FF';stD.style.color=newEst==='D'?'white':'#1D4ED8';stD.style.borderColor=newEst==='D'?'#3B82F6':'#BFDBFE';}
+  if(stN){stN.style.background=newEst===''?'#6B7280':'#F9FAFB';stN.style.color=newEst===''?'white':'#9CA3AF';stN.style.borderColor=newEst===''?'#6B7280':'#E5E7EB';}
+}
+
+async function guardarCorreccionAsistencia(fecha){
+  const reg=STATE.asistencia.find(a=>a.fecha===fecha)||STATE.asistencia.find(a=>a.id===fecha);if(!reg)return;
+  saveState();
+  closeModal();
+  showToast('Guardando corrección...','info',2000);
+  try{
+    await sbUpsert('asistencia',{id:reg.id,fecha:reg.fecha,cerrado:reg.cerrado,registradoPor:reg.registradoPor,horaCierre:reg.horaCierre,lineas:reg.lineas});
+    addAuditLog('CORRECCION_ASISTENCIA',`Corrección de asistencia ${reg.fecha} por ${getRoleName(currentRole)}`);
+    showToast('Asistencia corregida y guardada en la nube ✅','success');
+  }catch(e){
+    showToast('Guardado local. Sincroniza para subir a la nube','warning');
+  }
 }
 
 function exportAsistencia(){
