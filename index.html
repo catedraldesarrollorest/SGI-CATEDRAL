@@ -913,16 +913,29 @@ function normalizeAsistencia(r) {
 // Merge remote asistencia records with local STATE, keeping the richer record per date
 function mergeAsistenciaRemota(remote) {
   const byFecha = {};
-  STATE.asistencia.forEach(r => { byFecha[r.fecha] = r; });
+  // Build local index: if two local records share the same fecha, keep the richer one
+  STATE.asistencia.forEach(r => {
+    const ex = byFecha[r.fecha];
+    if (!ex) { byFecha[r.fecha] = r; return; }
+    const rRich = r.cerrado && r.lineas && r.lineas.length > 0;
+    const exRich = ex.cerrado && ex.lineas && ex.lineas.length > 0;
+    if (rRich && !exRich) byFecha[r.fecha] = r;
+  });
   remote.forEach(r => {
     r = normalizeAsistencia(r);
     const local = byFecha[r.fecha];
     if (!local) { byFecha[r.fecha] = r; return; }
     const remoteRich = r.cerrado && r.lineas && r.lineas.length > 0;
     const localRich  = local.cerrado && local.lineas && local.lineas.length > 0;
+    if (local.id === r.id) {
+      // Same record: remote wins if richer
+      if (remoteRich && !localRich) byFecha[r.fecha] = r;
+      return;
+    }
+    // Different ID, same fecha: keep whichever is richer; prefer closed+lineas
     if (remoteRich && !localRich) byFecha[r.fecha] = r;
     else if (!localRich && !remoteRich && r.cerrado) byFecha[r.fecha] = r;
-    // else keep local (has more data or equal)
+    // else keep local
   });
   return Object.values(byFecha);
 }
@@ -954,6 +967,17 @@ async function pushToSheets(tabla, accion, valores, id) {
     }
     if (!ok) {
       DB_ONLINE = false; updateSyncBadge(false);
+      // Dedup: remove any existing pending op for the same record before enqueuing
+      const _recId = (Array.isArray(valores)?valores[0]:valores)?.id || id;
+      const _recFecha = (Array.isArray(valores)?valores[0]:valores)?.fecha;
+      DB_PENDING_OPS = DB_PENDING_OPS.filter(op => {
+        if (op.tabla !== tabla) return true;
+        const opId = (Array.isArray(op.valores)?op.valores[0]:op.valores)?.id || op.id;
+        const opFecha = (Array.isArray(op.valores)?op.valores[0]:op.valores)?.fecha;
+        if (_recId && opId && _recId === opId) return false;
+        if (_recFecha && opFecha && _recFecha === opFecha && tabla === 'asistencia') return false;
+        return true;
+      });
       DB_PENDING_OPS.push({ tabla, accion, valores, id });
       showSyncIndicator('⚠️ Guardado local (BD no disponible)', 'offline');
     }
@@ -1374,14 +1398,14 @@ async function sincronizarDesdeSheets() {
   }
 }
 let _syncTick = 0;
-// Intervalo rápido (5s): reconecta agresivamente cuando hay ops pendientes offline
+// Intervalo rápido (5s): reconecta siempre que esté offline (no solo con pending ops)
 setInterval(async () => {
-  if (!DB_ONLINE && DB_PENDING_OPS.length > 0) {
+  if (!DB_ONLINE) {
     try {
       await sbFetch('GET', 'empleados', null, 'select=id&limit=1');
       DB_ONLINE = true; updateSyncBadge(true);
       showSyncIndicator('✅ Reconectado', 'ok');
-      await flushPendingOps();
+      if (DB_PENDING_OPS.length > 0) await flushPendingOps();
     } catch(e) {}
   }
 }, 5000);
@@ -5594,6 +5618,14 @@ function renderListaJT(container){
       +'<div style="font-size:12px;opacity:0.75">Turno cerrado. Que descanses.</div>'
       +'</div>';
   } else {
+    if(sinAsignar>0){
+      const tabBreakdown=effectiveTabs.map(t=>{
+        const te=t.id==='otros'?otrosEmps:_jt_emps.filter(e=>t.depts.includes(e.departamento));
+        const sin=te.filter(e=>!(_jt_estados[e.id]||{}).estado).length;
+        return sin>0?t.label+': '+sin:null;
+      }).filter(Boolean).join(', ');
+      html+='<div style="background:#FEF2F2;border:1.5px solid #FCA5A5;border-radius:10px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#B91C1C;font-weight:600">⚠️ '+sinAsignar+' sin marcar — '+tabBreakdown+'</div>';
+    }
     html+='<button onclick="cerrarTurnoJT()" class="btn btn-success" style="width:100%;padding:13px;font-size:15px">🔒 Cerrar Turno</button>';
   }
 
@@ -5681,29 +5713,31 @@ function autoGuardarTurnoJT(){
 }
 
 function iniciarAutoCloseJT(hoy){
-  if(_jt_autoCloseTimer) clearInterval(_jt_autoCloseTimer);
-  _jt_autoCloseTimer=setInterval(()=>{
-    const now=new Date();
-    if(now.getHours()>=20 && _jt_hoy===hoy && !_jt_readonly){
-      clearInterval(_jt_autoCloseTimer); _jt_autoCloseTimer=null;
-      autoGuardarTurnoJT();
-      const reg=STATE.asistencia.find(a=>a.fecha===_jt_hoy);
-      if(reg&&!reg.cerrado){
-        const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
-        const D=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='D').length;
-        reg.cerrado=true; reg.horaCierre='20:00'; reg.cierreAutomatico=true;
-        _jt_readonly=true; saveState();
-        pushToSheets('asistencia','insertar',reg).then(()=>{
-          showToast(DB_ONLINE?'✅ Turno cerrado automáticamente (20:00) — guardado en la nube':'⚠️ Turno cerrado (20:00) — guardado solo localmente',DB_ONLINE?'success':'warning',6000);
-        });
-        addAuditLog('ASISTENCIA','Turno '+hoy+' cerrado automáticamente a las 20:00. P:'+P+' D:'+D);
-        const tb=document.getElementById('topbar-actions');
-        if(tb) tb.innerHTML='<span class="badge badge-approved" style="padding:8px 16px;font-size:13px;">✅ Turno cerrado</span>';
-        const c=document.getElementById('app-content');
-        if(c&&currentRole==='jefe_turno') renderListaJT(c);
-      }
-    }
-  },30000); // revisa cada 30 segundos
+  if(_jt_autoCloseTimer){clearTimeout(_jt_autoCloseTimer);_jt_autoCloseTimer=null;}
+  const now=new Date();
+  const target=new Date(now);
+  target.setHours(20,0,0,0);
+  const ms=target-now;
+  if(ms<=0) return; // ya pasaron las 20:00
+  _jt_autoCloseTimer=setTimeout(()=>{
+    _jt_autoCloseTimer=null;
+    if(_jt_hoy!==hoy||_jt_readonly) return;
+    autoGuardarTurnoJT();
+    const reg=STATE.asistencia.find(a=>a.fecha===_jt_hoy);
+    if(!reg||reg.cerrado) return; // guard: ya cerrado por cierre manual
+    const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
+    const D=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='D').length;
+    reg.cerrado=true; reg.horaCierre='20:00'; reg.cierreAutomatico=true;
+    _jt_readonly=true; saveState();
+    pushToSheets('asistencia','insertar',reg).then(()=>{
+      showToast(DB_ONLINE?'✅ Turno cerrado automáticamente (20:00) — guardado en la nube':'⚠️ Turno cerrado (20:00) — guardado solo localmente',DB_ONLINE?'success':'warning',6000);
+    });
+    addAuditLog('ASISTENCIA','Turno '+hoy+' cerrado automáticamente a las 20:00. P:'+P+' D:'+D);
+    const tb=document.getElementById('topbar-actions');
+    if(tb) tb.innerHTML='<span class="badge badge-approved" style="padding:8px 16px;font-size:13px;">✅ Turno cerrado</span>';
+    const c=document.getElementById('app-content');
+    if(c&&currentRole==='jefe_turno') renderListaJT(c);
+  },ms);
 }
 
 function cerrarTurnoJT(){
@@ -5718,7 +5752,7 @@ function cerrarTurnoJT(){
   const sinAsignar=_jt_emps.length-P-D;
 
   const doClose=async function(){
-    if(_jt_autoCloseTimer){clearInterval(_jt_autoCloseTimer);_jt_autoCloseTimer=null;}
+    if(_jt_autoCloseTimer){clearTimeout(_jt_autoCloseTimer);_jt_autoCloseTimer=null;}
     reg.cerrado=true;
     reg.horaCierre=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
     _jt_readonly=true; saveState();
@@ -5732,17 +5766,24 @@ function cerrarTurnoJT(){
   };
 
   if(sinAsignar>0){
-    // Show exactly who is unmarked — JT must decide before closing
-    const sinMarcarNombres=_jt_emps
-      .filter(e=>!(_jt_estados[e.id]||{}).estado)
-      .map(e=>'<li style="padding:3px 0;border-bottom:1px solid #FEE2E2;font-size:13px"><b>'+e.nombres+' '+e.apellidos+'</b> <span style="color:#6B7280;font-size:11px">'+e.departamento+'</span></li>')
-      .join('');
+    // Build grouped list by tab so JT knows exactly where the gaps are
+    const _allCovDeptsM=JT_TABS.flatMap(t=>t.depts);
+    const _otrosM=_jt_emps.filter(e=>!_allCovDeptsM.includes(e.departamento));
+    const _effTabsM=[...JT_TABS,...(_otrosM.length?[{id:'otros',label:'Otros',depts:_otrosM.map(e=>e.departamento)}]:[])];
+    let sinMarcarHtml='';
+    _effTabsM.forEach(t=>{
+      const te=t.id==='otros'?_otrosM:_jt_emps.filter(e=>t.depts.includes(e.departamento));
+      const sinTab=te.filter(e=>!(_jt_estados[e.id]||{}).estado);
+      if(!sinTab.length) return;
+      sinMarcarHtml+='<div style="font-size:11px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:1px;margin:8px 0 3px;padding:0 4px">'+t.label+'</div>';
+      sinMarcarHtml+=sinTab.map(e=>'<li style="padding:3px 0;border-bottom:1px solid #FEE2E2;font-size:13px"><b>'+e.nombres+' '+e.apellidos+'</b> <span style="color:#6B7280;font-size:11px">'+e.departamento+'</span></li>').join('');
+    });
     openModal('⚠️ Empleados sin marcar',
       '<div style="background:#FEF2F2;border:2px solid #F87171;border-radius:10px;padding:14px;margin-bottom:14px">'
-      +'<div style="font-weight:800;color:#B91C1C;font-size:15px;margin-bottom:6px">⚠️ '+sinAsignar+' empleado'+(sinAsignar>1?'s están':'  está')+' sin marcar</div>'
+      +'<div style="font-weight:800;color:#B91C1C;font-size:15px;margin-bottom:6px">⚠️ '+sinAsignar+' empleado'+(sinAsignar>1?'s están':' está')+' sin marcar</div>'
       +'<div style="font-size:12px;color:#7F1D1D">Estos días <b>NO contarán</b> para su salario si cierras ahora. Revisa que hayas marcado a todos.</div>'
       +'</div>'
-      +'<ul style="list-style:none;padding:0;max-height:300px;overflow-y:auto;margin:0">'+sinMarcarNombres+'</ul>',
+      +'<ul style="list-style:none;padding:0;max-height:300px;overflow-y:auto;margin:0">'+sinMarcarHtml+'</ul>',
       '<button class="btn btn-secondary" onclick="closeModal()">← Volver y completar</button>'
       +'<button class="btn btn-danger" onclick="closeModal();_confirmedCloseJT()">Cerrar de todas formas</button>');
     window._confirmedCloseJT=doClose;
