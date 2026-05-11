@@ -6149,20 +6149,20 @@ function _renderTblResBody(){
   const lbl2={P:'P',D:'D',A:'A',T:'T','':'·'};
 
   let thead='<tr>'
-    +'<th style="position:sticky;left:0;z-index:3;background:#F8FAFC;min-width:150px;text-align:left;padding:8px 10px;font-size:12px;border-bottom:2px solid #E2E8F0">Empleado</th>';
+    +'<th style="position:sticky;left:0;z-index:3;background:#1B4332;color:white;min-width:150px;text-align:left;padding:8px 10px;font-size:12px;border-bottom:2px solid #1B4332">Empleado</th>';
   fechas.forEach(f=>{
     const d=new Date(f+'T12:00:00');
     const dia=d.getDate();
     const dow=d.toLocaleDateString('es-ES',{weekday:'short'}).replace('.','').toUpperCase().slice(0,2);
     const reg=registros.find(r=>r.fecha===f);
     const closed=reg&&reg.cerrado;
-    thead+='<th style="min-width:34px;text-align:center;padding:5px 2px;font-size:11px;border-bottom:2px solid #E2E8F0;color:'+(closed?'#1B4332':'#94A3B8')+'">'
+    thead+='<th style="min-width:34px;text-align:center;padding:5px 2px;font-size:11px;border-bottom:2px solid #1B4332;background:#1B4332;color:white">'
       +'<div style="font-weight:800">'+dia+'</div>'
-      +'<div style="font-size:9px;font-weight:400">'+dow+'</div>'
-      +(closed?'<div style="width:6px;height:6px;border-radius:50%;background:#22C55E;margin:2px auto 0"></div>':'<div style="width:6px;height:6px;margin:2px auto 0"></div>')
+      +'<div style="font-size:9px;font-weight:400;opacity:0.75">'+dow+'</div>'
+      +(closed?'<div style="width:6px;height:6px;border-radius:50%;background:#86EFAC;margin:2px auto 0"></div>':'<div style="width:6px;height:6px;margin:2px auto 0"></div>')
       +'</th>';
   });
-  thead+='<th style="position:sticky;right:0;z-index:3;background:#F8FAFC;min-width:48px;text-align:center;padding:8px 4px;font-size:11px;border-bottom:2px solid #E2E8F0;border-left:2px solid #E2E8F0">Días P</th></tr>';
+  thead+='<th style="position:sticky;right:0;z-index:3;background:#1B4332;color:white;min-width:48px;text-align:center;padding:8px 4px;font-size:11px;border-bottom:2px solid #1B4332;border-left:2px solid #0F2419">Días P</th></tr>';
 
   let tbody='';
   let prevDept=null;
