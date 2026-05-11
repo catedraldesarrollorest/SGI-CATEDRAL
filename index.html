@@ -6023,9 +6023,144 @@ async function subirAsistenciaLocal(){
   showToast(msg,fail===0?'success':'error',12000);
   if(ok>0) renderHistorialAsistencia(document.getElementById('app-content'));
 }
+// ─── Importación asistencia Mayo 2026 desde Excel ────────────────────────────
+// Generado automáticamente desde Reporte_Mensual_Mayo_2026.xlsx
+// vacío(D)=Descansa, 1(P)=Trabaja. Empleados: 42 en sistema + 3 pendientes de ficha.
+const _EXCEL_MAYO_2026={
+"2026-05-01":{"ANGEL DYLAN GONZALEZ GAINZA":"D","Adriana Galan Jorge":"D","CAROLINA VALDES VALERO":"D","DANIELA GARCIA MIGOYO":"D","DAYRON FAVIER CASTRO":"P","Deybis Martinez Cordies":"D","Daymara Suliet Rosales Charon":"P","Joel Ernesto Chavez Rondon":"D","EZEQUIEL FUENTES FRANQUIZ":"P","Eddy Fuentes Suris":"P","Fabian Rubialez Perez":"D","Fidel Ernesto Rivero Acea":"D","Jesus Enrique Dias Esteven":"D","JOEL COLAS FERNANDEZ":"P","Josue Cintra Oliveros":"P","Leovanis Argote Lanfernal":"P","Liliannys Cespedes Caballero":"D","Luis Kevin Decter Mas":"D","Liliana Alvarez Rodriguez":"D","Manuel Florentino Avila Delagado":"D","Manuel Cristobal Garcia Figueroa":"P","Michel Gallardo Versagui":"P","Pedro Lazaro Cintra Oliveros":"P","RACIEL LLANES FONSECA":"P","Raubel Mesa Reyes":"D","Reimundo Ferrer Franquiz":"P","Rogelio Corria Saumel":"P","Angelica Rachel Aavarez Calana":"P","Raul Aguilar Aquiles":"D","Raul Castaneda Avila":"D","RaIdel Barrero Leyva":"P","Reinier Silegas Ramos":"P","Roger Lopez Saume":"P","Roinier Napoles Rabi":"D","Rolando Camilo Rivero Guerra":"P","Ruben de la Caridad Soler Zamora":"P","SELENA BLANCO VARGAS":"P","Thalia del Rosario Castillo Brizuela":"D","Thalia Nodarse Labrada":"P","YESINAY DIAZ ESTEVEN":"P","Yaudel Martinez Granados":"D","Yulien Rondon Traba":"D"},
+"2026-05-02":{"ANGEL DYLAN GONZALEZ GAINZA":"P","Adriana Galan Jorge":"D","CAROLINA VALDES VALERO":"P","DANIELA GARCIA MIGOYO":"P","DAYRON FAVIER CASTRO":"D","Deybis Martinez Cordies":"P","Daymara Suliet Rosales Charon":"D","Joel Ernesto Chavez Rondon":"P","EZEQUIEL FUENTES FRANQUIZ":"D","Eddy Fuentes Suris":"D","Fabian Rubialez Perez":"P","Fidel Ernesto Rivero Acea":"D","Jesus Enrique Dias Esteven":"P","JOEL COLAS FERNANDEZ":"P","Josue Cintra Oliveros":"P","Leovanis Argote Lanfernal":"D","Liliannys Cespedes Caballero":"P","Luis Kevin Decter Mas":"P","Liliana Alvarez Rodriguez":"P","Manuel Florentino Avila Delagado":"P","Manuel Cristobal Garcia Figueroa":"D","Michel Gallardo Versagui":"P","Pedro Lazaro Cintra Oliveros":"P","RACIEL LLANES FONSECA":"D","Raubel Mesa Reyes":"D","Reimundo Ferrer Franquiz":"D","Rogelio Corria Saumel":"D","Angelica Rachel Aavarez Calana":"D","Raul Aguilar Aquiles":"D","Raul Castaneda Avila":"P","RaIdel Barrero Leyva":"D","Reinier Silegas Ramos":"D","Roger Lopez Saume":"P","Roinier Napoles Rabi":"P","Rolando Camilo Rivero Guerra":"P","Ruben de la Caridad Soler Zamora":"P","SELENA BLANCO VARGAS":"D","Thalia del Rosario Castillo Brizuela":"P","Thalia Nodarse Labrada":"D","YESINAY DIAZ ESTEVEN":"D","Yaudel Martinez Granados":"P","Yulien Rondon Traba":"P"},
+"2026-05-03":{"ANGEL DYLAN GONZALEZ GAINZA":"P","Adriana Galan Jorge":"P","CAROLINA VALDES VALERO":"D","DANIELA GARCIA MIGOYO":"P","DAYRON FAVIER CASTRO":"P","Deybis Martinez Cordies":"P","Daymara Suliet Rosales Charon":"D","Joel Ernesto Chavez Rondon":"P","EZEQUIEL FUENTES FRANQUIZ":"P","Eddy Fuentes Suris":"D","Fabian Rubialez Perez":"P","Fidel Ernesto Rivero Acea":"P","Jesus Enrique Dias Esteven":"P","JOEL COLAS FERNANDEZ":"D","Josue Cintra Oliveros":"D","Leovanis Argote Lanfernal":"D","Liliannys Cespedes Caballero":"D","Luis Kevin Decter Mas":"D","Liliana Alvarez Rodriguez":"D","Manuel Florentino Avila Delagado":"D","Manuel Cristobal Garcia Figueroa":"D","Michel Gallardo Versagui":"D","Pedro Lazaro Cintra Oliveros":"D","RACIEL LLANES FONSECA":"D","Raubel Mesa Reyes":"P","Reimundo Ferrer Franquiz":"D","Rogelio Corria Saumel":"D","Angelica Rachel Aavarez Calana":"P","Raul Aguilar Aquiles":"P","Raul Castaneda Avila":"P","RaIdel Barrero Leyva":"D","Reinier Silegas Ramos":"D","Roger Lopez Saume":"D","Roinier Napoles Rabi":"P","Rolando Camilo Rivero Guerra":"D","Ruben de la Caridad Soler Zamora":"D","SELENA BLANCO VARGAS":"P","Thalia del Rosario Castillo Brizuela":"D","Thalia Nodarse Labrada":"D","YESINAY DIAZ ESTEVEN":"D","Yaudel Martinez Granados":"P","Yulien Rondon Traba":"P"},
+"2026-05-04":{"ANGEL DYLAN GONZALEZ GAINZA":"D","Adriana Galan Jorge":"P","CAROLINA VALDES VALERO":"D","DANIELA GARCIA MIGOYO":"P","DAYRON FAVIER CASTRO":"D","Deybis Martinez Cordies":"D","Daymara Suliet Rosales Charon":"D","Joel Ernesto Chavez Rondon":"D","EZEQUIEL FUENTES FRANQUIZ":"D","Eddy Fuentes Suris":"P","Fabian Rubialez Perez":"D","Fidel Ernesto Rivero Acea":"P","Jesus Enrique Dias Esteven":"D","JOEL COLAS FERNANDEZ":"P","Josue Cintra Oliveros":"D","Leovanis Argote Lanfernal":"P","Liliannys Cespedes Caballero":"P","Luis Kevin Decter Mas":"P","Liliana Alvarez Rodriguez":"P","Manuel Florentino Avila Delagado":"P","Manuel Cristobal Garcia Figueroa":"P","Michel Gallardo Versagui":"D","Pedro Lazaro Cintra Oliveros":"D","RACIEL LLANES FONSECA":"D","Raubel Mesa Reyes":"P","Reimundo Ferrer Franquiz":"P","Rogelio Corria Saumel":"P","Angelica Rachel Aavarez Calana":"D","Raul Aguilar Aquiles":"P","Raul Castaneda Avila":"D","RaIdel Barrero Leyva":"D","Reinier Silegas Ramos":"P","Roger Lopez Saume":"P","Roinier Napoles Rabi":"P","Rolando Camilo Rivero Guerra":"D","Ruben de la Caridad Soler Zamora":"P","SELENA BLANCO VARGAS":"D","Thalia del Rosario Castillo Brizuela":"P","Thalia Nodarse Labrada":"P","YESINAY DIAZ ESTEVEN":"P","Yaudel Martinez Granados":"D","Yulien Rondon Traba":"D"},
+"2026-05-05":{"ANGEL DYLAN GONZALEZ GAINZA":"D","Adriana Galan Jorge":"D","CAROLINA VALDES VALERO":"D","DANIELA GARCIA MIGOYO":"P","DAYRON FAVIER CASTRO":"P","Deybis Martinez Cordies":"D","Daymara Suliet Rosales Charon":"P","Joel Ernesto Chavez Rondon":"P","EZEQUIEL FUENTES FRANQUIZ":"P","Eddy Fuentes Suris":"P","Fabian Rubialez Perez":"D","Fidel Ernesto Rivero Acea":"D","Jesus Enrique Dias Esteven":"D","JOEL COLAS FERNANDEZ":"P","Josue Cintra Oliveros":"D","Leovanis Argote Lanfernal":"D","Liliannys Cespedes Caballero":"D","Luis Kevin Decter Mas":"D","Liliana Alvarez Rodriguez":"D","Manuel Florentino Avila Delagado":"P","Manuel Cristobal Garcia Figueroa":"P","Michel Gallardo Versagui":"P","Pedro Lazaro Cintra Oliveros":"P","RACIEL LLANES FONSECA":"D","Raubel Mesa Reyes":"P","Reimundo Ferrer Franquiz":"P","Rogelio Corria Saumel":"P","Angelica Rachel Aavarez Calana":"P","Raul Aguilar Aquiles":"D","Raul Castaneda Avila":"D","RaIdel Barrero Leyva":"D","Reinier Silegas Ramos":"P","Roger Lopez Saume":"D","Roinier Napoles Rabi":"P","Rolando Camilo Rivero Guerra":"P","Ruben de la Caridad Soler Zamora":"P","SELENA BLANCO VARGAS":"P","Thalia del Rosario Castillo Brizuela":"D","Thalia Nodarse Labrada":"P","YESINAY DIAZ ESTEVEN":"P","Yaudel Martinez Granados":"D","Yulien Rondon Traba":"D"},
+"2026-05-06":{"ANGEL DYLAN GONZALEZ GAINZA":"P","Adriana Galan Jorge":"P","CAROLINA VALDES VALERO":"D","DANIELA GARCIA MIGOYO":"D","DAYRON FAVIER CASTRO":"D","Deybis Martinez Cordies":"P","Daymara Suliet Rosales Charon":"D","Joel Ernesto Chavez Rondon":"P","EZEQUIEL FUENTES FRANQUIZ":"D","Eddy Fuentes Suris":"D","Fabian Rubialez Perez":"P","Fidel Ernesto Rivero Acea":"D","Jesus Enrique Dias Esteven":"P","JOEL COLAS FERNANDEZ":"P","Josue Cintra Oliveros":"D","Leovanis Argote Lanfernal":"D","Liliannys Cespedes Caballero":"P","Luis Kevin Decter Mas":"P","Liliana Alvarez Rodriguez":"P","Manuel Florentino Avila Delagado":"D","Manuel Cristobal Garcia Figueroa":"D","Michel Gallardo Versagui":"D","Pedro Lazaro Cintra Oliveros":"P","RACIEL LLANES FONSECA":"P","Raubel Mesa Reyes":"P","Reimundo Ferrer Franquiz":"D","Rogelio Corria Saumel":"D","Angelica Rachel Aavarez Calana":"D","Raul Aguilar Aquiles":"P","Raul Castaneda Avila":"P","RaIdel Barrero Leyva":"P","Reinier Silegas Ramos":"D","Roger Lopez Saume":"P","Roinier Napoles Rabi":"D","Rolando Camilo Rivero Guerra":"P","Ruben de la Caridad Soler Zamora":"P","SELENA BLANCO VARGAS":"D","Thalia del Rosario Castillo Brizuela":"P","Thalia Nodarse Labrada":"D","YESINAY DIAZ ESTEVEN":"D","Yaudel Martinez Granados":"P","Yulien Rondon Traba":"P"},
+"2026-05-07":{"ANGEL DYLAN GONZALEZ GAINZA":"P","Adriana Galan Jorge":"D","CAROLINA VALDES VALERO":"D","DANIELA GARCIA MIGOYO":"D","DAYRON FAVIER CASTRO":"D","Deybis Martinez Cordies":"P","Daymara Suliet Rosales Charon":"P","Joel Ernesto Chavez Rondon":"D","EZEQUIEL FUENTES FRANQUIZ":"P","Eddy Fuentes Suris":"D","Fabian Rubialez Perez":"P","Fidel Ernesto Rivero Acea":"P","Jesus Enrique Dias Esteven":"P","JOEL COLAS FERNANDEZ":"P","Josue Cintra Oliveros":"D","Leovanis Argote Lanfernal":"P","Liliannys Cespedes Caballero":"D","Luis Kevin Decter Mas":"P","Liliana Alvarez Rodriguez":"D","Manuel Florentino Avila Delagado":"P","Manuel Cristobal Garcia Figueroa":"D","Michel Gallardo Versagui":"D","Pedro Lazaro Cintra Oliveros":"P","RACIEL LLANES FONSECA":"P","Raubel Mesa Reyes":"P","Reimundo Ferrer Franquiz":"D","Rogelio Corria Saumel":"P","Angelica Rachel Aavarez Calana":"P","Raul Aguilar Aquiles":"P","Raul Castaneda Avila":"P","RaIdel Barrero Leyva":"P","Reinier Silegas Ramos":"D","Roger Lopez Saume":"D","Roinier Napoles Rabi":"D","Rolando Camilo Rivero Guerra":"D","Ruben de la Caridad Soler Zamora":"P","SELENA BLANCO VARGAS":"P","Thalia del Rosario Castillo Brizuela":"D","Thalia Nodarse Labrada":"D","YESINAY DIAZ ESTEVEN":"D","Yaudel Martinez Granados":"D","Yulien Rondon Traba":"P"},
+"2026-05-08":{"ANGEL DYLAN GONZALEZ GAINZA":"D","Adriana Galan Jorge":"P","CAROLINA VALDES VALERO":"D","DANIELA GARCIA MIGOYO":"P","DAYRON FAVIER CASTRO":"P","Deybis Martinez Cordies":"D","Daymara Suliet Rosales Charon":"D","Joel Ernesto Chavez Rondon":"D","EZEQUIEL FUENTES FRANQUIZ":"D","Eddy Fuentes Suris":"P","Fabian Rubialez Perez":"D","Fidel Ernesto Rivero Acea":"P","Jesus Enrique Dias Esteven":"D","JOEL COLAS FERNANDEZ":"P","Josue Cintra Oliveros":"P","Leovanis Argote Lanfernal":"P","Liliannys Cespedes Caballero":"P","Luis Kevin Decter Mas":"D","Liliana Alvarez Rodriguez":"P","Manuel Florentino Avila Delagado":"P","Manuel Cristobal Garcia Figueroa":"P","Michel Gallardo Versagui":"D","Pedro Lazaro Cintra Oliveros":"D","RACIEL LLANES FONSECA":"D","Raubel Mesa Reyes":"D","Reimundo Ferrer Franquiz":"P","Rogelio Corria Saumel":"P","Angelica Rachel Aavarez Calana":"D","Raul Aguilar Aquiles":"P","Raul Castaneda Avila":"D","RaIdel Barrero Leyva":"D","Reinier Silegas Ramos":"P","Roger Lopez Saume":"P","Roinier Napoles Rabi":"P","Rolando Camilo Rivero Guerra":"D","Ruben de la Caridad Soler Zamora":"P","SELENA BLANCO VARGAS":"D","Thalia del Rosario Castillo Brizuela":"P","Thalia Nodarse Labrada":"P","YESINAY DIAZ ESTEVEN":"P","Yaudel Martinez Granados":"D","Yulien Rondon Traba":"D"},
+"2026-05-09":{"ANGEL DYLAN GONZALEZ GAINZA":"D","Adriana Galan Jorge":"D","CAROLINA VALDES VALERO":"D","DANIELA GARCIA MIGOYO":"P","DAYRON FAVIER CASTRO":"P","Deybis Martinez Cordies":"D","Daymara Suliet Rosales Charon":"P","Joel Ernesto Chavez Rondon":"D","EZEQUIEL FUENTES FRANQUIZ":"P","Eddy Fuentes Suris":"P","Fabian Rubialez Perez":"D","Fidel Ernesto Rivero Acea":"D","Jesus Enrique Dias Esteven":"D","JOEL COLAS FERNANDEZ":"P","Josue Cintra Oliveros":"P","Leovanis Argote Lanfernal":"P","Liliannys Cespedes Caballero":"D","Luis Kevin Decter Mas":"D","Liliana Alvarez Rodriguez":"D","Manuel Florentino Avila Delagado":"D","Manuel Cristobal Garcia Figueroa":"P","Michel Gallardo Versagui":"P","Pedro Lazaro Cintra Oliveros":"P","RACIEL LLANES FONSECA":"D","Raubel Mesa Reyes":"D","Reimundo Ferrer Franquiz":"P","Rogelio Corria Saumel":"P","Angelica Rachel Aavarez Calana":"P","Raul Aguilar Aquiles":"D","Raul Castaneda Avila":"D","RaIdel Barrero Leyva":"D","Reinier Silegas Ramos":"P","Roger Lopez Saume":"D","Roinier Napoles Rabi":"P","Rolando Camilo Rivero Guerra":"P","Ruben de la Caridad Soler Zamora":"P","SELENA BLANCO VARGAS":"P","Thalia del Rosario Castillo Brizuela":"D","Thalia Nodarse Labrada":"P","YESINAY DIAZ ESTEVEN":"P","Yaudel Martinez Granados":"D","Yulien Rondon Traba":"D"},
+"2026-05-10":{"ANGEL DYLAN GONZALEZ GAINZA":"P","Adriana Galan Jorge":"P","CAROLINA VALDES VALERO":"D","DANIELA GARCIA MIGOYO":"D","DAYRON FAVIER CASTRO":"D","Deybis Martinez Cordies":"P","Daymara Suliet Rosales Charon":"D","Joel Ernesto Chavez Rondon":"P","EZEQUIEL FUENTES FRANQUIZ":"P","Eddy Fuentes Suris":"D","Fabian Rubialez Perez":"P","Fidel Ernesto Rivero Acea":"D","Jesus Enrique Dias Esteven":"P","JOEL COLAS FERNANDEZ":"D","Josue Cintra Oliveros":"P","Leovanis Argote Lanfernal":"D","Liliannys Cespedes Caballero":"P","Luis Kevin Decter Mas":"P","Liliana Alvarez Rodriguez":"P","Manuel Florentino Avila Delagado":"D","Manuel Cristobal Garcia Figueroa":"D","Michel Gallardo Versagui":"P","Pedro Lazaro Cintra Oliveros":"D","RACIEL LLANES FONSECA":"P","Raubel Mesa Reyes":"D","Reimundo Ferrer Franquiz":"D","Rogelio Corria Saumel":"D","Angelica Rachel Aavarez Calana":"D","Raul Aguilar Aquiles":"D","Raul Castaneda Avila":"P","RaIdel Barrero Leyva":"P","Reinier Silegas Ramos":"D","Roger Lopez Saume":"P","Roinier Napoles Rabi":"D","Rolando Camilo Rivero Guerra":"P","Ruben de la Caridad Soler Zamora":"D","SELENA BLANCO VARGAS":"D","Thalia del Rosario Castillo Brizuela":"P","Thalia Nodarse Labrada":"D","YESINAY DIAZ ESTEVEN":"D","Yaudel Martinez Granados":"P","Yulien Rondon Traba":"P"}
+};
+// 3 empleados sin ficha aún — importar cuando se creen sus perfiles
+const _EXCEL_MAYO_PENDIENTES=[
+  {nombre:"ELSA MELANY LEAL JIMENEZ",dias:{"2026-05-01":"P","2026-05-02":"D","2026-05-03":"P","2026-05-04":"D","2026-05-05":"P","2026-05-06":"D","2026-05-07":"P","2026-05-08":"D","2026-05-09":"P","2026-05-10":"D"},totalP:5},
+  {nombre:"Yamileisis Pompa Guevara",dias:{"2026-05-01":"D","2026-05-02":"P","2026-05-03":"D","2026-05-04":"P","2026-05-05":"D","2026-05-06":"P","2026-05-07":"D","2026-05-08":"P","2026-05-09":"D","2026-05-10":"P"},totalP:5},
+  {nombre:"Zuneida Reyes Esperon",dias:{"2026-05-01":"P","2026-05-02":"D","2026-05-03":"P","2026-05-04":"D","2026-05-05":"P","2026-05-06":"D","2026-05-07":"P","2026-05-08":"D","2026-05-09":"P","2026-05-10":"D"},totalP:5}
+];
+
+function _normEmpNombre(s){
+  return (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim().replace(/\s+/g,' ');
+}
+
+function renderImportarExcel(container){
+  document.getElementById('topbar-actions').innerHTML=
+    '<button class="btn btn-secondary btn-sm" onclick="renderHistorialAsistencia(document.getElementById(\'app-content\'))">← Historial</button>';
+
+  // Build name→id map from STATE.empleados
+  const empMap={};
+  STATE.empleados.forEach(e=>{
+    empMap[_normEmpNombre(e.nombres+' '+e.apellidos)]=e.id;
+    // Also index by apellidos+nombres in case order differs
+    empMap[_normEmpNombre(e.apellidos+' '+e.nombres)]=e.id;
+  });
+
+  const fechas=Object.keys(_EXCEL_MAYO_2026).sort();
+  const records=[];
+  const sinMatch=new Set();
+
+  fechas.forEach(fecha=>{
+    const dayData=_EXCEL_MAYO_2026[fecha];
+    const existente=STATE.asistencia.find(a=>a.fecha===fecha);
+    const regId=existente?existente.id:('AS'+uid());
+    const lineas=[];
+    Object.entries(dayData).forEach(([nombre,estado])=>{
+      const empId=empMap[_normEmpNombre(nombre)];
+      if(empId) lineas.push({empleadoId:empId,estado,motivo:''});
+      else sinMatch.add(nombre);
+    });
+    const P=lineas.filter(l=>l.estado==='P').length;
+    const D=lineas.filter(l=>l.estado==='D').length;
+    records.push({id:regId,fecha,cerrado:true,registradoPor:'Importado desde Excel',horaCierre:'20:00',cierreAutomatico:false,lineas,_P:P,_D:D,_esNuevo:!existente});
+  });
+
+  // Preview table
+  let tHtml='<table style="width:100%;border-collapse:collapse;font-size:13px">'
+    +'<thead><tr>'
+    +'<th style="background:#1B4332;color:white;padding:8px 10px;text-align:left">Fecha</th>'
+    +'<th style="background:#1B4332;color:white;padding:8px 6px;text-align:center">Acción</th>'
+    +'<th style="background:#1B4332;color:white;padding:8px 6px;text-align:center">✅ P</th>'
+    +'<th style="background:#1B4332;color:white;padding:8px 6px;text-align:center">💤 D</th>'
+    +'<th style="background:#1B4332;color:white;padding:8px 6px;text-align:center">Empl.</th>'
+    +'</tr></thead><tbody>';
+  records.forEach(r=>{
+    const fd=new Date(r.fecha+'T12:00:00').toLocaleDateString('es-ES',{weekday:'short',day:'numeric',month:'short'});
+    const accion=r._esNuevo?'<span style="color:#166534;font-weight:700">+ Crear</span>':'<span style="color:#D97706;font-weight:700">↺ Actualizar</span>';
+    tHtml+=`<tr style="border-bottom:1px solid #F1F5F9"><td style="padding:8px 10px;font-weight:600">${fd}</td><td style="padding:8px 6px;text-align:center">${accion}</td><td style="padding:8px 6px;text-align:center;color:#166534;font-weight:700">${r._P}</td><td style="padding:8px 6px;text-align:center;color:#1D4ED8;font-weight:700">${r._D}</td><td style="padding:8px 6px;text-align:center;color:#6B7280">${r.lineas.length}</td></tr>`;
+  });
+  tHtml+='</tbody></table>';
+
+  // Pending employees section
+  let pendHtml='<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:12px;margin-bottom:12px">'
+    +'<div style="font-weight:700;color:#1D4ED8;margin-bottom:6px">📋 3 empleados sin ficha en el sistema (importar cuando se creen):</div>';
+  _EXCEL_MAYO_PENDIENTES.forEach(p=>{
+    const dias=Object.entries(p.dias).filter(([,v])=>v==='P').map(([f])=>new Date(f+'T12:00:00').getDate()).join(', ');
+    pendHtml+=`<div style="font-size:12px;color:#1E40AF;padding:2px 0"><b>${p.nombre}</b> — ${p.totalP} días P (días: ${dias})</div>`;
+  });
+  pendHtml+='</div>';
+
+  let warnHtml='';
+  if(sinMatch.size>0){
+    warnHtml='<div style="background:#FEF3C7;border:1.5px solid #F59E0B;border-radius:10px;padding:12px;margin-bottom:12px">'
+      +'<div style="font-weight:700;color:#92400E;margin-bottom:4px">⚠️ '+sinMatch.size+' nombre(s) sin match en el sistema (se omitirán):</div>'
+      +'<div style="font-size:11px;color:#78350F">'+[...sinMatch].map(n=>'• '+n).join('<br>')+'</div></div>';
+  }
+
+  const nuevos=records.filter(r=>r._esNuevo).length;
+  const actualizaciones=records.filter(r=>!r._esNuevo).length;
+
+  container.innerHTML=
+    '<div style="background:linear-gradient(135deg,#1B4332,#2D6A4F);color:white;border-radius:12px;padding:14px 16px;margin-bottom:14px">'
+    +'<div style="font-size:10px;letter-spacing:2px;opacity:0.7;text-transform:uppercase">Importación</div>'
+    +'<div style="font-size:17px;font-weight:800;margin-top:2px">📥 Asistencia Mayo 2026 — Excel</div>'
+    +'<div style="font-size:12px;opacity:0.75;margin-top:2px">'+records.length+' días · '+nuevos+' nuevos · '+actualizaciones+' actualizaciones · '+records.reduce((s,r)=>s+r.lineas.length,0)+' entradas totales</div>'
+    +'</div>'
+    +warnHtml+pendHtml
+    +'<div style="background:white;border-radius:12px;border:1px solid #E5E7EB;overflow:hidden;margin-bottom:14px">'+tHtml+'</div>'
+    +'<button id="btn-do-import" onclick="_doImportarExcel()" class="btn btn-success" style="width:100%;padding:13px;font-size:15px;font-weight:800">✅ Importar '+records.length+' registros a Supabase</button>'
+    +'<div id="import-progress" style="margin-top:12px"></div>';
+
+  window._importRecords=records;
+}
+
+async function _doImportarExcel(){
+  const btn=document.getElementById('btn-do-import');
+  const prog=document.getElementById('import-progress');
+  if(btn){btn.disabled=true;btn.textContent='⏳ Importando...';}
+  const records=window._importRecords||[];
+  let ok=0,err=0,errFechas=[];
+  for(const rec of records){
+    const fd=new Date(rec.fecha+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'short'});
+    if(prog) prog.innerHTML='<div style="text-align:center;color:#6B7280;font-size:13px;padding:8px">⏳ Subiendo '+fd+'... ('+( ok+err+1)+'/'+records.length+')</div>';
+    const {_P,_D,_esNuevo,...regClean}=rec;
+    try{
+      await sbUpsert('asistencia',regClean);
+      const idx=STATE.asistencia.findIndex(a=>a.fecha===regClean.fecha);
+      if(idx>=0) STATE.asistencia[idx]=regClean; else STATE.asistencia.push(regClean);
+      ok++;
+    }catch(e){
+      err++;errFechas.push(fd);
+      console.error('Import error',rec.fecha,e);
+    }
+  }
+  saveState();
+  addAuditLog('ASISTENCIA','Importación Excel Mayo 2026: '+ok+' registros, '+err+' errores');
+  if(prog) prog.innerHTML='<div style="background:'+(err?'#FEF2F2':'#DCFCE7')+';border:2px solid '+(err?'#FCA5A5':'#86EFAC')+';border-radius:12px;padding:16px;text-align:center;font-weight:800;font-size:15px;color:'+(err?'#991B1B':'#166534')+'">'
+    +(err?'⚠️ '+ok+' subidos, '+err+' con error ('+errFechas.join(', ')+')':'✅ '+ok+' registros importados correctamente a Supabase')+'</div>';
+  if(btn){btn.textContent='✅ Importación completada';btn.style.background='#6B7280';}
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function renderHistorialAsistencia(container){
   document.getElementById('topbar-actions').innerHTML =
     '<button class="btn btn-secondary btn-sm" onclick="window._tblResMes=null;renderTablaResumenAsistencia(document.getElementById(\'app-content\'))">📊 Tabla</button>'
+    +(currentRole==='admin'?'<button class="btn btn-warning btn-sm" onclick="renderImportarExcel(document.getElementById(\'app-content\'))">📥 Importar</button>':'')
     +'<button class="btn btn-primary btn-sm" onclick="subirAsistenciaLocal()" title="Sube registros cerrados del dispositivo actual a la nube">☁️ Subir local</button>';
 
   // Fetch first, render once — avoids race condition where double-render shifts rows under a tap
@@ -6230,9 +6365,9 @@ function verDetalleAsistencia(fechaOrId){
   const reg = STATE.asistencia.find(a=>a.fecha===fechaOrId) || STATE.asistencia.find(a=>a.id===fechaOrId);
   if(!reg) return;
   const fechaFmt = new Date(reg.fecha+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-  const estadoIcon = {P:'✅',D:'💤',A:'❌',T:'🕐'};
-  const estadoLabel = {P:'Presente',D:'Descansando',A:'Ausente',T:'Tardanza'};
-  const estadoColor = {P:'var(--success)',D:'#1D4ED8',A:'var(--danger)',T:'var(--warning)'};
+  const estadoIcon = {P:'✅',D:'💤',A:'❌',T:'🕐','':'—'};
+  const estadoLabel = {P:'Presente',D:'Descansando',A:'Ausente',T:'Tardanza','':'Sin marcar'};
+  const estadoColor = {P:'var(--success)',D:'#1D4ED8',A:'var(--danger)',T:'var(--warning)','':'#9CA3AF'};
   const lineasVisibles = (reg.lineas||[]).filter(function(l){
     if(currentRole !== 'jefe_turno') return true;
     const emp = STATE.empleados.find(function(e){return e.id===l.empleadoId;});
