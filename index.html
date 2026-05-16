@@ -928,8 +928,9 @@ function mergeAsistenciaRemota(remote) {
     const remoteRich = r.cerrado && r.lineas && r.lineas.length > 0;
     const localRich  = local.cerrado && local.lineas && local.lineas.length > 0;
     if (local.id === r.id) {
-      // Same record: remote wins if richer
-      if (remoteRich && !localRich) byFecha[r.fecha] = r;
+      // Mismo registro: remoto siempre gana — es la fuente de verdad al sincronizar.
+      // Antes solo ganaba si era "más rico", lo que ignoraba correcciones hechas en otro dispositivo.
+      if (remoteRich || !localRich) byFecha[r.fecha] = r;
       return;
     }
     // Different ID, same fecha: keep whichever is richer; prefer closed+lineas
@@ -4336,11 +4337,10 @@ function renderNomina(container){
       const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000));
       const dataAsist=await Promise.race([sbLeer('asistencia'),timeout]);
       if(Array.isArray(dataAsist)&&dataAsist.length>0){
-        const antes=STATE.asistencia.length;
         STATE.asistencia=mergeAsistenciaRemota(dataAsist);
         saveState();
-        // Only re-render if we actually got new records
-        if(STATE.asistencia.length!==antes&&document.getElementById('nom-mes')){
+        // Siempre re-renderizar tras sync: el contenido puede haber cambiado aunque el número de registros no
+        if(document.getElementById('nom-mes')){
           try{ cargarNomina(); }catch(e){}
         }
       }
@@ -4431,9 +4431,15 @@ function cargarNomina(){
     if(newlyAdded.length) newlyAdded.forEach(l=>pushToSheets('nominaLineas','insertar',l,null));
   }
 
-  // No recalcular automáticamente al abrir — la asistencia puede venir de otro dispositivo
-  // y el STATE local estaría desactualizado. El botón "Recalcular desde Asistencia" hace
-  // la sincronización con Supabase primero y luego recalcula.
+  // Recalcular días para borradores: se llama dos veces — una inmediata con datos locales
+  // y otra tras el sync en background de renderNomina. La segunda pasada tendrá datos correctos.
+  if(nomina.estado==='borrador'){
+    nomina.lineas.forEach(l=>{
+      const e=STATE.empleados.find(x=>x.id===l.empleadoId);
+      if(e) l.diasTrabajados=getDiasTrab(e);
+    });
+    saveState();
+  }
 
   const advertencia=!hayAsistencia&&!isReadOnly
     ?`<div style="background:#FFF3CD;border:1px solid #FBBF24;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400E;">
