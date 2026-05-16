@@ -4901,9 +4901,12 @@ function renderRevisionAsistencia(){
       </tr>`;
     }
     const presentes=getDiasPresentesMes(e.id,periodoKey);
-    // Días donde el empleado no tiene ninguna línea en el registro (verdaderamente sin registrar)
-    // Excluir 'D', 'A', 'T' que sí están registrados con un estado válido
-    const noReg=regsDelMes.filter(reg=>!(reg.lineas||[]).find(l=>l.empleadoId===e.id)).length;
+    // Días problemáticos: sin línea en absoluto O con estado vacío (JT cerró sin marcar al empleado)
+    // 'D', 'A', 'T' son estados válidos y NO se incluyen aquí
+    const noReg=regsDelMes.filter(reg=>{
+      const linea=(reg.lineas||[]).find(l=>l.empleadoId===e.id);
+      return !linea||!linea.estado;
+    }).length;
     const incMes=STATE.incidencias.filter(i=>i.empleadoId===e.id&&i.periodo===periodoKey);
     const incLabel=incMes.length?incMes.map(i=>`<span style="background:#EFF6FF;color:#1D4ED8;padding:1px 5px;border-radius:8px;font-size:10px;margin:1px">${i.tipo}</span>`).join(''):
       (noReg>0?`<span style="background:#FFF3CD;color:#92400E;padding:1px 5px;border-radius:8px;font-size:10px;">⚠️ ${noReg}d sin asignar</span>`:'');
