@@ -712,9 +712,30 @@ function loadState() {
     const r = localStorage.getItem(STORAGE_KEY);
     const pending = localStorage.getItem(STORAGE_KEY+'_pending');
     if (pending) { try { DB_PENDING_OPS = JSON.parse(pending); } catch(e){} }
-    if(r) return JSON.parse(r);
+    if(r) {
+      const saved = JSON.parse(r);
+      return normalizeState(saved);
+    }
   } catch(e){}
   return getDefaultState();
+}
+function normalizeState(s) {
+  // Ensure all array/object fields exist — guards against missing keys in old localStorage snapshots
+  const d = getDefaultState();
+  if(!s.config) s.config = d.config;
+  else {
+    s.config.pins = s.config.pins || d.config.pins;
+    s.config.bonificacion = s.config.bonificacion || d.config.bonificacion;
+  }
+  const arrays = ['empleados','traslados','bajas','sanciones','nominas','incidencias',
+    'vacacionesControl','historialSalarial','auditLog','asistencia','docsLegales',
+    'alertasJuridico','historialPreformas','vacPendientes'];
+  arrays.forEach(k => { if(!Array.isArray(s[k])) s[k] = []; });
+  if(!s.documentos || typeof s.documentos !== 'object' || Array.isArray(s.documentos)) s.documentos = {};
+  if(!s.preformas  || typeof s.preformas  !== 'object' || Array.isArray(s.preformas))  s.preformas  = {};
+  if(!s.plazas     || typeof s.plazas     !== 'object' || Array.isArray(s.plazas))     s.plazas     = {};
+  if(!s.nextId) s.nextId = 1;
+  return s;
 }
 function saveState() {
   try {
@@ -4385,9 +4406,10 @@ function cargarNomina(){
   const activos=getEmpleadosActivos();
 
   // Verificar si hay asistencia registrada en el período
-  const hayAsistencia=STATE.asistencia.some(a=>a.cerrado&&a.fecha.startsWith(periodoKey));
+  const _asist=STATE.asistencia||[];
+  const hayAsistencia=_asist.some(a=>a.cerrado&&a.fecha.startsWith(periodoKey));
   // Turnos cerrados en el período — se usa para admin/logística también
-  const turnosCerrados=STATE.asistencia.filter(a=>a.cerrado&&a.fecha.startsWith(periodoKey)).length;
+  const turnosCerrados=_asist.filter(a=>a.cerrado&&a.fecha.startsWith(periodoKey)).length;
   // Días trabajados:
   //   admin/logística → min(jornada, turnos cerrados) — comparte el mismo calendario que el resto
   //   demás → días presentes reales según asistencia del JT
@@ -4874,7 +4896,7 @@ function renderRevisionAsistencia(){
   const mesNombre=new Date(ano,mes-1).toLocaleString('es-ES',{month:'long'});
   const activos=getEmpleadosActivos();
   // Registros cerrados del mes
-  const regsDelMes=STATE.asistencia.filter(a=>a.cerrado&&a.fecha.startsWith(periodoKey));
+  const regsDelMes=(STATE.asistencia||[]).filter(a=>a.cerrado&&a.fecha.startsWith(periodoKey));
   const totalDias=regsDelMes.length;
   const cont=document.getElementById('rev-asistencia-content');
   if(!cont)return;
@@ -4913,7 +4935,7 @@ function renderRevisionAsistencia(){
       const linea=(reg.lineas||[]).find(l=>l.empleadoId===e.id);
       return !linea||!linea.estado;
     }).length;
-    const incMes=STATE.incidencias.filter(i=>i.empleadoId===e.id&&i.periodo===periodoKey);
+    const incMes=(STATE.incidencias||[]).filter(i=>i.empleadoId===e.id&&i.periodo===periodoKey);
     const incLabel=incMes.length?incMes.map(i=>`<span style="background:#EFF6FF;color:#1D4ED8;padding:1px 5px;border-radius:8px;font-size:10px;margin:1px">${i.tipo}</span>`).join(''):
       (noReg>0?`<span style="background:#FFF3CD;color:#92400E;padding:1px 5px;border-radius:8px;font-size:10px;">⚠️ ${noReg}d sin asignar</span>`:'');
     return`<tr>
