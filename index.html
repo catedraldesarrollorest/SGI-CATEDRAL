@@ -929,13 +929,13 @@ function mergeAsistenciaRemota(remote) {
     const localRich  = local.cerrado && local.lineas && local.lineas.length > 0;
     if (local.id === r.id) {
       // Mismo registro: remoto siempre gana — es la fuente de verdad al sincronizar.
-      // Antes solo ganaba si era "más rico", lo que ignoraba correcciones hechas en otro dispositivo.
-      if (remoteRich || !localRich) byFecha[r.fecha] = r;
+      byFecha[r.fecha] = r;
       return;
     }
-    // Different ID, same fecha: keep whichever is richer; prefer closed+lineas
-    if (remoteRich && !localRich) byFecha[r.fecha] = r;
-    else if (!localRich && !remoteRich && r.cerrado) byFecha[r.fecha] = r;
+    // IDs distintos, misma fecha: remoto gana si tiene lineas (es la versión canónica del servidor).
+    // El local puede tener un ID generado offline que difiere del ID en Supabase.
+    if (remoteRich) byFecha[r.fecha] = r;
+    else if (!localRich && r.cerrado) byFecha[r.fecha] = r;
     // else keep local
   });
   return Object.values(byFecha);
@@ -4326,25 +4326,21 @@ function renderNomina(container){
       <tbody id="hist-tbody"></tbody>
     </table></div></div>
   </div>`;
-  // Show nomina immediately with local data — never leave a blank screen
-  try{ cargarNomina(); }catch(err){
-    const nc=document.getElementById('nomina-content');
-    if(nc) nc.innerHTML='<div style="padding:30px;text-align:center;color:#B91C1C;background:#FEF2F2;border-radius:10px;margin:16px">⚠️ Error: '+String(err.message||err).slice(0,300)+'<br><br><button class="btn btn-primary" onclick="cargarNomina()">Reintentar</button></div>';
-  }
-  // Then sync attendance in background and refresh if new data arrives
+  // Sincronizar asistencia desde Supabase antes de renderizar — evita datos obsoletos en caché local
+  const nc=document.getElementById('nomina-content');
+  if(nc) nc.innerHTML='<div style="padding:30px;text-align:center;color:#6B7280">⏳ Sincronizando asistencia...</div>';
   (async()=>{
     try{
-      const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000));
+      const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000));
       const dataAsist=await Promise.race([sbLeer('asistencia'),timeout]);
       if(Array.isArray(dataAsist)&&dataAsist.length>0){
         STATE.asistencia=mergeAsistenciaRemota(dataAsist);
         saveState();
-        // Siempre re-renderizar tras sync: el contenido puede haber cambiado aunque el número de registros no
-        if(document.getElementById('nom-mes')){
-          try{ cargarNomina(); }catch(e){}
-        }
       }
     }catch(e){}
+    try{ cargarNomina(); }catch(err){
+      if(nc) nc.innerHTML='<div style="padding:30px;text-align:center;color:#B91C1C;background:#FEF2F2;border-radius:10px;margin:16px">⚠️ Error: '+String(err.message||err).slice(0,300)+'<br><br><button class="btn btn-primary" onclick="cargarNomina()">Reintentar</button></div>';
+    }
   })();
 }
 
