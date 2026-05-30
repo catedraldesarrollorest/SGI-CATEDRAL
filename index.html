@@ -1609,7 +1609,8 @@ const NAV_ITEMS = {
     {section:'empleados',icon:'👥',label:'Empleados',header:'CONSULTA'},
     {section:'plantilla',icon:'🗂️',label:'Plantilla de Personal'},
     {section:'incidencias',icon:'🗓️',label:'Incidencias',header:'REGISTROS'},
-    {section:'vacaciones',icon:'🌴',label:'Vacaciones'}
+    {section:'vacaciones',icon:'🌴',label:'Vacaciones'},
+    {section:'nomina',icon:'📋',label:'Pre-Nóminas',header:'NÓMINA'}
   ],
   jefe_turno:[
     {section:'dashboard',icon:'📈',label:'Inicio'},
@@ -4453,6 +4454,7 @@ function cargarNomina(){
       <div style="display:flex;gap:8px;align-items:center;">
         <span class="badge badge-${nomina.estado==='aprobada'?'approved':nomina.estado==='pendiente'?'pending':'draft'}">${nomina.estado}</span>
         <button class="btn btn-secondary btn-sm" onclick="imprimirNominaCompleta('${nomina.id}')">🖨️ Imprimir</button>
+        <button class="btn btn-gold btn-sm" onclick="exportNomina('${nomina.id}')">⬇️ Excel</button>
       </div>
     </div>
     ${advertencia}${avisoBloqueado}
@@ -4527,14 +4529,12 @@ function cargarNomina(){
     </tfoot>
   </table></div>`;
 
-  if(canEdit&&!isReadOnly){
-    html+=`<div class="card-footer" style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
-      ${nomina.estado==='borrador'?`
-        <button class="btn btn-gold" onclick="calcularNomina('${nomina.id}')">🧮 Recalcular desde Asistencia</button>
-        ${!bloqueadoRRHH?`<button class="btn btn-primary" onclick="solicitarAprobacion('${nomina.id}')">📤 Solicitar Aprobación</button>`:''}`:''}
-      ${nomina.estado==='pendiente'&&currentRole==='admin'?`<button class="btn btn-success" onclick="aprobarNomina('${nomina.id}')">✅ Aprobar Pre-Nómina</button>`:''}
-    </div>`;
-  }
+  html+=`<div class="card-footer" style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+    <button class="btn btn-gold" onclick="exportNomina('${nomina.id}')">⬇️ Exportar Excel</button>
+    ${(canEdit||currentRole==='contabilidad')&&!isReadOnly&&nomina.estado==='borrador'?`<button class="btn btn-secondary" onclick="calcularNomina('${nomina.id}')">🧮 Recalcular desde Asistencia</button>`:''}
+    ${canEdit&&!isReadOnly&&nomina.estado==='borrador'&&!bloqueadoRRHH?`<button class="btn btn-primary" onclick="solicitarAprobacion('${nomina.id}')">📤 Solicitar Aprobación</button>`:''}
+    ${canEdit&&!isReadOnly&&nomina.estado==='pendiente'&&currentRole==='admin'?`<button class="btn btn-success" onclick="aprobarNomina('${nomina.id}')">✅ Aprobar Pre-Nómina</button>`:''}
+  </div>`;
   html+=`</div>`;
   const nc=document.getElementById('nomina-content');if(nc)nc.innerHTML=html;
 }
@@ -4733,15 +4733,25 @@ function verDetalleNomina(nomId){
 
 function exportNomina(nomId){
   const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
-  exportToExcel(n.lineas.map(l=>{
-    const e=STATE.empleados.find(x=>x.id===l.empleadoId);
-    const salBase=e?e.salarioBase||0:0;const jd=e?getDiasJornada(e.jornada):0;const sd=jd>0?salBase/jd:0;
+  const empresa=STATE.config.empresa||'La Catedral S.R.L.';
+  let totBase=0,totVac=0,totBruto=0;
+  const filas=[];
+  n.lineas.forEach((l,i)=>{
+    const e=STATE.empleados.find(x=>x.id===l.empleadoId);if(!e)return;
+    const salBase=e.salarioBase||0;const jd=getDiasJornada(e.jornada);const sd=jd>0?salBase/jd:0;
     const devengado=Math.round(sd*l.diasTrabajados*100)/100;
     const vacDias=l.diasVacaciones||0;const vacAcum=Math.round(sd*vacDias*100)/100;
     const bruto=Math.round((devengado+vacAcum)*100)/100;
-    return{'Nombre':e?e.nombres:'—','Apellidos':e?e.apellidos:'—',CI:e?e.carnet:'—',Plaza:e?e.plaza:'—',Departamento:e?e.departamento:'—','Días Trabajados':l.diasTrabajados,'Sal. Base (mensual)':salBase,'Devengado':devengado,'Vac. Días':vacDias,'Vac. Acum.':vacAcum,'Salario Bruto a Cobrar':bruto};
-  }),`PreNomina_${n.mesNombre}_${n.ano}`);
-  showToast('Exportado','success');
+    totBase+=salBase;totVac+=vacAcum;totBruto+=bruto;
+    filas.push({'Nº':i+1,'Nombre y Apellido':`${e.nombres} ${e.apellidos}`,'Plaza':e.plaza||'—','Días Trabajados':l.diasTrabajados,'Sal. Base (CUP)':salBase,'Vac. (Días)':vacDias||0,'Vac. Acum. (CUP)':vacAcum,'Sal. Bruto a Cobrar (CUP)':bruto});
+  });
+  filas.push({'Nº':'','Nombre y Apellido':'TOTAL','Plaza':'','Días Trabajados':'','Sal. Base (CUP)':Math.round(totBase*100)/100,'Vac. (Días)':'','Vac. Acum. (CUP)':Math.round(totVac*100)/100,'Sal. Bruto a Cobrar (CUP)':Math.round(totBruto*100)/100});
+  const ws=XLSX.utils.json_to_sheet([]);
+  XLSX.utils.sheet_add_aoa(ws,[[empresa],[`Pre-Nómina: ${n.mesNombre} ${n.ano}`],[`Generado: ${new Date().toLocaleDateString('es-ES')}`],[]],{origin:'A1'});
+  XLSX.utils.sheet_add_json(ws,filas,{origin:'A5'});
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Pre-Nómina');
+  XLSX.writeFile(wb,`PreNomina_${n.mesNombre}_${n.ano}.xlsx`);
+  showToast('Pre-Nómina exportada a Excel ✅','success');
 }
 
 function exportNominaActual(){
