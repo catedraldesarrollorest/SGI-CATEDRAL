@@ -4321,16 +4321,27 @@ function exportSanciones(){
 // NÓMINA
 // ══════════════════════════════════════════════════
 function renderNomina(container){
-  const now=new Date();const mes=now.getMonth()+1;const ano=now.getFullYear();
+  const now=new Date();
+  // Preserve selected period if already rendered; default to current month
+  const prevMes=parseInt(document.getElementById('nom-mes')?.value)||now.getMonth()+1;
+  const prevAno=parseInt(document.getElementById('nom-ano')?.value)||now.getFullYear();
+  const mes=prevMes;const ano=prevAno;
   const tb=document.getElementById('topbar-actions');if(tb)tb.innerHTML='';
+  const meses=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   container.innerHTML=`<div class="tabs">
     <div class="tab active" onclick="switchNominaTab('nueva',this)">📋 Nómina del Mes</div>
     <div class="tab" onclick="switchNominaTab('asistencia',this)">📅 Revisar Asistencia</div>
     <div class="tab" onclick="switchNominaTab('historico',this)">📚 Histórico</div>
   </div>
   <div id="nomina-nueva">
-    <input type="hidden" id="nom-mes" value="${mes}">
-    <input type="hidden" id="nom-ano" value="${ano}">
+    <div style="display:flex;align-items:center;gap:8px;padding:12px 16px 4px;flex-wrap:wrap">
+      <button class="btn btn-secondary btn-sm" onclick="navegarNomina(-1)" title="Mes anterior">◀</button>
+      <select id="nom-mes" onchange="cargarNominaSincronizado()" style="min-width:110px">
+        ${meses.map((m,i)=>`<option value="${i+1}" ${i+1===mes?'selected':''}>${m}</option>`).join('')}
+      </select>
+      <input type="number" id="nom-ano" value="${ano}" min="2020" max="2099" onchange="cargarNominaSincronizado()" style="width:82px;text-align:center">
+      <button class="btn btn-secondary btn-sm" onclick="navegarNomina(1)" title="Mes siguiente">▶</button>
+    </div>
     <div id="nomina-content"></div>
   </div>
   <div id="nomina-asistencia" style="display:none">
@@ -4348,7 +4359,21 @@ function renderNomina(container){
       <tbody id="hist-tbody"></tbody>
     </table></div></div>
   </div>`;
-  // Sincronizar asistencia desde Supabase antes de renderizar — evita datos obsoletos en caché local
+  cargarNominaSincronizado();
+}
+
+function navegarNomina(delta){
+  const mesEl=document.getElementById('nom-mes');
+  const anoEl=document.getElementById('nom-ano');
+  if(!mesEl||!anoEl)return;
+  let mes=parseInt(mesEl.value)+delta;
+  let ano=parseInt(anoEl.value);
+  if(mes<1){mes=12;ano--;}
+  else if(mes>12){mes=1;ano++;}
+  mesEl.value=mes;anoEl.value=ano;
+  cargarNominaSincronizado();
+}
+function cargarNominaSincronizado(){
   const nc=document.getElementById('nomina-content');
   if(nc) nc.innerHTML='<div style="padding:30px;text-align:center;color:#6B7280">⏳ Sincronizando asistencia...</div>';
   (async()=>{
@@ -4360,12 +4385,11 @@ function renderNomina(container){
         saveState();
       }
     }catch(e){}
-    try{ cargarNomina(); }catch(err){
+    try{cargarNomina();}catch(err){
       if(nc) nc.innerHTML='<div style="padding:30px;text-align:center;color:#B91C1C;background:#FEF2F2;border-radius:10px;margin:16px">⚠️ Error: '+String(err.message||err).slice(0,300)+'<br><br><button class="btn btn-primary" onclick="cargarNomina()">Reintentar</button></div>';
     }
   })();
 }
-
 function switchNominaTab(tab,el){
   document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.remove('active'));el.classList.add('active');
   document.getElementById('nomina-nueva').style.display=tab==='nueva'?'block':'none';
@@ -4460,6 +4484,19 @@ function cargarNomina(){
     saveState();
   }
 
+  // Detectar empleados activos con salario diferente al de su plaza
+  const desajustesSal=(currentRole==='admin'||currentRole==='rrhh')
+    ?activos.filter(e=>{
+        const pz=getPlaza(e.departamento,e.plaza);
+        return pz&&pz.salarioBase>0&&Number(e.salarioBase)!==Number(pz.salarioBase);
+      })
+    :[];
+  const avisoSalarios=desajustesSal.length>0
+    ?`<div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#B91C1C;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <span>⚠️ <b>${desajustesSal.length} empleado${desajustesSal.length>1?'s tienen':'tiene'} salario diferente al de su plaza.</b> El cálculo de la nómina puede estar incorrecto.</span>
+        <button class="btn btn-primary btn-sm" onclick="sincronizarSalariosDesidePlazas();cargarNomina()">🔄 Sincronizar Salarios</button>
+      </div>`:'';
+
   const advertencia=!hayAsistencia&&!isReadOnly
     ?`<div style="background:#FFF3CD;border:1px solid #FBBF24;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400E;">
       ⚠️ No hay registros de asistencia cerrados para este período. Los días mostrados son los de jornada base. Registra la asistencia diaria antes de generar la nómina.
@@ -4479,7 +4516,7 @@ function cargarNomina(){
         <button class="btn btn-gold btn-sm" onclick="exportNomina('${nomina.id}')">⬇️ Excel</button>
       </div>
     </div>
-    ${advertencia}${avisoBloqueado}
+    ${avisoSalarios}${advertencia}${avisoBloqueado}
     <div class="table-wrap"><table class="nomina-table"><thead><tr>
       <th>Nº</th><th>Nombre y Apellido</th><th>Plaza</th>
       <th data-tip="Días trabajados este mes según asistencia">Días Trabajados</th>
