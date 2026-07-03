@@ -812,6 +812,8 @@ const AUDITLOG_COLS = ['id','fecha','rol','tipo','detalle'];
 const PREFORMAS_COLS = ['id','grupo','disciplina','caracteristicas'];
 const CONFIG_COLS    = ['clave','valor'];
 const PLAZAS_COLS    = ['id','departamento','nombre','salarioBase','jornada','tipoContrato','descripcion','funcionesPdfId','funcionesPdfUrl'];
+const NOMINAS_COLS      = ['id','periodo','mes','ano','mesNombre','estado','totalDevengado','totalNeto','fechaAprobacion','aprobadaFecha','aprobadaPor'];
+const NOMINALINEAS_COLS = ['id','nominaId','empleadoId','diasTrabajados','horasExtras','totalDevengado','diasVacaciones','fuenteDias'];
 
 function cleanForSB(tabla, obj) {
   if (!obj || typeof obj !== 'object') return obj;
@@ -830,6 +832,12 @@ function cleanForSB(tabla, obj) {
     Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
   } else if (tabla === 'plazas') {
     const allowed = new Set(PLAZAS_COLS);
+    Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
+  } else if (tabla === 'nominas') {
+    const allowed = new Set(NOMINAS_COLS);
+    Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
+  } else if (tabla === 'nominaLineas') {
+    const allowed = new Set(NOMINALINEAS_COLS);
     Object.keys(clean).forEach(k => { if (!allowed.has(k)) delete clean[k]; });
   } else if (tabla === 'asistencia') {
     // Map camelCase → lowercase PostgreSQL column names
@@ -1304,13 +1312,15 @@ async function sincronizarDesdeSheets() {
             if (!nom.lineas) nom.lineas = [];
             const existing = nom.lineas.find(l => l.empleadoId === linea.empleadoId);
             if (existing) {
+              if (!existing.id && linea.id) existing.id = linea.id;
+              if (existing.diasVacaciones == null && linea.diasVacaciones != null) existing.diasVacaciones = parseFloat(linea.diasVacaciones)||0;
               if (!existing.totalDevengado && parseFloat(linea.totalDevengado)) {
                 existing.diasTrabajados = parseFloat(linea.diasTrabajados)||existing.diasTrabajados;
                 existing.horasExtras = parseFloat(linea.horasExtras)||existing.horasExtras;
                 existing.totalDevengado = parseFloat(linea.totalDevengado);
               }
             } else {
-              nom.lineas.push({ empleadoId: linea.empleadoId, diasTrabajados: parseFloat(linea.diasTrabajados)||0, horasExtras: parseFloat(linea.horasExtras)||0, totalDevengado: parseFloat(linea.totalDevengado)||0 });
+              nom.lineas.push({ id: linea.id, nominaId: linea.nominaId, empleadoId: linea.empleadoId, diasTrabajados: parseFloat(linea.diasTrabajados)||0, horasExtras: parseFloat(linea.horasExtras)||0, totalDevengado: parseFloat(linea.totalDevengado)||0, diasVacaciones: linea.diasVacaciones != null ? parseFloat(linea.diasVacaciones)||0 : null, fuenteDias: linea.fuenteDias||undefined });
             }
           }
         });
@@ -4449,7 +4459,7 @@ function cargarNomina(){
 
   if(!nomina){
     nomina={id:'N'+uid(),periodo:periodoKey,mes,ano,mesNombre,estado:'borrador',lineas:[],totalDevengado:0,totalNeto:0};
-    activos.forEach(e=>nomina.lineas.push({empleadoId:e.id,nominaId:nomina.id,diasTrabajados:getDiasTrab(e),horasExtras:0,fuenteDias:esDeptoAdmin(e.departamento)?'auto':'asistencia'}));
+    activos.forEach(e=>nomina.lineas.push({id:'NL'+nomina.id+'-'+e.id,empleadoId:e.id,nominaId:nomina.id,diasTrabajados:getDiasTrab(e),horasExtras:0,fuenteDias:esDeptoAdmin(e.departamento)?'auto':'asistencia'}));
     STATE.nominas.push(nomina);saveState();
     const {lineas:_l,...nominaHeader}=nomina;
     pushToSheets('nominas','insertar',nominaHeader,null);
@@ -4466,7 +4476,7 @@ function cargarNomina(){
     const newlyAdded=[];
     activos.forEach(e=>{
       if(!nomina.lineas.find(l=>l.empleadoId===e.id)){
-        const nl={empleadoId:e.id,nominaId:nomina.id,diasTrabajados:getDiasTrab(e),horasExtras:0,fuenteDias:esDeptoAdmin(e.departamento)?'auto':'asistencia'};
+        const nl={id:'NL'+nomina.id+'-'+e.id,empleadoId:e.id,nominaId:nomina.id,diasTrabajados:getDiasTrab(e),horasExtras:0,fuenteDias:esDeptoAdmin(e.departamento)?'auto':'asistencia'};
         nomina.lineas.push(nl);newlyAdded.push(nl);
       }
     });
@@ -4654,7 +4664,7 @@ async function calcularNomina(nomId){
   saveState();
   const {lineas:_l,...nominaHeader}=nomina;
   pushToSheets('nominas','actualizar',nominaHeader,nomina.id);
-  nomina.lineas.forEach(l=>{const lineaData={...l,nominaId:nomina.id};pushToSheets('nominaLineas','actualizar',lineaData,lineaData.id||null);});
+  nomina.lineas.forEach(l=>{if(!l.id)l.id='NL'+nomina.id+'-'+l.empleadoId;const lineaData={...l,nominaId:nomina.id};pushToSheets('nominaLineas','actualizar',lineaData,lineaData.id);});
   showToast('Pre-Nómina recalculada con asistencia actualizada ✅','success');
 }
 
@@ -5084,7 +5094,8 @@ function guardarIncidencia(){
       const linea=nomina.lineas.find(l=>l.empleadoId===empId);
       if(linea){
         linea.diasTrabajados=Math.max(0,linea.diasTrabajados-diasAfectados);
-        pushToSheets('nominaLineas','actualizar',{...linea,nominaId:nomina.id},linea.id||null);
+        if(!linea.id)linea.id='NL'+nomina.id+'-'+linea.empleadoId;
+        pushToSheets('nominaLineas','actualizar',{...linea,nominaId:nomina.id},linea.id);
         const {lineas:_l,...nominaHeader}=nomina;
         pushToSheets('nominas','actualizar',nominaHeader,nomina.id);
       }
