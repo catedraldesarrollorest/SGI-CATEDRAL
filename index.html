@@ -5594,7 +5594,10 @@ function seleccionarJefeTurno(empId){
   const hoy=hoyLocal();
   const activos=getEmpleadosActivos().filter(e=>!DEPTS_EXCLUIDOS_JEFE_TURNO.includes(e.departamento));
   const registroHoy=STATE.asistencia.find(a=>a.fecha===hoy);
-  renderAsistenciaJefeTurno(container,hoy,activos,registroHoy,false);
+  // Si el turno ya fue cerrado (p.ej. desde otro dispositivo tras sincronizar), abrir en solo lectura
+  const yaCerrado=!!(registroHoy&&registroHoy.cerrado);
+  renderAsistenciaJefeTurno(container,hoy,activos,registroHoy,yaCerrado);
+  if(yaCerrado)return;
   // JT de SALA que toma → TRABAJA; el otro JT de SALA → DESCANSA
   const todosJT=_jt_emps.filter(e=>e.plaza&&e.plaza.toLowerCase().includes('jefe de turno')&&e.departamento==='SALA');
   todosJT.forEach(jt=>{ _jt_estados[jt.id]={estado:jt.id===empId?'P':'D',motivo:''}; });
@@ -5790,6 +5793,7 @@ function _updateCountersJT(){
 
 function autoGuardarTurnoJT(){
   let reg=STATE.asistencia.find(a=>a.fecha===_jt_hoy);
+  if(reg&&reg.cerrado)return; // no tocar un turno ya cerrado (incluso si se cerró desde otro dispositivo)
   // Incluir TODOS los empleados del turno, incluso sin asignar (estado:'')
   // para que la nómina los trate como 0 días y no como jornada completa
   const lineas=_jt_emps.map(e=>({
@@ -5798,7 +5802,12 @@ function autoGuardarTurnoJT(){
     motivo:(_jt_estados[e.id]||{}).motivo||''
   }));
   if(!reg){reg={id:'AS'+uid(),fecha:_jt_hoy,cerrado:false,registradoPor:_jt_nombre||getRoleName(currentRole),lineas};STATE.asistencia.push(reg);}
-  else reg.lineas=lineas;
+  else {
+    // Conservar líneas de empleados fuera de la vista del JT (ej. Administración marcada por RRHH)
+    const idsJT=new Set(_jt_emps.map(e=>e.id));
+    const otras=(reg.lineas||[]).filter(l=>!idsJT.has(l.empleadoId));
+    reg.lineas=lineas.concat(otras);
+  }
   saveState();
 }
 
@@ -6064,7 +6073,11 @@ function autoGuardarTurno(hoy){
     registro = {id:'AS'+uid(), fecha:hoy, cerrado:false, registradoPor:getRoleName(currentRole), lineas:lineas};
     STATE.asistencia.push(registro);
   } else {
-    registro.lineas = lineas;
+    if(registro.cerrado) return; // no sobrescribir un turno ya cerrado
+    // Conservar líneas de empleados que no están en la vista actual
+    const ids = new Set(activos.map(function(e){ return e.id; }));
+    const otras = (registro.lineas||[]).filter(function(l){ return !ids.has(l.empleadoId); });
+    registro.lineas = lineas.concat(otras);
   }
   saveState();
 }
