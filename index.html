@@ -712,9 +712,30 @@ function loadState() {
     const r = localStorage.getItem(STORAGE_KEY);
     const pending = localStorage.getItem(STORAGE_KEY+'_pending');
     if (pending) { try { DB_PENDING_OPS = JSON.parse(pending); } catch(e){} }
-    if(r) return JSON.parse(r);
+    if(r) {
+      const saved = JSON.parse(r);
+      return normalizeState(saved);
+    }
   } catch(e){}
   return getDefaultState();
+}
+function normalizeState(s) {
+  // Ensure all array/object fields exist — guards against missing keys in old localStorage snapshots
+  const d = getDefaultState();
+  if(!s.config) s.config = d.config;
+  else {
+    s.config.pins = s.config.pins || d.config.pins;
+    s.config.bonificacion = s.config.bonificacion || d.config.bonificacion;
+  }
+  const arrays = ['empleados','traslados','bajas','sanciones','nominas','incidencias',
+    'vacacionesControl','historialSalarial','auditLog','asistencia','docsLegales',
+    'alertasJuridico','historialPreformas','vacPendientes'];
+  arrays.forEach(k => { if(!Array.isArray(s[k])) s[k] = []; });
+  if(!s.documentos || typeof s.documentos !== 'object' || Array.isArray(s.documentos)) s.documentos = {};
+  if(!s.preformas  || typeof s.preformas  !== 'object' || Array.isArray(s.preformas))  s.preformas  = {};
+  if(!s.plazas     || typeof s.plazas     !== 'object' || Array.isArray(s.plazas))     s.plazas     = {};
+  if(!s.nextId) s.nextId = 1;
+  return s;
 }
 function saveState() {
   try {
@@ -936,13 +957,14 @@ function mergeAsistenciaRemota(remote) {
     const remoteRich = r.cerrado && r.lineas && r.lineas.length > 0;
     const localRich  = local.cerrado && local.lineas && local.lineas.length > 0;
     if (local.id === r.id) {
-      // Same record: remote wins if richer
-      if (remoteRich && !localRich) byFecha[r.fecha] = r;
+      // Mismo registro: remoto siempre gana — es la fuente de verdad al sincronizar.
+      byFecha[r.fecha] = r;
       return;
     }
-    // Different ID, same fecha: keep whichever is richer; prefer closed+lineas
-    if (remoteRich && !localRich) byFecha[r.fecha] = r;
-    else if (!localRich && !remoteRich && r.cerrado) byFecha[r.fecha] = r;
+    // IDs distintos, misma fecha: remoto gana si tiene lineas (es la versión canónica del servidor).
+    // El local puede tener un ID generado offline que difiere del ID en Supabase.
+    if (remoteRich) byFecha[r.fecha] = r;
+    else if (!localRich && r.cerrado) byFecha[r.fecha] = r;
     // else keep local
   });
   return Object.values(byFecha);
@@ -1618,7 +1640,8 @@ const NAV_ITEMS = {
     {section:'empleados',icon:'👥',label:'Empleados',header:'CONSULTA'},
     {section:'plantilla',icon:'🗂️',label:'Plantilla de Personal'},
     {section:'incidencias',icon:'🗓️',label:'Incidencias',header:'REGISTROS'},
-    {section:'vacaciones',icon:'🌴',label:'Vacaciones'}
+    {section:'vacaciones',icon:'🌴',label:'Vacaciones'},
+    {section:'nomina',icon:'📋',label:'Pre-Nóminas',header:'NÓMINA'}
   ],
   jefe_turno:[
     {section:'dashboard',icon:'📈',label:'Inicio'},
@@ -1742,6 +1765,8 @@ function fmtDate(d){
   if(m)return`${m[3]}/${m[2]}/${m[1]}`;
   try{return new Date(d).toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'})}catch(e){return d}
 }
+// Fecha de hoy en hora LOCAL (toISOString usa UTC: en Cuba después de las 8pm daría el día siguiente)
+function hoyLocal(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function fmtMoney(n){if(n==null||isNaN(n))return'—';return new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(n)+' CUP';}
 function calcAntiguedad(fechaAlta){
   if(!fechaAlta)return 0;
@@ -2072,7 +2097,7 @@ async function subirArchivoDrive(file, empId, carpetaId, tipoDoc) {
       try {
         const b64 = ev.target.result; // incluye prefijo data:...
         const mime = file.type || 'application/octet-stream';
-        const ts   = new Date().toISOString().slice(0,10);
+        const ts   = hoyLocal();
         const nombre = tipoDoc + '_' + ts + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
         const res = await apiCall({
           accion: 'subirDrive',
@@ -2094,7 +2119,7 @@ async function subirArchivoDrive(file, empId, carpetaId, tipoDoc) {
 
 async function subirBase64ADrive(b64, mimeType, nombre, empId, carpetaId, tipoDoc) {
   // Para subir desde base64 ya existente (fotos tomadas con cámara)
-  const ts = new Date().toISOString().slice(0,10);
+  const ts = hoyLocal();
   const nombreFinal = tipoDoc + '_' + ts + '.' + (mimeType.split('/')[1]||'jpg');
   const res = await apiCall({
     accion: 'subirDrive',
@@ -2124,7 +2149,7 @@ async function registrarDocumentoSheets(empleadoId, tipo, fileId, viewUrl, nombr
     id: 'DOC_' + Date.now(),
     empleadoId, tipo, nombre,
     fileId, viewUrl,
-    fecha: new Date().toISOString().slice(0,10),
+    fecha: hoyLocal(),
     tamaño: tamaño || ''
   };
   try { await apiCall({ accion:'insertar', tabla:'documentos', valores: docReg }); }
@@ -2287,7 +2312,7 @@ function renderDashboard(container){
     <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:#aaa;margin-bottom:12px;padding-left:2px">Resumen</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:24px;">
     ${currentRole==='jefe_turno'?(()=>{
-      const hoyISO=new Date().toISOString().slice(0,10);
+      const hoyISO=hoyLocal();
       const regHoy=STATE.asistencia.find(a=>a.fecha===hoyISO);
       const lineas=regHoy?(regHoy.lineas||[]).filter(l=>{const e=STATE.empleados.find(x=>x.id===l.empleadoId);return e&&!DEPTS_EXCLUIDOS_JEFE_TURNO.includes(e.departamento);}):[];
       const P=lineas.filter(l=>l.estado==='P').length;
@@ -2412,7 +2437,7 @@ function applyFilters(){
 
 function exportEmpleados(){
   const data=STATE.empleados.map(e=>({Nombre:`${e.nombres} ${e.apellidos}`,Carnet:e.carnet,Departamento:e.departamento,Plaza:e.plaza,'Salario Base':e.salarioBase||0,Jornada:getLabelJornada(e.jornada),Estado:e.activo?'Activo':'Baja','Fecha Alta':fmtDate(e.fechaAlta),'Años':calcAntiguedad(e.fechaAlta)}));
-  exportToExcel(data,'Empleados_LaCatedral_'+new Date().toISOString().slice(0,10));
+  exportToExcel(data,'Empleados_LaCatedral_'+hoyLocal());
   showToast('Exportado a Excel','success');
 }
 
@@ -3089,7 +3114,7 @@ async function guardarAlta(){
     tipo:'NUEVO_EMPLEADO',
     empleadoId:id,
     empleadoNombre:nombres+' '+apellidos,
-    fecha:new Date().toISOString().slice(0,10),
+    fecha:hoyLocal(),
     mensaje:emp.departamento+' / '+emp.plaza+' — '+emp.tipoContrato+'. Pendiente de generar y firmar contrato.',
     leida:false
   });
@@ -3373,7 +3398,7 @@ function openModalTraslado(){
     `<div class="form-grid">
       <div class="form-group full"><label class="field-label required">Empleado</label>
         <select id="tr-emp"><option value="">Seleccione...</option>${activos.map(e=>`<option value="${e.id}">${e.nombres} ${e.apellidos}</option>`).join('')}</select></div>
-      <div class="form-group"><label class="field-label required">Fecha</label><input type="date" id="tr-fecha" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="form-group"><label class="field-label required">Fecha</label><input type="date" id="tr-fecha" value="${hoyLocal()}"></div>
       <div class="form-group"><label class="field-label required">Motivo</label><input type="text" id="tr-motivo" placeholder="Motivo del traslado"></div>
       <div class="form-group"><label class="field-label required">Nuevo Departamento</label><select id="tr-dept" onchange="updateTraslPlazas()">${depts.map(d=>`<option>${d}</option>`).join('')}</select></div>
       <div class="form-group"><label class="field-label required">Nueva Plaza</label><select id="tr-plaza"></select></div>
@@ -3499,7 +3524,7 @@ function openModalBaja(){
     `<div class="form-grid">
       <div class="form-group full"><label class="field-label required">Empleado</label>
         <select id="baja-emp"><option value="">Seleccione...</option>${activos.map(e=>`<option value="${e.id}">${e.nombres} ${e.apellidos}</option>`).join('')}</select></div>
-      <div class="form-group"><label class="field-label required">Fecha de Baja</label><input type="date" id="baja-fecha" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="form-group"><label class="field-label required">Fecha de Baja</label><input type="date" id="baja-fecha" value="${hoyLocal()}"></div>
       <div class="form-group"><label class="field-label required">Motivo</label>
         <select id="baja-motivo-tipo"><option>Despido</option><option>Renuncia voluntaria</option><option>Jubilación</option><option>Fallecimiento</option><option>Fin de contrato</option><option>Otro</option></select></div>
       <div class="form-group full"><label class="field-label">Detalle</label><textarea id="baja-detalle" placeholder="Descripción adicional..."></textarea></div>
@@ -3556,7 +3581,7 @@ function exportBajas(){
 
 function fichaDarBaja(empId){
   const emp=STATE.empleados.find(e=>e.id===empId);if(!emp)return;
-  const hoy=new Date().toISOString().slice(0,10);
+  const hoy=hoyLocal();
   openModal('📤 Dar de Baja — '+emp.nombres+' '+emp.apellidos,
     `<div class="form-grid">
       <div class="form-group"><label class="field-label required">Fecha de Baja</label><input type="date" id="fdb-fecha" value="${hoy}"></div>
@@ -4138,7 +4163,7 @@ function openModalFechaContrato(){
     '<p class="text-muted" style="margin-bottom:16px;">El contrato original se archiva en papel. Solo se registra la fecha de firma.</p>'
     +'<div class="form-grid">'
     +'<div class="form-group full"><label class="field-label required">Empleado</label><select id="fc-emp"><option value="">Seleccione...</option>'+optsHtml+'</select></div>'
-    +'<div class="form-group"><label class="field-label required">Fecha de Firma</label><input type="date" id="fc-fecha" value="'+new Date().toISOString().slice(0,10)+'"></div>'
+    +'<div class="form-group"><label class="field-label required">Fecha de Firma</label><input type="date" id="fc-fecha" value="'+hoyLocal()+'"></div>'
     +'<div class="form-group"><label class="field-label">Observaciones</label><input type="text" id="fc-obs" placeholder="Opcional..."></div>'
     +'</div>',
     '<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>'
@@ -4152,7 +4177,7 @@ function openModalFechaContratoEmp(empId){
   openModal('📝 Fecha de Firma — '+emp.nombres+' '+emp.apellidos,
     '<p class="text-muted" style="margin-bottom:16px;">El contrato original se archiva en papel. Solo se registra la fecha de firma.</p>'
     +'<div class="form-grid">'
-    +'<div class="form-group"><label class="field-label required">Fecha de Firma</label><input type="date" id="fc-fecha" value="'+(doc.contratoFecha||new Date().toISOString().slice(0,10))+'"></div>'
+    +'<div class="form-group"><label class="field-label required">Fecha de Firma</label><input type="date" id="fc-fecha" value="'+(doc.contratoFecha||hoyLocal())+'"></div>'
     +'<div class="form-group"><label class="field-label">Observaciones</label><input type="text" id="fc-obs" value="'+(doc.contratoObs||'')+'" placeholder="Opcional..."></div>'
     +'</div>',
     '<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>'
@@ -4264,7 +4289,7 @@ function openModalSancion(){
   openModal('⚠️ Registrar Sanción',
     `<div class="form-grid">
       <div class="form-group full"><label class="field-label required">Empleado</label><select id="san-emp"><option value="">Seleccione...</option>${activos.map(e=>`<option value="${e.id}">${e.nombres} ${e.apellidos}</option>`).join('')}</select></div>
-      <div class="form-group"><label class="field-label required">Fecha</label><input type="date" id="san-fecha" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="form-group"><label class="field-label required">Fecha</label><input type="date" id="san-fecha" value="${hoyLocal()}"></div>
       <div class="form-group"><label class="field-label required">Tipo</label><select id="san-tipo"><option>Amonestación</option><option>Suspensión</option><option>Multa</option><option>Despido</option></select></div>
       <div class="form-group full"><label class="field-label required">Motivo detallado</label><textarea id="san-motivo" placeholder="Describa el motivo..."></textarea></div>
       <div class="form-group full"><label class="field-label">Adjuntar Documento</label>
@@ -4308,16 +4333,27 @@ function exportSanciones(){
 // NÓMINA
 // ══════════════════════════════════════════════════
 function renderNomina(container){
-  const now=new Date();const mes=now.getMonth()+1;const ano=now.getFullYear();
+  const now=new Date();
+  // Preserve selected period if already rendered; default to current month
+  const prevMes=parseInt(document.getElementById('nom-mes')?.value)||now.getMonth()+1;
+  const prevAno=parseInt(document.getElementById('nom-ano')?.value)||now.getFullYear();
+  const mes=prevMes;const ano=prevAno;
   const tb=document.getElementById('topbar-actions');if(tb)tb.innerHTML='';
+  const meses=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   container.innerHTML=`<div class="tabs">
     <div class="tab active" onclick="switchNominaTab('nueva',this)">📋 Nómina del Mes</div>
     <div class="tab" onclick="switchNominaTab('asistencia',this)">📅 Revisar Asistencia</div>
     <div class="tab" onclick="switchNominaTab('historico',this)">📚 Histórico</div>
   </div>
   <div id="nomina-nueva">
-    <input type="hidden" id="nom-mes" value="${mes}">
-    <input type="hidden" id="nom-ano" value="${ano}">
+    <div style="display:flex;align-items:center;gap:8px;padding:12px 16px 4px;flex-wrap:wrap">
+      <button class="btn btn-secondary btn-sm" onclick="navegarNomina(-1)" title="Mes anterior">◀</button>
+      <select id="nom-mes" onchange="cargarNominaSincronizado()" style="min-width:110px">
+        ${meses.map((m,i)=>`<option value="${i+1}" ${i+1===mes?'selected':''}>${m}</option>`).join('')}
+      </select>
+      <input type="number" id="nom-ano" value="${ano}" min="2020" max="2099" onchange="cargarNominaSincronizado()" style="width:82px;text-align:center">
+      <button class="btn btn-secondary btn-sm" onclick="navegarNomina(1)" title="Mes siguiente">▶</button>
+    </div>
     <div id="nomina-content"></div>
   </div>
   <div id="nomina-asistencia" style="display:none">
@@ -4335,29 +4371,37 @@ function renderNomina(container){
       <tbody id="hist-tbody"></tbody>
     </table></div></div>
   </div>`;
-  // Show nomina immediately with local data — never leave a blank screen
-  try{ cargarNomina(); }catch(err){
-    const nc=document.getElementById('nomina-content');
-    if(nc) nc.innerHTML='<div style="padding:30px;text-align:center;color:#B91C1C;background:#FEF2F2;border-radius:10px;margin:16px">⚠️ Error: '+String(err.message||err).slice(0,300)+'<br><br><button class="btn btn-primary" onclick="cargarNomina()">Reintentar</button></div>';
-  }
-  // Then sync attendance in background and refresh if new data arrives
-  (async()=>{
-    try{
-      const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000));
-      const dataAsist=await Promise.race([sbLeer('asistencia'),timeout]);
-      if(Array.isArray(dataAsist)&&dataAsist.length>0){
-        const antes=STATE.asistencia.length;
-        STATE.asistencia=mergeAsistenciaRemota(dataAsist);
-        saveState();
-        // Only re-render if we actually got new records
-        if(STATE.asistencia.length!==antes&&document.getElementById('nom-mes')){
-          try{ cargarNomina(); }catch(e){}
-        }
-      }
-    }catch(e){}
-  })();
+  cargarNominaSincronizado();
 }
 
+function navegarNomina(delta){
+  const mesEl=document.getElementById('nom-mes');
+  const anoEl=document.getElementById('nom-ano');
+  if(!mesEl||!anoEl)return;
+  let mes=parseInt(mesEl.value)+delta;
+  let ano=parseInt(anoEl.value);
+  if(mes<1){mes=12;ano--;}
+  else if(mes>12){mes=1;ano++;}
+  mesEl.value=mes;anoEl.value=ano;
+  cargarNominaSincronizado();
+}
+function cargarNominaSincronizado(){
+  const nc=document.getElementById('nomina-content');
+  if(nc) nc.innerHTML='<div style="padding:30px;text-align:center;color:#6B7280">⏳ Sincronizando asistencia...</div>';
+  (async()=>{
+    try{
+      const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000));
+      const dataAsist=await Promise.race([sbLeer('asistencia'),timeout]);
+      if(Array.isArray(dataAsist)&&dataAsist.length>0){
+        STATE.asistencia=mergeAsistenciaRemota(dataAsist);
+        saveState();
+      }
+    }catch(e){}
+    try{cargarNomina();}catch(err){
+      if(nc) nc.innerHTML='<div style="padding:30px;text-align:center;color:#B91C1C;background:#FEF2F2;border-radius:10px;margin:16px">⚠️ Error: '+String(err.message||err).slice(0,300)+'<br><br><button class="btn btn-primary" onclick="cargarNomina()">Reintentar</button></div>';
+    }
+  })();
+}
 function switchNominaTab(tab,el){
   document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.remove('active'));el.classList.add('active');
   document.getElementById('nomina-nueva').style.display=tab==='nueva'?'block':'none';
@@ -4388,7 +4432,11 @@ function cargarNomina(){
   const ano=parseInt(document.getElementById('nom-ano').value);
   const mesNombre=new Date(ano,mes-1).toLocaleString('es-ES',{month:'long'});
   const periodoKey=`${ano}-${String(mes).padStart(2,'0')}`;
-  let nomina=STATE.nominas.find(n=>n.periodo===periodoKey);
+  // Si hay nóminas duplicadas del mismo período (creadas desde 2 dispositivos antes de sincronizar),
+  // elegir la más avanzada: aprobada > pendiente > borrador, y a igualdad la que tenga más líneas
+  const _rankEstado={aprobada:3,pendiente:2,borrador:1};
+  let nomina=STATE.nominas.filter(n=>n.periodo===periodoKey)
+    .sort((a,b)=>((_rankEstado[b.estado]||0)-(_rankEstado[a.estado]||0))||(((b.lineas||[]).length)-((a.lineas||[]).length)))[0];
   const canEdit=currentRole==='rrhh'||currentRole==='admin';
   const isReadOnly=(nomina&&nomina.estado==='aprobada'&&currentRole!=='admin')||(nomina&&nomina.estado==='pendiente'&&currentRole==='rrhh');
   // RRHH no puede editar ni enviar a aprobación mientras el mes esté en curso
@@ -4398,9 +4446,10 @@ function cargarNomina(){
   const activos=getEmpleadosActivos();
 
   // Verificar si hay asistencia registrada en el período
-  const hayAsistencia=STATE.asistencia.some(a=>a.cerrado&&a.fecha.startsWith(periodoKey));
+  const _asist=STATE.asistencia||[];
+  const hayAsistencia=_asist.some(a=>a.cerrado&&a.fecha.startsWith(periodoKey));
   // Turnos cerrados en el período — se usa para admin/logística también
-  const turnosCerrados=STATE.asistencia.filter(a=>a.cerrado&&a.fecha.startsWith(periodoKey)).length;
+  const turnosCerrados=_asist.filter(a=>a.cerrado&&a.fecha.startsWith(periodoKey)).length;
   // Días trabajados:
   //   admin/logística → min(jornada, turnos cerrados) — comparte el mismo calendario que el resto
   //   demás → días presentes reales según asistencia del JT
@@ -4441,9 +4490,28 @@ function cargarNomina(){
     if(newlyAdded.length) newlyAdded.forEach(l=>pushToSheets('nominaLineas','insertar',l,null));
   }
 
-  // No recalcular automáticamente al abrir — la asistencia puede venir de otro dispositivo
-  // y el STATE local estaría desactualizado. El botón "Recalcular desde Asistencia" hace
-  // la sincronización con Supabase primero y luego recalcula.
+  // Recalcular días para borradores: se llama dos veces — una inmediata con datos locales
+  // y otra tras el sync en background de renderNomina. La segunda pasada tendrá datos correctos.
+  if(nomina.estado==='borrador'){
+    nomina.lineas.forEach(l=>{
+      const e=STATE.empleados.find(x=>x.id===l.empleadoId);
+      if(e) l.diasTrabajados=getDiasTrab(e);
+    });
+    saveState();
+  }
+
+  // Detectar empleados activos con salario diferente al de su plaza
+  const desajustesSal=(currentRole==='admin'||currentRole==='rrhh')
+    ?activos.filter(e=>{
+        const pz=getPlaza(e.departamento,e.plaza);
+        return pz&&pz.salarioBase>0&&Number(e.salarioBase)!==Number(pz.salarioBase);
+      })
+    :[];
+  const avisoSalarios=desajustesSal.length>0
+    ?`<div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#B91C1C;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <span>⚠️ <b>${desajustesSal.length} empleado${desajustesSal.length>1?'s tienen':'tiene'} salario diferente al de su plaza.</b> El cálculo de la nómina puede estar incorrecto.</span>
+        <button class="btn btn-primary btn-sm" onclick="sincronizarSalariosDesidePlazas();cargarNomina()">🔄 Sincronizar Salarios</button>
+      </div>`:'';
 
   const advertencia=!hayAsistencia&&!isReadOnly
     ?`<div style="background:#FFF3CD;border:1px solid #FBBF24;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400E;">
@@ -4461,9 +4529,10 @@ function cargarNomina(){
       <div style="display:flex;gap:8px;align-items:center;">
         <span class="badge badge-${nomina.estado==='aprobada'?'approved':nomina.estado==='pendiente'?'pending':'draft'}">${nomina.estado}</span>
         <button class="btn btn-secondary btn-sm" onclick="imprimirNominaCompleta('${nomina.id}')">🖨️ Imprimir</button>
+        <button class="btn btn-gold btn-sm" onclick="exportNomina('${nomina.id}')">⬇️ Excel</button>
       </div>
     </div>
-    ${advertencia}${avisoBloqueado}
+    ${avisoSalarios}${advertencia}${avisoBloqueado}
     <div class="table-wrap"><table class="nomina-table"><thead><tr>
       <th>Nº</th><th>Nombre y Apellido</th><th>Plaza</th>
       <th data-tip="Días trabajados este mes según asistencia">Días Trabajados</th>
@@ -4535,14 +4604,12 @@ function cargarNomina(){
     </tfoot>
   </table></div>`;
 
-  if(canEdit&&!isReadOnly){
-    html+=`<div class="card-footer" style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
-      ${nomina.estado==='borrador'?`
-        <button class="btn btn-gold" onclick="calcularNomina('${nomina.id}')">🧮 Recalcular desde Asistencia</button>
-        ${!bloqueadoRRHH?`<button class="btn btn-primary" onclick="solicitarAprobacion('${nomina.id}')">📤 Solicitar Aprobación</button>`:''}`:''}
-      ${nomina.estado==='pendiente'&&currentRole==='admin'?`<button class="btn btn-success" onclick="aprobarNomina('${nomina.id}')">✅ Aprobar Pre-Nómina</button>`:''}
-    </div>`;
-  }
+  html+=`<div class="card-footer" style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+    <button class="btn btn-gold" onclick="exportNomina('${nomina.id}')">⬇️ Exportar Excel</button>
+    ${(canEdit||currentRole==='contabilidad')&&!isReadOnly&&nomina.estado==='borrador'?`<button class="btn btn-secondary" onclick="calcularNomina('${nomina.id}')">🧮 Recalcular desde Asistencia</button>`:''}
+    ${canEdit&&!isReadOnly&&nomina.estado==='borrador'&&!bloqueadoRRHH?`<button class="btn btn-primary" onclick="solicitarAprobacion('${nomina.id}')">📤 Solicitar Aprobación</button>`:''}
+    ${canEdit&&!isReadOnly&&nomina.estado==='pendiente'&&currentRole==='admin'?`<button class="btn btn-success" onclick="aprobarNomina('${nomina.id}')">✅ Aprobar Pre-Nómina</button>`:''}
+  </div>`;
   html+=`</div>`;
   const nc=document.getElementById('nomina-content');if(nc)nc.innerHTML=html;
 }
@@ -4741,15 +4808,25 @@ function verDetalleNomina(nomId){
 
 function exportNomina(nomId){
   const n=STATE.nominas.find(x=>x.id===nomId);if(!n)return;
-  exportToExcel(n.lineas.map(l=>{
-    const e=STATE.empleados.find(x=>x.id===l.empleadoId);
-    const salBase=e?e.salarioBase||0:0;const jd=e?getDiasJornada(e.jornada):0;const sd=jd>0?salBase/jd:0;
+  const empresa=STATE.config.empresa||'La Catedral S.R.L.';
+  let totBase=0,totVac=0,totBruto=0;
+  const filas=[];
+  n.lineas.forEach((l,i)=>{
+    const e=STATE.empleados.find(x=>x.id===l.empleadoId);if(!e)return;
+    const salBase=e.salarioBase||0;const jd=getDiasJornada(e.jornada);const sd=jd>0?salBase/jd:0;
     const devengado=Math.round(sd*l.diasTrabajados*100)/100;
     const vacDias=l.diasVacaciones||0;const vacAcum=Math.round(sd*vacDias*100)/100;
     const bruto=Math.round((devengado+vacAcum)*100)/100;
-    return{'Nombre':e?e.nombres:'—','Apellidos':e?e.apellidos:'—',CI:e?e.carnet:'—',Plaza:e?e.plaza:'—',Departamento:e?e.departamento:'—','Días Trabajados':l.diasTrabajados,'Sal. Base (mensual)':salBase,'Devengado':devengado,'Vac. Días':vacDias,'Vac. Acum.':vacAcum,'Salario Bruto a Cobrar':bruto};
-  }),`PreNomina_${n.mesNombre}_${n.ano}`);
-  showToast('Exportado','success');
+    totBase+=salBase;totVac+=vacAcum;totBruto+=bruto;
+    filas.push({'Nº':i+1,'Nombre y Apellido':`${e.nombres} ${e.apellidos}`,'Plaza':e.plaza||'—','Días Trabajados':l.diasTrabajados,'Sal. Base (CUP)':salBase,'Vac. (Días)':vacDias||0,'Vac. Acum. (CUP)':vacAcum,'Sal. Bruto a Cobrar (CUP)':bruto});
+  });
+  filas.push({'Nº':'','Nombre y Apellido':'TOTAL','Plaza':'','Días Trabajados':'','Sal. Base (CUP)':Math.round(totBase*100)/100,'Vac. (Días)':'','Vac. Acum. (CUP)':Math.round(totVac*100)/100,'Sal. Bruto a Cobrar (CUP)':Math.round(totBruto*100)/100});
+  const ws=XLSX.utils.json_to_sheet([]);
+  XLSX.utils.sheet_add_aoa(ws,[[empresa],[`Pre-Nómina: ${n.mesNombre} ${n.ano}`],[`Generado: ${new Date().toLocaleDateString('es-ES')}`],[]],{origin:'A1'});
+  XLSX.utils.sheet_add_json(ws,filas,{origin:'A5'});
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Pre-Nómina');
+  XLSX.writeFile(wb,`PreNomina_${n.mesNombre}_${n.ano}.xlsx`);
+  showToast('Pre-Nómina exportada a Excel ✅','success');
 }
 
 function exportNominaActual(){
@@ -4872,7 +4949,7 @@ function renderRevisionAsistencia(){
   const mesNombre=new Date(ano,mes-1).toLocaleString('es-ES',{month:'long'});
   const activos=getEmpleadosActivos();
   // Registros cerrados del mes
-  const regsDelMes=STATE.asistencia.filter(a=>a.cerrado&&a.fecha.startsWith(periodoKey));
+  const regsDelMes=(STATE.asistencia||[]).filter(a=>a.cerrado&&a.fecha.startsWith(periodoKey));
   const totalDias=regsDelMes.length;
   const cont=document.getElementById('rev-asistencia-content');
   if(!cont)return;
@@ -4905,10 +4982,13 @@ function renderRevisionAsistencia(){
       </tr>`;
     }
     const presentes=getDiasPresentesMes(e.id,periodoKey);
-    // Días donde el empleado no tiene ninguna línea en el registro (verdaderamente sin registrar)
-    // Excluir 'D', 'A', 'T' que sí están registrados con un estado válido
-    const noReg=regsDelMes.filter(reg=>!(reg.lineas||[]).find(l=>l.empleadoId===e.id)).length;
-    const incMes=STATE.incidencias.filter(i=>i.empleadoId===e.id&&i.periodo===periodoKey);
+    // Días problemáticos: sin línea en absoluto O con estado vacío (JT cerró sin marcar al empleado)
+    // 'D', 'A', 'T' son estados válidos y NO se incluyen aquí
+    const noReg=regsDelMes.filter(reg=>{
+      const linea=(reg.lineas||[]).find(l=>l.empleadoId===e.id);
+      return !linea||!linea.estado;
+    }).length;
+    const incMes=(STATE.incidencias||[]).filter(i=>i.empleadoId===e.id&&i.periodo===periodoKey);
     const incLabel=incMes.length?incMes.map(i=>`<span style="background:#EFF6FF;color:#1D4ED8;padding:1px 5px;border-radius:8px;font-size:10px;margin:1px">${i.tipo}</span>`).join(''):
       (noReg>0?`<span style="background:#FFF3CD;color:#92400E;padding:1px 5px;border-radius:8px;font-size:10px;">⚠️ ${noReg}d sin asignar</span>`:'');
     return`<tr>
@@ -5028,8 +5108,9 @@ function guardarIncidencia(){
     }
   }
   if(tipo==='Vacaciones'){
-    let ctrl=STATE.vacacionesControl.find(v=>v.empleadoId===empId&&v.ano===new Date(fechaInicio).getFullYear());
-    if(!ctrl){ctrl={id:'VC'+uid(),empleadoId:empId,ano:new Date(fechaInicio).getFullYear(),diasTomados:0};STATE.vacacionesControl.push(ctrl);pushToSheets('vacacionesControl','insertar',ctrl,null);}
+    const anoVac=parseInt(String(fechaInicio).slice(0,4));
+    let ctrl=STATE.vacacionesControl.find(v=>v.empleadoId===empId&&v.ano===anoVac);
+    if(!ctrl){ctrl={id:'VC'+uid(),empleadoId:empId,ano:anoVac,diasTomados:diasAfectados};STATE.vacacionesControl.push(ctrl);pushToSheets('vacacionesControl','insertar',ctrl,null);}
     else{ctrl.diasTomados+=diasAfectados;pushToSheets('vacacionesControl','actualizar',ctrl,ctrl.id);}
   }
   STATE.incidencias.push(inc);saveState();
@@ -5438,7 +5519,7 @@ function renderBackup(container){
 function exportBackup(){
   const json=JSON.stringify(STATE,null,2);const blob=new Blob([json],{type:'application/json'});
   const url=URL.createObjectURL(blob);const a=document.createElement('a');
-  a.href=url;a.download=`LaCatedral_Backup_${new Date().toISOString().slice(0,10)}.json`;a.click();URL.revokeObjectURL(url);
+  a.href=url;a.download=`LaCatedral_Backup_${hoyLocal()}.json`;a.click();URL.revokeObjectURL(url);
   addAuditLog('BACKUP','Copia de seguridad exportada');showToast('Backup descargado','success');
 }
 
@@ -5510,7 +5591,7 @@ function seleccionarJefeTurno(empId){
   _jt_nombre=emp.nombres+' '+emp.apellidos;
   _jt_tab='sala_tienda';
   const container=document.getElementById('app-content');
-  const hoy=new Date().toISOString().slice(0,10);
+  const hoy=hoyLocal();
   const activos=getEmpleadosActivos().filter(e=>!DEPTS_EXCLUIDOS_JEFE_TURNO.includes(e.departamento));
   const registroHoy=STATE.asistencia.find(a=>a.fecha===hoy);
   renderAsistenciaJefeTurno(container,hoy,activos,registroHoy,false);
@@ -5802,7 +5883,7 @@ function cerrarTurnoJT(){
 }
 
 function renderAsistencia(container){
-  const hoy = new Date().toISOString().slice(0,10);
+  const hoy = hoyLocal();
   const todosActivos = getEmpleadosActivos();
   const activos = currentRole === 'jefe_turno'
     ? todosActivos.filter(e => !DEPTS_EXCLUIDOS_JEFE_TURNO.includes(e.departamento))
@@ -5907,7 +5988,7 @@ function renderAsistencia(container){
 }
 
 function setEstado(btn, empId){
-  const hoy = new Date().toISOString().slice(0,10);
+  const hoy = hoyLocal();
   const estado = btn.dataset.estado;
   const estadoConfig = {
     'P': {color:'#2D6A4F', bg:'#D8F3DC'},
@@ -6545,7 +6626,7 @@ function exportAsistencia(){
     });
   });
   if(!rows.length){showToast('No hay datos de asistencia','warning');return;}
-  exportToExcel(rows,'Asistencia_LaCatedral_'+new Date().toISOString().slice(0,10));
+  exportToExcel(rows,'Asistencia_LaCatedral_'+hoyLocal());
   showToast('Exportado a Excel','success');
 }
 
@@ -6719,7 +6800,7 @@ function openModalDocLegal(){
     +'<div class="form-grid">'
     +'<div class="form-group full"><label class="field-label">Empleado (opcional)</label><select id="dl-emp">'+empOpts+'</select></div>'
     +'<div class="form-group"><label class="field-label required">Tipo de Documento</label><select id="dl-tipo">'+tipoOpts+'</select></div>'
-    +'<div class="form-group"><label class="field-label required">Fecha del Documento</label><input type="date" id="dl-fecha" value="'+new Date().toISOString().slice(0,10)+'"></div>'
+    +'<div class="form-group"><label class="field-label required">Fecha del Documento</label><input type="date" id="dl-fecha" value="'+hoyLocal()+'"></div>'
     +'<div class="form-group full"><label class="field-label required">Descripción / Referencia</label>'
     +'<textarea id="dl-desc" placeholder="Ej: Contrato de trabajo por tiempo indeterminado, firmado por ambas partes..." style="min-height:70px;"></textarea></div>'
     +'<div class="form-group full"><label class="field-label">Ubicación del archivo físico</label>'
@@ -6786,7 +6867,7 @@ function exportDocsLegales(){
       'Fecha registro': new Date(d.fechaRegistro).toLocaleString('es-ES')
     };
   });
-  exportToExcel(rows,'DocsLegales_LaCatedral_'+new Date().toISOString().slice(0,10));
+  exportToExcel(rows,'DocsLegales_LaCatedral_'+hoyLocal());
   showToast('Exportado a Excel','success');
 }
 
