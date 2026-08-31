@@ -726,6 +726,7 @@ function normalizeState(s) {
   else {
     s.config.pins = s.config.pins || d.config.pins;
     s.config.bonificacion = s.config.bonificacion || d.config.bonificacion;
+    if(!Array.isArray(s.config.jtAutorizados)) s.config.jtAutorizados = d.config.jtAutorizados;
   }
   const arrays = ['empleados','traslados','bajas','sanciones','nominas','incidencias',
     'vacacionesControl','historialSalarial','auditLog','asistencia','docsLegales',
@@ -1369,6 +1370,7 @@ async function sincronizarDesdeSheets() {
         else if(k==='diasVacaciones') STATE.config.diasVacaciones   = parseInt(v)||14;
         else if(k==='diasPagados') STATE.config.diasPagadosPeriodo  = parseInt(v)||15;
         else if(k==='vacPendientes'){try{STATE.vacPendientes=JSON.parse(v)||[];}catch{STATE.vacPendientes=[];}}
+        else if(k==='jtAutorizados'){try{const a=JSON.parse(v);if(Array.isArray(a))STATE.config.jtAutorizados=a;}catch{}}
       });
     } catch(e) {}
     // Config desde Sheets
@@ -1454,7 +1456,10 @@ function getDefaultState() {
       pins:{rrhh:'1111',juridico:'2222',contabilidad:'3333',jefe_turno:'4444'},
       adminPin:'1059',
       bonificacion:{nivel1:5,anios1:5,nivel2:10,anios2:10},
-      recargoHorasExtras:50, diasVacaciones:14, diasPagadosPeriodo:15
+      recargoHorasExtras:50, diasVacaciones:14, diasPagadosPeriodo:15,
+      // IDs de empleados autorizados a pasar la asistencia sin ser Jefe de Turno
+      // (quien cubre un turno). Se gestiona desde Configuración.
+      jtAutorizados:['E000004']
     },
     empleados:[], traslados:[], bajas:[], sanciones:[],
     nominas:[], incidencias:[], vacacionesControl:[],
@@ -5407,7 +5412,86 @@ function renderConfiguracion(container){
       <div class="form-group"><label class="field-label">Días Pagados/Período Vacacional</label><input type="number" id="cfg-vac-pag" value="${cfg.diasPagadosPeriodo}" min="1"></div>
     </div>
     <div class="form-actions"><button class="btn btn-primary" onclick="guardarConfiguracion()">💾 Guardar Configuración</button></div>
-  </div></div>`;
+  </div></div>
+  <div class="card" style="margin-top:16px"><div class="card-header"><h3>👥 Autorizados a Pasar Asistencia</h3></div>
+  <div class="card-body" id="jt-aut-panel">${_renderPanelJTAutorizados()}</div></div>`;
+}
+
+// Panel de gestión de quién puede tomar la asistencia (se guarda al instante)
+function _renderPanelJTAutorizados(){
+  const jefes=getEmpleadosActivos().filter(e=>e.plaza&&e.plaza.toLowerCase().includes('jefe de turno'));
+  const aut=getJTAutorizados();
+  const sustitutos=getEmpleadosActivos().filter(e=>aut.includes(e.id)&&!jefes.some(j=>j.id===e.id));
+  const disponibles=getEmpleadosActivos()
+    .filter(e=>!DEPTS_EXCLUIDOS_JEFE_TURNO.includes(e.departamento)
+               &&!jefes.some(j=>j.id===e.id)&&!aut.includes(e.id))
+    .sort((a,b)=>(a.nombres+a.apellidos).localeCompare(b.nombres+b.apellidos));
+
+  let h='<p class="text-muted" style="margin-bottom:14px;font-size:13px">'
+    +'Los <b>Jefes de Turno</b> siempre pueden pasar la asistencia. Aquí autorizas a quien esté '
+    +'<b>cubriendo un turno</b>, sin cambiarle su plaza ni su salario.</p>';
+
+  h+='<div class="form-section-title">Jefes de Turno (siempre autorizados)</div>';
+  h+= jefes.length
+    ? '<div style="margin-bottom:16px">'+jefes.map(e=>
+        '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border-light);border-radius:8px;margin-bottom:6px;background:var(--cream)">'
+        +'<span style="font-size:20px">👤</span>'
+        +'<div style="flex:1"><div style="font-weight:700;font-size:14px">'+e.nombres+' '+e.apellidos+'</div>'
+        +'<div style="font-size:11px;color:var(--text-mid)">'+e.plaza+' · '+e.departamento+'</div></div>'
+        +'<span class="badge badge-approved">Fijo</span></div>').join('')+'</div>'
+    : '<p class="text-muted" style="margin-bottom:16px">No hay empleados con plaza de Jefe de Turno.</p>';
+
+  h+='<div class="form-section-title">Cubriendo turno</div>';
+  h+= sustitutos.length
+    ? '<div style="margin-bottom:16px">'+sustitutos.map(e=>
+        '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1.5px solid #FBBF24;border-radius:8px;margin-bottom:6px;background:#FFFBEB">'
+        +'<span style="font-size:20px">👤</span>'
+        +'<div style="flex:1"><div style="font-weight:700;font-size:14px">'+e.nombres+' '+e.apellidos+'</div>'
+        +'<div style="font-size:11px;color:var(--text-mid)">'+e.plaza+' · '+e.departamento+'</div></div>'
+        +'<button class="btn btn-danger btn-sm" onclick="quitarJTAutorizado(\''+e.id+'\')">✕ Quitar</button></div>').join('')+'</div>'
+    : '<p class="text-muted" style="margin-bottom:16px">Nadie está cubriendo turno ahora mismo.</p>';
+
+  h+='<div class="form-section-title">Autorizar a alguien más</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+    +'<select id="jt-aut-nuevo" style="flex:1;min-width:220px"><option value="">Seleccione un empleado...</option>'
+    + disponibles.map(e=>'<option value="'+e.id+'">'+e.nombres+' '+e.apellidos+' — '+e.plaza+'</option>').join('')
+    +'</select>'
+    +'<button class="btn btn-success" onclick="agregarJTAutorizado()">➕ Autorizar</button></div>';
+  return h;
+}
+
+function _guardarJTAutorizados(){
+  saveState();
+  const val=JSON.stringify(getJTAutorizados());
+  sbUpsert('config',[{clave:'jtAutorizados',valor:val}]).catch(()=>{});
+  backupToSheets('config','actualizar',{clave:'jtAutorizados',valor:val},null);
+  const panel=document.getElementById('jt-aut-panel');
+  if(panel) panel.innerHTML=_renderPanelJTAutorizados();
+}
+
+function agregarJTAutorizado(){
+  const sel=document.getElementById('jt-aut-nuevo');
+  const id=sel?sel.value:'';
+  if(!id){showToast('Selecciona un empleado','warning');return;}
+  const emp=STATE.empleados.find(e=>e.id===id);
+  if(!emp)return;
+  if(!Array.isArray(STATE.config.jtAutorizados))STATE.config.jtAutorizados=[];
+  if(STATE.config.jtAutorizados.includes(id)){showToast('Ya estaba autorizado','info');return;}
+  STATE.config.jtAutorizados.push(id);
+  _guardarJTAutorizados();
+  addAuditLog('CONFIG','Autorizado a pasar asistencia: '+emp.nombres+' '+emp.apellidos+' ('+emp.plaza+')');
+  showToast(emp.nombres+' ya puede pasar la asistencia ✅','success');
+}
+
+function quitarJTAutorizado(id){
+  const emp=STATE.empleados.find(e=>e.id===id);
+  const nom=emp?emp.nombres+' '+emp.apellidos:id;
+  confirmAction('¿Quitar a <b>'+nom+'</b> de los autorizados a pasar la asistencia?',function(){
+    STATE.config.jtAutorizados=getJTAutorizados().filter(x=>x!==id);
+    _guardarJTAutorizados();
+    addAuditLog('CONFIG','Retirada autorización para pasar asistencia: '+nom);
+    showToast('Autorización retirada','info');
+  });
 }
 
 function togglePinVis(id,btn){const inp=document.getElementById(id);if(inp.type==='password'){inp.type='text';btn.textContent='🙈'}else{inp.type='password';btn.textContent='👁️'}}
@@ -5544,11 +5628,12 @@ function importBackup(){
 
 const DEPTS_EXCLUIDOS_JEFE_TURNO = ['ADMINISTRACIÓN','LOGÍSTICA'];
 // Empleados autorizados a pasar la asistencia sin tener plaza de Jefe de Turno
-// (por ejemplo, quien cubre a un jefe de turno). No les cambia la plaza ni el cargo:
-// solo aparecen en la pantalla "¿Quién toma la asistencia?".
-const JT_AUTORIZADOS_EXTRA = [
-  'E000004',   // Raúl Castañeda Ávila (Cajero/a) — cubre a Michel Gallardo
-];
+// (quien cubre un turno). No les cambia la plaza ni el cargo: solo aparecen en la
+// pantalla "¿Quién toma la asistencia?". Se gestiona desde Configuración.
+function getJTAutorizados(){
+  const a=STATE.config&&STATE.config.jtAutorizados;
+  return Array.isArray(a)?a:[];
+}
 const DEPT_ORDER_JT  = ['SALA','TIENDA','COCINA','ALMACÉN','CARNICERÍA'];
 const DEPT_COLORS_JT = {
   'SALA':      {bg:'#DBEAFE',color:'#1D4ED8',light:'#EFF6FF',icon:'🍷'},
@@ -5572,7 +5657,8 @@ function renderSeleccionJefeTurno(container, hoy){
   if(!jefes.length) jefes=getEmpleadosActivos().filter(e=>e.plaza&&e.plaza.toLowerCase().includes('jefe'));
   if(!jefes.length) jefes=getEmpleadosActivos().slice(0,10);
   // Autorizados a cubrir el pase de lista sin ser Jefe de Turno
-  const sustitutos=getEmpleadosActivos().filter(e=>JT_AUTORIZADOS_EXTRA.includes(e.id)&&!jefes.some(j=>j.id===e.id));
+  const _aut=getJTAutorizados();
+  const sustitutos=getEmpleadosActivos().filter(e=>_aut.includes(e.id)&&!jefes.some(j=>j.id===e.id));
   jefes=jefes.concat(sustitutos);
   const opciones=jefes.map(e=>
     '<button onclick="seleccionarJefeTurno(\''+e.id+'\')" style="'
