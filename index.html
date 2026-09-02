@@ -1772,6 +1772,12 @@ function fmtDate(d){
 }
 // Fecha de hoy en hora LOCAL (toISOString usa UTC: en Cuba después de las 8pm daría el día siguiente)
 function hoyLocal(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+// ID de asistencia derivado de la fecha: 2026-09-02 → AS20260902.
+// uid() usa un contador local por dispositivo, así que dos tablets generaban el MISMO
+// id para días distintos y el upsert sobrescribía el registro del otro (se perdió el
+// 26 de julio así). Con la fecha como id, cada día tiene un id único e irrepetible y
+// dos dispositivos que registran el mismo día terminan en el mismo registro.
+function idAsistencia(fecha){ return 'AS'+String(fecha).slice(0,10).replace(/-/g,''); }
 function fmtMoney(n){if(n==null||isNaN(n))return'—';return new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(n)+' CUP';}
 function calcAntiguedad(fechaAlta){
   if(!fechaAlta)return 0;
@@ -5905,7 +5911,7 @@ function autoGuardarTurnoJT(){
     estado:(_jt_estados[e.id]||{}).estado||'',
     motivo:(_jt_estados[e.id]||{}).motivo||''
   }));
-  if(!reg){reg={id:'AS'+uid(),fecha:_jt_hoy,cerrado:false,registradoPor:_jt_nombre||getRoleName(currentRole),lineas};STATE.asistencia.push(reg);}
+  if(!reg){reg={id:idAsistencia(_jt_hoy),fecha:_jt_hoy,cerrado:false,registradoPor:_jt_nombre||getRoleName(currentRole),lineas};STATE.asistencia.push(reg);}
   else {
     // Conservar líneas de empleados fuera de la vista del JT (ej. Administración marcada por RRHH)
     const idsJT=new Set(_jt_emps.map(e=>e.id));
@@ -5947,7 +5953,7 @@ function cerrarTurnoJT(){
   autoGuardarTurnoJT();
   const reg=STATE.asistencia.find(a=>a.fecha===_jt_hoy);
   if(!reg){
-    const newReg={id:'AS'+uid(),fecha:_jt_hoy,cerrado:false,registradoPor:_jt_nombre||getRoleName(currentRole),lineas:[]};
+    const newReg={id:idAsistencia(_jt_hoy),fecha:_jt_hoy,cerrado:false,registradoPor:_jt_nombre||getRoleName(currentRole),lineas:[]};
     STATE.asistencia.push(newReg); saveState(); return cerrarTurnoJT();
   }
   const P=_jt_emps.filter(e=>(_jt_estados[e.id]||{}).estado==='P').length;
@@ -6174,7 +6180,7 @@ function autoGuardarTurno(hoy){
     };
   });
   if(!registro){
-    registro = {id:'AS'+uid(), fecha:hoy, cerrado:false, registradoPor:getRoleName(currentRole), lineas:lineas};
+    registro = {id:idAsistencia(hoy), fecha:hoy, cerrado:false, registradoPor:getRoleName(currentRole), lineas:lineas};
     STATE.asistencia.push(registro);
   } else {
     if(registro.cerrado) return; // no sobrescribir un turno ya cerrado
@@ -6275,7 +6281,7 @@ function renderImportarExcel(container){
   fechas.forEach(fecha=>{
     const dayData=_EXCEL_MAYO_2026[fecha];
     const existente=STATE.asistencia.find(a=>a.fecha===fecha);
-    const regId=existente?existente.id:('AS'+uid());
+    const regId=existente?existente.id:idAsistencia(fecha);
     const lineas=[];
     Object.entries(dayData).forEach(([nombre,estado])=>{
       const empId=empMap[_normEmpNombre(nombre)];
