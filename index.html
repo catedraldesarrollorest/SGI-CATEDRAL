@@ -4902,27 +4902,26 @@ function exportAsistenciaMes(periodo){
   const ids=Object.keys(porEmp);
   const emps=ids.map(id=>STATE.empleados.find(e=>e.id===id)).filter(Boolean)
     .sort((a,b)=>(a.departamento||'').localeCompare(b.departamento||'')||`${a.nombres} ${a.apellidos}`.localeCompare(`${b.nombres} ${b.apellidos}`));
-  const SIMB={'P':'P','D':'D','A':'A','T':'T','':'—'};
   const filas=emps.map(e=>{
-    const row={'Empleado':`${e.nombres} ${e.apellidos}`,'Área':e.departamento||'—'};
+    const row={'Empleado':`${e.nombres} ${e.apellidos}`};
     let tP=0;
     for(let d=1;d<=nDias;d++){
       const st=(porEmp[e.id]||{})[d];
-      row[String(d)]= st===undefined?'':(SIMB[st]!==undefined?SIMB[st]:st);
-      if(st==='P'||st==='T') tP++;
+      const trabajo=(st==='P'||st==='T');  // trabajó o vino (tardanza)
+      row[String(d)]= trabajo?'✔':'';
+      if(trabajo) tP++;
     }
-    row['Total Trab.']=tP;
+    row['Total Trabajado']=tP;
     return row;
   });
   const mesNombre=new Date(ano,mes-1).toLocaleString('es-ES',{month:'long'});
   const ws=XLSX.utils.json_to_sheet([]);
   XLSX.utils.sheet_add_aoa(ws,[
     [(STATE.config&&STATE.config.empresa)||'La Catedral S.R.L.'],
-    ['Detalle de Asistencia — '+mesNombre+' '+ano],
-    ['P=Trabajó · D=Descanso · A=Ausente · T=Tardanza · —=sin registro'],
+    ['Asistencia — '+mesNombre+' '+ano+' (✔ = día trabajado)'],
     ['Generado: '+new Date().toLocaleDateString('es-ES')],[]
   ],{origin:'A1'});
-  XLSX.utils.sheet_add_json(ws,filas,{origin:'A6'});
+  XLSX.utils.sheet_add_json(ws,filas,{origin:'A5'});
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Asistencia');
   XLSX.writeFile(wb,`Asistencia_${mesNombre}_${ano}.xlsx`);
   showToast('Asistencia del mes exportada a Excel ✅','success');
