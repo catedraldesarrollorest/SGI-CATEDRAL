@@ -6027,6 +6027,10 @@ function renderListaJT(container){
       +'<div style="font-size:17px;font-weight:800;margin-bottom:4px">¡Hasta luego, '+(_jt_nombre.split(' ')[0]||'compañero')+'!</div>'
       +'<div style="font-size:12px;opacity:0.75">Turno cerrado. Que descanses.</div>'
       +'</div>';
+    // Permitir reabrir el turno de HOY si se cerró por error (solo el día en curso)
+    if(_jt_hoy===hoyLocal()){
+      html+='<button onclick="reabrirTurnoJT()" class="btn btn-secondary" style="width:100%;padding:11px;font-size:13px;margin-top:10px">🔓 Reabrir turno (lo cerré por error)</button>';
+    }
   } else {
     if(sinAsignar>0){
       const tabBreakdown=effectiveTabs.map(t=>{
@@ -6155,6 +6159,27 @@ function iniciarAutoCloseJT(hoy){
     const c=document.getElementById('app-content');
     if(c&&currentRole==='jefe_turno') renderListaJT(c);
   },ms);
+}
+
+// Reabrir el turno de HOY cuando se cerró por error. Borra el registro del día
+// (local y en la nube) y vuelve a mostrar el pase de lista en blanco para rehacerlo.
+function reabrirTurnoJT(){
+  confirmAction('¿Reabrir el turno de hoy para volver a pasar la asistencia?<br><small>Se borrará lo marcado hoy y empezarás de nuevo.</small>',async function(){
+    const hoy=_jt_hoy;
+    const reg=STATE.asistencia.find(a=>a.fecha===hoy);
+    const regId=reg?reg.id:null;
+    // Quitar el registro de hoy del estado local
+    STATE.asistencia=STATE.asistencia.filter(a=>a.fecha!==hoy);
+    _jt_readonly=false; _jt_estados={};
+    saveState();
+    // Borrarlo también en la nube para que no se vuelva a sincronizar como cerrado
+    if(regId){ try{ await sbEliminarDB('asistencia',regId); }catch(e){ DB_PENDING_OPS.push({tabla:'asistencia',accion:'eliminar',id:regId}); saveState(); } }
+    addAuditLog('ASISTENCIA','Turno '+hoy+' reabierto por '+(_jt_nombre||getRoleName(currentRole))+' (cerrado por error)');
+    showToast('Turno reabierto. Pasa la asistencia de nuevo y vuelve a cerrar al final.','success',5000);
+    const c=document.getElementById('app-content');
+    const activos=getEmpleadosActivos().filter(e=>!DEPTS_EXCLUIDOS_JEFE_TURNO.includes(e.departamento));
+    renderAsistenciaJefeTurno(c,hoy,activos,null,false);
+  });
 }
 
 function cerrarTurnoJT(){
