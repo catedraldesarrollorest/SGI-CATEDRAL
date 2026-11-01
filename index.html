@@ -2279,6 +2279,26 @@ function renderDashboard(container){
   let alertasHTML='';
   // Alertas jurídico — nuevos empleados y traslados pendientes de contrato
   if(!STATE.alertasJuridico) STATE.alertasJuridico=[];
+  // Fichas incompletas que RRHH y Jurídico deben completar (ej. datos recuperados)
+  if(currentRole==='juridico'||currentRole==='rrhh'){
+    const alertasFicha = STATE.alertasJuridico.filter(function(a){return !a.leida&&a.tipo==='FICHA_INCOMPLETA';});
+    if(alertasFicha.length){
+      alertasHTML+='<div class="alert-semaforo semaforo-red" style="margin-bottom:16px;">'
+        +'<div class="alert-semaforo-header">📝 '+alertasFicha.length+' ficha(s) de empleado por completar — datos pendientes de revisar</div>'
+        +'<div class="alert-semaforo-body">';
+      alertasFicha.forEach(function(a){
+        var e=STATE.empleados.find(function(x){return x.id===a.empleadoId;});
+        var det=e?(e.departamento+' / '+e.plaza+(e.carnet==='00000000000'?' · carnet provisional (00000000000)':'')):'';
+        alertasHTML+='<div class="alert-row" style="justify-content:space-between;align-items:center;gap:8px">'
+          +'<span>📝 <b>'+a.empleadoNombre+'</b> — '+det+'. Revisar y completar carnet, fecha de alta y demás datos.</span>'
+          +'<div style="display:flex;gap:6px;flex-shrink:0">'
+          +(a.empleadoId?'<button class="btn btn-primary btn-xs" onclick="editarEmpleado(&quot;'+a.empleadoId+'&quot;)">📝 Completar ficha</button>':'')
+          +'<button class="btn btn-secondary btn-xs" onclick="marcarAlertaJurLeida(&quot;'+a.id+'&quot;)">✅ Atendida</button>'
+          +'</div></div>';
+      });
+      alertasHTML+='</div></div>';
+    }
+  }
   if(currentRole==='juridico'){
     const alertasNuevos = STATE.alertasJuridico.filter(function(a){return !a.leida&&a.tipo==='NUEVO_EMPLEADO';});
     const alertasTraslado = STATE.alertasJuridico.filter(function(a){return !a.leida&&a.tipo==='TRASLADO';});
