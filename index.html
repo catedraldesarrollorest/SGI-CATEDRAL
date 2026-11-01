@@ -1718,6 +1718,23 @@ function navigateTo(section){
 // HELPERS
 // ══════════════════════════════════════════════════
 function uid(){return(STATE.nextId++).toString().padStart(6,'0')}
+// ID de empleado SIEMPRE nuevo, a partir del consecutivo real de la tabla (mayor existente + 1).
+// uid() usa un contador local por dispositivo que puede estar desfasado y reusar un número
+// ya ocupado, montando un empleado encima de otro (así se pisó la ficha de Thalia E000014).
+// Esto recorre todos los IDs existentes y garantiza que el nuevo no choque con ninguno.
+function nuevoIdEmpleado(){
+  let max=0;
+  (STATE.empleados||[]).forEach(e=>{
+    const m=/^E(\d+)$/.exec(e&&e.id||'');
+    if(m){const n=parseInt(m[1],10); if(n>max) max=n;}
+  });
+  let n=max+1;
+  let id='E'+String(n).padStart(6,'0');
+  while((STATE.empleados||[]).some(e=>e&&e.id===id)){ n++; id='E'+String(n).padStart(6,'0'); }
+  // Mantener el contador local por delante, por si se usa en otro lado
+  if(STATE.nextId<=n) STATE.nextId=n+1;
+  return id;
+}
 function addAuditLog(tipo,detalle){
   const id='AL'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
   const entry={id,fecha:new Date().toISOString(),rol:getRoleName(currentRole),tipo,detalle};
@@ -3063,7 +3080,7 @@ async function guardarAlta(){
     if(edad>70){showToast('Verifique la fecha de nacimiento (más de 70 años)','warning');}
   }
 
-  const id='E'+uid();
+  const id=nuevoIdEmpleado();
   const emp={
     id,fechaAlta,nombres,apellidos,carnet,
     telefono:val('a-telefono'),
@@ -5862,7 +5879,7 @@ async function guardarAltaProvisionalJT(){
     autoGuardarTurnoJT(); renderListaJT(document.getElementById('app-content'));
     return;
   }
-  const id='E'+uid();
+  const id=nuevoIdEmpleado();
   const emp={
     id, fechaAlta:hoyLocal(), nombres, apellidos, carnet,
     telefono:'', fechaNacimiento:'', direccion:'', provincia:'', municipio:'',
