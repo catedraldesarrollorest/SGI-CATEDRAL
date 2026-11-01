@@ -4902,26 +4902,33 @@ function exportAsistenciaMes(periodo){
   const ids=Object.keys(porEmp);
   const emps=ids.map(id=>STATE.empleados.find(e=>e.id===id)).filter(Boolean)
     .sort((a,b)=>(a.departamento||'').localeCompare(b.departamento||'')||`${a.nombres} ${a.apellidos}`.localeCompare(`${b.nombres} ${b.apellidos}`));
-  const filas=emps.map(e=>{
-    const row={'Empleado':`${e.nombres} ${e.apellidos}`};
+  // Se arma como matriz (AOA) con orden de columnas fijo. No se usa json_to_sheet
+  // porque JavaScript reordena las claves numéricas ('1','2'...) antes del resto,
+  // lo que mandaba la columna 'Empleado' al final.
+  const encabezado=['Empleado'];
+  for(let d=1;d<=nDias;d++) encabezado.push(String(d));
+  encabezado.push('Total Trabajado');
+  const aoaFilas=emps.map(e=>{
+    const fila=[`${e.nombres} ${e.apellidos}`];
     let tP=0;
     for(let d=1;d<=nDias;d++){
       const st=(porEmp[e.id]||{})[d];
       const trabajo=(st==='P'||st==='T');  // trabajó o vino (tardanza)
-      row[String(d)]= trabajo?'✔':'';
+      fila.push(trabajo?'✔':'');
       if(trabajo) tP++;
     }
-    row['Total Trabajado']=tP;
-    return row;
+    fila.push(tP);
+    return fila;
   });
   const mesNombre=new Date(ano,mes-1).toLocaleString('es-ES',{month:'long'});
-  const ws=XLSX.utils.json_to_sheet([]);
-  XLSX.utils.sheet_add_aoa(ws,[
+  const ws=XLSX.utils.aoa_to_sheet([
     [(STATE.config&&STATE.config.empresa)||'La Catedral S.R.L.'],
     ['Asistencia — '+mesNombre+' '+ano+' (✔ = día trabajado)'],
-    ['Generado: '+new Date().toLocaleDateString('es-ES')],[]
-  ],{origin:'A1'});
-  XLSX.utils.sheet_add_json(ws,filas,{origin:'A5'});
+    ['Generado: '+new Date().toLocaleDateString('es-ES')],
+    [],
+    encabezado,
+    ...aoaFilas
+  ]);
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Asistencia');
   XLSX.writeFile(wb,`Asistencia_${mesNombre}_${ano}.xlsx`);
   showToast('Asistencia del mes exportada a Excel ✅','success');
