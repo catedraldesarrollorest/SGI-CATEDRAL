@@ -807,7 +807,7 @@ const EMPLEADOS_COLS = ['id','fechaAlta','nombres','apellidos','carnet','telefon
   'fechaNacimiento','direccion','provincia','municipio','tipoContrato','jornada','departamento','plaza',
   'salarioBase','activo','fechaBaja','certMedicoFecha','fotoEmpleadoId','fotoCarnetId',
   'carpetaExpId','contratoId','obligacionesId','contratoFechaFirma','contratoObs',
-  'banco','cuenta','observaciones'];
+  'banco','cuenta','observaciones','provisional','provisionalPor'];
 
 const AUDITLOG_COLS = ['id','fecha','rol','tipo','detalle'];
 const PREFORMAS_COLS = ['id','grupo','disciplina','caracteristicas'];
@@ -1278,6 +1278,8 @@ async function sincronizarDesdeSheets() {
             certMedicoFecha: normalizarFecha(r.certMedicoFecha)||'',
             salarioBase: r.salarioBase ? parseFloat(r.salarioBase) : null,
             activo: String(r.activo)==='true'||r.activo===true,
+            provisional: String(r.provisional)==='true'||r.provisional===true,
+            provisionalPor: r.provisionalPor||'',
             fotoEmpleadoId: r.fotoEmpleadoId||'',
             fotoCarnetId: r.fotoCarnetId||'',
             carpetaExpId: r.carpetaExpId||'',
@@ -2257,6 +2259,21 @@ function renderDashboard(container){
   if(currentRole==='juridico'){
     const alertasNuevos = STATE.alertasJuridico.filter(function(a){return !a.leida&&a.tipo==='NUEVO_EMPLEADO';});
     const alertasTraslado = STATE.alertasJuridico.filter(function(a){return !a.leida&&a.tipo==='TRASLADO';});
+    const alertasProvisional = STATE.alertasJuridico.filter(function(a){return !a.leida&&a.tipo==='ALTA_PROVISIONAL';});
+    if(alertasProvisional.length){
+      alertasHTML+='<div class="alert-semaforo semaforo-red" style="margin-bottom:16px;">'
+        +'<div class="alert-semaforo-header">🧑‍🔧 '+alertasProvisional.length+' trabajador(es) dado(s) de alta a prueba por el jefe de turno — falta completar su ficha</div>'
+        +'<div class="alert-semaforo-body">';
+      alertasProvisional.forEach(function(a){
+        alertasHTML+='<div class="alert-row" style="justify-content:space-between;align-items:center;gap:8px">'
+          +'<span>🆕 <b>'+a.empleadoNombre+'</b> — '+a.mensaje+'</span>'
+          +'<div style="display:flex;gap:6px;flex-shrink:0">'
+          +(a.empleadoId?'<button class="btn btn-primary btn-xs" onclick="completarFichaProvisional(&quot;'+a.empleadoId+'&quot;,&quot;'+a.id+'&quot;)">📝 Completar ficha</button>':'')
+          +'<button class="btn btn-secondary btn-xs" onclick="marcarAlertaJurLeida(&quot;'+a.id+'&quot;)">✅ Atendida</button>'
+          +'</div></div>';
+      });
+      alertasHTML+='</div></div>';
+    }
     if(alertasNuevos.length){
       alertasHTML+='<div class="alert-semaforo semaforo-red" style="margin-bottom:16px;">'
         +'<div class="alert-semaforo-header">🆕 '+alertasNuevos.length+' empleado(s) nuevo(s) — contrato pendiente de generar e imprimir</div>'
@@ -2414,7 +2431,7 @@ function applyFilters(){
   }
   const rows=emps.map(e=>({e,a:calcAntiguedad(e.fechaAlta)}));
   tbody.innerHTML=rows.map(({e,a})=>`<tr onclick="verFicha('${e.id}')" style="cursor:pointer" onmouseover="this.style.background='#f5f0e8'" onmouseout="this.style.background=''">
-    <td><strong>${e.nombres} ${e.apellidos}</strong></td>
+    <td><strong>${e.nombres} ${e.apellidos}</strong>${e.provisional?' <span style="font-size:9px;font-weight:700;color:#B5642A;background:#FDEBD0;padding:1px 6px;border-radius:8px">A PRUEBA</span>':''}</td>
     <td class="col-hide-md"><code style="font-size:12px">${e.carnet}</code></td>
     <td class="col-hide-mobile"><span class="chip">${e.departamento||'—'}</span></td>
     <td class="col-hide-md">${e.plaza||'—'}</td>
@@ -3138,6 +3155,15 @@ function editarEmpleado(id){
   document.getElementById('page-title').textContent='Editar Empleado';
 }
 
+// Jurídico completa la ficha oficial de un trabajador dado de alta a prueba por el JT.
+// Recuerda la alerta a cerrar y abre la edición; al guardar con plaza/salario se quita lo provisional.
+let _altaProvisionalPendiente=null;
+function completarFichaProvisional(empId, alertaId){
+  _altaProvisionalPendiente=alertaId||null;
+  editarEmpleado(empId);
+  showToast('Completa plaza, salario y contrato. Al guardar, el trabajador dejará de estar "a prueba".','info',6000);
+}
+
 async function guardarEdicionEmpleado(id){
   const emp=STATE.empleados.find(e=>e.id===id);
   if(!emp)return;
@@ -3181,6 +3207,19 @@ async function guardarEdicionEmpleado(id){
       emp.salarioBase=pz.salarioBase;
       pushToSheets('historialSalarial','insertar',regSal);
     }
+  }
+
+  // Si era un alta "a prueba" y ya tiene plaza real + salario, se formaliza (deja de ser provisional)
+  if(emp.provisional && emp.salarioBase>0 && emp.plaza && emp.plaza!=='Pendiente de alta'){
+    emp.provisional=false; emp.provisionalPor='';
+    if(_altaProvisionalPendiente){
+      const al=STATE.alertasJuridico.find(a=>a.id===_altaProvisionalPendiente);
+      if(al){ al.leida=true; pushToSheets('alertasJuridico','actualizar',al,al.id); }
+      _altaProvisionalPendiente=null;
+      if(typeof updateAlertaBadgeJur==='function') updateAlertaBadgeJur();
+    }
+    addAuditLog('ALTA','Ficha completada (formalización de alta a prueba): '+emp.nombres+' '+emp.apellidos+' — '+emp.departamento+'/'+emp.plaza);
+    showToast('Ficha completada. '+emp.nombres+' ya es trabajador formal.','success',5000);
   }
 
   const docData=STATE.documentos[id]||{};
@@ -4611,6 +4650,7 @@ function cargarNomina(){
 
   html+=`<div class="card-footer" style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
     <button class="btn btn-gold" onclick="exportNomina('${nomina.id}')">⬇️ Exportar Excel</button>
+    <button class="btn btn-secondary" onclick="exportAsistenciaMes('${nomina.periodo}')">📅 Exportar Asistencia (días)</button>
     ${(canEdit||currentRole==='contabilidad')&&!isReadOnly&&nomina.estado==='borrador'?`<button class="btn btn-secondary" onclick="calcularNomina('${nomina.id}')">🧮 Recalcular desde Asistencia</button>`:''}
     ${canEdit&&!isReadOnly&&nomina.estado==='borrador'&&!bloqueadoRRHH?`<button class="btn btn-primary" onclick="solicitarAprobacion('${nomina.id}')">📤 Solicitar Aprobación</button>`:''}
     ${canEdit&&!isReadOnly&&nomina.estado==='pendiente'&&currentRole==='admin'?`<button class="btn btn-success" onclick="aprobarNomina('${nomina.id}')">✅ Aprobar Pre-Nómina</button>`:''}
@@ -4832,6 +4872,54 @@ function exportNomina(nomId){
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Pre-Nómina');
   XLSX.writeFile(wb,`PreNomina_${n.mesNombre}_${n.ano}.xlsx`);
   showToast('Pre-Nómina exportada a Excel ✅','success');
+}
+
+// Exporta el detalle de asistencia día por día del mes (empleados × días) para revisar
+// con los jefes de turno cualquier duda sobre los días trabajados.
+function exportAsistenciaMes(periodo){
+  // periodo: 'YYYY-MM'
+  if(!periodo){showToast('No hay período seleccionado','warning');return;}
+  const [ano,mes]=periodo.split('-').map(Number);
+  const nDias=new Date(ano,mes,0).getDate();
+  const regs=STATE.asistencia.filter(a=>a.fecha&&a.fecha.startsWith(periodo));
+  if(!regs.length){showToast('No hay asistencia registrada para '+periodo,'warning');return;}
+  // Índice: empleadoId -> { dia -> estado }
+  const porEmp={};
+  regs.forEach(r=>{
+    const dia=parseInt(String(r.fecha).slice(8,10));
+    (r.lineas||[]).forEach(l=>{
+      if(!porEmp[l.empleadoId]) porEmp[l.empleadoId]={};
+      porEmp[l.empleadoId][dia]=l.estado||'';
+    });
+  });
+  // Empleados a mostrar: los que aparezcan en algún registro del mes
+  const ids=Object.keys(porEmp);
+  const emps=ids.map(id=>STATE.empleados.find(e=>e.id===id)).filter(Boolean)
+    .sort((a,b)=>(a.departamento||'').localeCompare(b.departamento||'')||`${a.nombres} ${a.apellidos}`.localeCompare(`${b.nombres} ${b.apellidos}`));
+  const SIMB={'P':'P','D':'D','A':'A','T':'T','':'—'};
+  const filas=emps.map(e=>{
+    const row={'Empleado':`${e.nombres} ${e.apellidos}`,'Área':e.departamento||'—'};
+    let tP=0;
+    for(let d=1;d<=nDias;d++){
+      const st=(porEmp[e.id]||{})[d];
+      row[String(d)]= st===undefined?'':(SIMB[st]!==undefined?SIMB[st]:st);
+      if(st==='P'||st==='T') tP++;
+    }
+    row['Total Trab.']=tP;
+    return row;
+  });
+  const mesNombre=new Date(ano,mes-1).toLocaleString('es-ES',{month:'long'});
+  const ws=XLSX.utils.json_to_sheet([]);
+  XLSX.utils.sheet_add_aoa(ws,[
+    [(STATE.config&&STATE.config.empresa)||'La Catedral S.R.L.'],
+    ['Detalle de Asistencia — '+mesNombre+' '+ano],
+    ['P=Trabajó · D=Descanso · A=Ausente · T=Tardanza · —=sin registro'],
+    ['Generado: '+new Date().toLocaleDateString('es-ES')],[]
+  ],{origin:'A1'});
+  XLSX.utils.sheet_add_json(ws,filas,{origin:'A6'});
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Asistencia');
+  XLSX.writeFile(wb,`Asistencia_${mesNombre}_${ano}.xlsx`);
+  showToast('Asistencia del mes exportada a Excel ✅','success');
 }
 
 function exportNominaActual(){
@@ -5724,6 +5812,81 @@ function renderAsistenciaJefeTurno(container, hoy, activos, registroHoy, yaGuard
   if(!yaGuardado) iniciarAutoCloseJT(hoy);
 }
 
+// Alta temporal "a prueba": el JT registra solo nombre + carnet para poder pasarle
+// asistencia a un trabajador que empezó antes de que Jurídico lo formalice.
+// Queda marcado provisional:true; Jurídico recibe la alerta y completa la ficha.
+function abrirAltaProvisionalJT(){
+  // Departamento sugerido = el de la pestaña activa (para que aparezca en ese grupo)
+  const tabActual=JT_TABS.find(t=>t.id===_jt_tab);
+  const depSugerido=tabActual?tabActual.depts[0]:'SALA';
+  const deptos=['SALA','TIENDA','COCINA','ALMACÉN','CARNICERÍA'];
+  openModal('➕ Trabajador nuevo (a prueba)',
+    '<p style="margin-bottom:14px;color:#555;font-size:13px">Registra solo lo básico para poder pasarle asistencia. '
+    +'<b>Jurídico completará la ficha oficial</b> (plaza, salario, contrato) y recibirá un aviso automático.</p>'
+    +'<div class="form-grid">'
+    +'<div class="form-group"><label class="field-label required">Nombres</label><input type="text" id="ap-nombres" placeholder="Nombres"></div>'
+    +'<div class="form-group"><label class="field-label required">Apellidos</label><input type="text" id="ap-apellidos" placeholder="Apellidos"></div>'
+    +'<div class="form-group"><label class="field-label required">Carnet de identidad</label><input type="text" id="ap-carnet" inputmode="numeric" maxlength="11" placeholder="11 dígitos"></div>'
+    +'<div class="form-group"><label class="field-label required">Área donde trabaja</label><select id="ap-dep">'
+    +deptos.map(d=>'<option'+(d===depSugerido?' selected':'')+'>'+d+'</option>').join('')+'</select></div>'
+    +'</div>',
+    '<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>'
+    +'<button class="btn btn-success" onclick="guardarAltaProvisionalJT()">✅ Registrar y pasarle asistencia</button>','sm');
+}
+
+async function guardarAltaProvisionalJT(){
+  const nombres=(document.getElementById('ap-nombres').value||'').trim();
+  const apellidos=(document.getElementById('ap-apellidos').value||'').trim();
+  const carnet=(document.getElementById('ap-carnet').value||'').trim();
+  const dep=(document.getElementById('ap-dep').value||'SALA').trim();
+  if(!nombres||!apellidos||!carnet){showToast('Complete nombre, apellidos y carnet','warning');return;}
+  if(!/^\d{11}$/.test(carnet)){showToast('El carnet debe tener exactamente 11 dígitos','error');return;}
+  const dup=STATE.empleados.find(e=>e.carnet===carnet);
+  if(dup){
+    closeModal();
+    showToast('Ya existe '+dup.nombres+' '+dup.apellidos+' con ese carnet — se usará ese registro','info',5000);
+    if(!_jt_emps.find(e=>e.id===dup.id)){_jt_emps.push(dup);}
+    _jt_estados[dup.id]={estado:'P',motivo:''};
+    autoGuardarTurnoJT(); renderListaJT(document.getElementById('app-content'));
+    return;
+  }
+  const id='E'+uid();
+  const emp={
+    id, fechaAlta:hoyLocal(), nombres, apellidos, carnet,
+    telefono:'', fechaNacimiento:'', direccion:'', provincia:'', municipio:'',
+    tipoContrato:'', jornada:'12x15', departamento:dep, plaza:'Pendiente de alta',
+    salarioBase:null, activo:true, provisional:true,
+    provisionalPor:_jt_nombre||getRoleName(currentRole),
+    fotoCarnetId:'', carpetaExpId:'', contratoId:'', obligacionesId:''
+  };
+  STATE.empleados.push(emp);
+  if(!STATE.documentos[id]) STATE.documentos[id]={};
+  // Aparece de inmediato en el pase de lista, marcado Presente
+  _jt_emps.push(emp);
+  _jt_estados[id]={estado:'P',motivo:''};
+  // Aviso a Jurídico
+  if(!STATE.alertasJuridico) STATE.alertasJuridico=[];
+  const alerta={
+    id:'AJ'+uid(), tipo:'ALTA_PROVISIONAL', empleadoId:id,
+    empleadoNombre:nombres+' '+apellidos,
+    fecha:hoyLocal(),
+    mensaje:'Dado de alta a prueba por '+(_jt_nombre||'Jefe de turno')+' en '+dep+'. Carnet '+carnet+'. Falta completar ficha oficial (plaza, salario, contrato).',
+    leida:false
+  };
+  STATE.alertasJuridico.push(alerta);
+  saveState();
+  autoGuardarTurnoJT();
+  closeModal();
+  renderListaJT(document.getElementById('app-content'));
+  showToast(nombres+' agregado a prueba ✅ Ya puedes pasarle asistencia. Jurídico fue notificado.','success',6000);
+  addAuditLog('ALTA_PROVISIONAL','Alta a prueba: '+nombres+' '+apellidos+' ('+carnet+') por '+(_jt_nombre||getRoleName(currentRole)));
+  // Sincronizar en segundo plano
+  try{ await sbUpsert('empleados',emp); DB_ONLINE=true; updateSyncBadge(true); }
+  catch(e){ DB_PENDING_OPS.push({tabla:'empleados',accion:'insertar',valores:emp,id:emp.id}); DB_ONLINE=false; updateSyncBadge(false); saveState(); }
+  pushToSheets('alertasJuridico','insertar',alerta);
+  if(typeof updateAlertaBadgeJur==='function') updateAlertaBadgeJur();
+}
+
 function renderListaJT(container){
   const fechaLabel=new Date(_jt_hoy+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   // Build effective tab list: fixed tabs + catch-all "Otros" for any unmatched dept
@@ -5773,7 +5936,8 @@ function renderListaJT(container){
         +'background:'+(st==='P'?'#F0FDF4':st==='D'?'#EFF6FF':'white')+'">'
         // Nombre
         +'<div style="flex:1;min-width:0">'
-        +'<div style="font-weight:700;font-size:14px;color:var(--text-dark);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+emp.nombres+' '+emp.apellidos+'</div>'
+        +'<div style="font-weight:700;font-size:14px;color:var(--text-dark);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+emp.nombres+' '+emp.apellidos
+        +(emp.provisional?' <span style="font-size:9px;font-weight:700;color:#B5642A;background:#FDEBD0;padding:1px 6px;border-radius:8px;vertical-align:middle">A PRUEBA</span>':'')+'</div>'
         +'<div style="font-size:11px;color:var(--text-mid)">'+emp.plaza+'</div>'
         +'</div>'
         // Botones o etiqueta
@@ -5823,6 +5987,7 @@ function renderListaJT(container){
       }).filter(Boolean).join(', ');
       html+='<div style="background:#FEF2F2;border:1.5px solid #FCA5A5;border-radius:10px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#B91C1C;font-weight:600">⚠️ '+sinAsignar+' sin marcar — '+tabBreakdown+'</div>';
     }
+    html+='<button onclick="abrirAltaProvisionalJT()" class="btn btn-secondary" style="width:100%;padding:11px;font-size:14px;margin-bottom:8px">➕ Agregar trabajador nuevo (a prueba)</button>';
     html+='<button onclick="cerrarTurnoJT()" class="btn btn-success" style="width:100%;padding:13px;font-size:15px">🔒 Cerrar Turno</button>';
   }
 
